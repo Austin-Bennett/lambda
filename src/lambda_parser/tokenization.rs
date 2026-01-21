@@ -13,6 +13,8 @@ pub enum BindingPower {
     BinaryOrUnary(f32, f32), //binary bp if being parsed as a binary operator
 }
 
+pub const MINBP: f32 = f32::NEG_INFINITY;
+
 #[derive(Copy, Clone)]
 pub struct Operator {
     pub token: &'static str,

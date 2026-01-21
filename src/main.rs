@@ -1,5 +1,5 @@
 use crate::lambda_parser::native_funcs::lambda_native;
-use crate::lambda_parser::{Env, ExprNode};
+use crate::lambda_parser::{constants, Env, ExprNode, Variable};
 use std::collections::HashMap;
 use std::io::Write;
 
@@ -18,16 +18,17 @@ fn main() -> std::io::Result<()> {
     let mut varmap = Env{ scopes: vec![HashMap::new()] };
 
     lambda_native::init(&mut varmap);
+    constants::init(&mut varmap);
 
-    while inp != "QUIT" {
+    loop {
         match ExprNode::from_str(&inp) {
             Ok(n) => {
                 match n.solve(&mut varmap) {
                     Ok(n ) => {
                         if let ExprNode::Void = n {
-
                         } else {
-                            println!("{:?}", n)
+                            println!("{:?}", n);
+                            varmap.insert("ans", Variable::Expression(n));
                         }
                     }
                     Err(s) => println!("Error: {}", s)

@@ -14,6 +14,15 @@ impl Env {
         self.scopes.pop()
     }
 
+    pub fn undeclare(&mut self, name: impl AsRef<str>) -> bool {
+        for map in self.scopes.iter_mut().rev() {
+            if let Some(_) = map.remove(name.as_ref()) {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn set(&mut self, name: impl AsRef<str>, val: Variable) {
         for map in self.scopes.iter_mut().rev() {
             if let Some(v) = map.get_mut(name.as_ref()) {
@@ -59,6 +68,7 @@ impl Env {
 #[derive(Clone)]
 pub enum Variable {
     Number(f64),
+    Expression(ExprNode),
     Function{inputs: Vec<String>, body: ExprNode},
     NativeFunction(&'static dyn Fn(&mut Env, Vec<ExprNode>) -> Result<ExprNode, String>),
 }

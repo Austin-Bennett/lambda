@@ -1,17 +1,25 @@
 use crate::lambda_parser::ExprNode::{BinaryOperation, Num, UnaryOperation, Void};
 use crate::lambda_parser::{Env, ExprNode, FloatHelpers, Variable};
 use std::collections::HashMap;
-
+use std::process::id;
+use crate::lambda_parser::Variable::Number;
 
 impl ExprNode {
 
-    pub fn to_number(&self, varmap: &Env) -> Option<f64> {
+    pub fn to_number(&self, varmap: &mut Env) -> Option<f64> {
         match self {
             ExprNode::Ident(s) => {
-                if let Some(Variable::Number(n)) = varmap.get(s) {
-                    Some(*n)
-                } else {
-                    None
+                let Some(var) = varmap.get_mut(s).cloned() else { return None };
+                match var {
+                    Variable::Number(n) => Some(n),
+                    Variable::Expression(mut node) => {
+                        if let Ok(Num(n)) = node.solve_ref(varmap) {
+                            Some(*n)
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None
                 }
             },
             ExprNode::Num(n) => Some(*n),
@@ -59,8 +67,40 @@ impl ExprNode {
             }
         }
 
-        let Some(lhs) = self.to_number(varmap) else { return Ok(BinaryOperation { op, operands: Box::new((self, other)) }); };
-        let Some(rhs) = other.to_number(varmap) else { return Ok(BinaryOperation { op, operands: Box::new((self, other)) }); };
+        let lhs = self.to_number(varmap);
+
+        let Some(rhs) = other.to_number(varmap) else {
+            if let Some(lhs) = lhs {
+                if (lhs.equates(1.0) && op == "*") ||
+                    (lhs.equates(0.0) && (op == "+" || op == "-")) {
+                    return Ok(other)
+                }
+
+                if lhs.equates(0.0) && op == "/" {
+                    return Ok(Num(0.0))
+                }
+
+                return Ok(BinaryOperation { op, operands: Box::new((self, other)) });
+            } else {
+                return Ok(BinaryOperation { op, operands: Box::new((self, other)) });
+            }
+        };
+
+        //we can optimize some operations depending on if rhs is set
+        let Some(lhs) = lhs else {
+
+            if (rhs.equates(0.0) && (op == "+" || op == "-")) ||
+                (rhs.equates(1.0) && (op == "*" || op == "/" || op == "**"))
+                {
+                return Ok(self)
+            }
+
+            if rhs.equates(0.0) && op == "**" {
+                return Ok(Num(1.0));
+            }
+
+            return Ok(BinaryOperation { op, operands: Box::new((self, other)) });
+        };
 
         match op {
 
@@ -95,10 +135,10 @@ impl ExprNode {
         }
     }
 
-    pub fn solve_ref(&mut self, varmap: &mut Env) -> Result<ExprNode, String> {
+    pub fn solve_ref(&mut self, varmap: &mut Env) -> Result<&mut Self, String> {
         let old = std::mem::replace(self, Num(0.0));
-        old.solve(varmap)?;
-        
+        *self = old.solve(varmap)?;
+        Ok(self)
     }
 
     //simplifies the expression as much as possible, which may end up in a single value that can be printed
@@ -156,8 +196,12 @@ impl ExprNode {
                 let operand = operand.solve(varmap)?;
                 operand.unary_operation(op, varmap)?
             }
-            ExprNode::Ident(ident) => if let Some(Variable::Number(n)) = varmap.get(&ident) {
-                ExprNode::Num(*n)
+            ExprNode::Ident(ident) => if let Some(var) = varmap.get(&ident) {
+                match var {
+                    Number(n) => ExprNode::Num(*n),
+                    Variable::Expression(expr) => expr.clone(),
+                    _ => ExprNode::Ident(ident)
+                }
             } else {
                 ExprNode::Ident(ident)
             }

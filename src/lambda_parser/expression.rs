@@ -1,6 +1,6 @@
 use crate::lambda_parser::tokenization::{tokenize, BindingPower, Token};
 use crate::lambda_parser::ExprNode::{BinaryOperation, CallOperation, Error};
-use crate::lambda_parser::Operator;
+use crate::lambda_parser::{Operator, MINBP};
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::process::abort;
@@ -35,14 +35,14 @@ impl ExprNode {
     }
 
     pub fn from_tokens(mut tks: VecDeque<Token>) -> Result<Self, String> {
-        Self::make(&mut tks, 0.0)
+        Self::make(&mut tks, MINBP)
     }
 
     fn parse_call(tks: &mut VecDeque<Token>) -> Result<Vec<Self>, String> {
         let mut res = Vec::new();
 
         while !tks.is_empty() {
-            let arg = Self::make(tks, 0.0)?;
+            let arg = Self::make(tks, MINBP)?;
             res.push(arg);
 
             if let Some(Token::Operator(Operator{ token: _, bp: BindingPower::Seperator })) = tks.front() {
@@ -70,7 +70,7 @@ impl ExprNode {
             },
             Token::ParenthesesGroup(mut grp) => {
                 //we only expect 1 argument, we can just discard everything else
-                Self::make(&mut grp, 0.0)?
+                Self::make(&mut grp, MINBP)?
             }
         };
 
