@@ -15,12 +15,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "chacha20"
+version = "0.10.0-rc.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31cd65b2ca03198c223cd9a8fa1152c4ec251cd79049f6dc584152ad3fb5ba9d"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "rand_core",
+]
+
+[[package]]
 name = "convert_case"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "633458d4ef8c78b72454de2d54fd6ab2e60f9e02be22f3c6104cdc8a4e0fceb9"
 dependencies = [
  "unicode-segmentation",
+]
+
+[[package]]
+name = "cpufeatures"
+version = "0.2.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
@@ -92,11 +112,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "getrandom"
+version = "0.4.0-rc.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b99f0d993a2b9b97b9a201193aa8ad21305cde06a3be9a7e1f8f4201e5cc27e"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "r-efi",
+ "rand_core",
+ "wasip2",
+]
+
+[[package]]
 name = "lambda"
 version = "0.1.0"
 dependencies = [
  "crossterm",
  "lazy_static",
+ "rand",
 ]
 
 [[package]]
@@ -190,6 +224,29 @@ checksum = "dc74d9a594b72ae6656596548f56f667211f8a97b3d4c3d467150794690dc40a"
 dependencies = [
  "proc-macro2",
 ]
+
+[[package]]
+name = "r-efi"
+version = "5.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
+
+[[package]]
+name = "rand"
+version = "0.10.0-rc.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d3e6a909ceda8ceb12ef039b675ecf4bbe6def127e773cac109ab8347633766"
+dependencies = [
+ "chacha20",
+ "getrandom",
+ "rand_core",
+]
+
+[[package]]
+name = "rand_core"
+version = "0.10.0-rc-5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "05a06e03bd1f2ae861ab9e7498b6c64ed3dadb9ce175c0464a2522a5f23c0045"
 
 [[package]]
 name = "redox_syscall"
@@ -301,6 +358,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
+name = "wasip2"
+version = "1.0.2+wasi-0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9517f9239f02c069db75e65f174b3da828fe5f5b945c4dd26bd25d89c03ebcf5"
+dependencies = [
+ "wit-bindgen",
+]
+
+[[package]]
 name = "winapi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -336,3 +402,9 @@ checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
  "windows-link",
 ]
+
+[[package]]
+name = "wit-bindgen"
+version = "0.51.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7249219f66ced02969388cf2bb044a09756a083d0fab1e566056b04d9fbcaa5"

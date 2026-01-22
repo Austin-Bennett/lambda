@@ -4,6 +4,7 @@ pub mod lambda_native {
     use crossterm::{cursor, execute};
     use crossterm::cursor::MoveTo;
     use crossterm::terminal::{Clear, ClearType};
+    use rand::random;
     use crate::lambda_parser::native_funcs::lambda_native;
     use crate::lambda_parser::{Env, ExprNode, FloatHelpers, Variable};
     use crate::lambda_parser::ExprNode::{Num};
@@ -27,7 +28,9 @@ pub mod lambda_native {
 
     macro_rules! lambda_native_func {
         ($id: ident($($arg: ident),*$(,)?) {$($body: tt)*}) => {
+            #[allow(unused)]
             pub fn $id(varmap: &mut Env, mut nodes: Vec<ExprNode>) -> Result<ExprNode, String> {
+
                 let mut inps = nodes.iter_mut();
                 let strid = stringify!($id);
                 $(
@@ -62,11 +65,16 @@ pub mod lambda_native {
         varmap.insert("undecl", Variable::NativeFunction(&lambda_native::undecl));
         varmap.insert("clear", Variable::NativeFunction(&lambda_native::clear));
         varmap.insert("if", Variable::NativeFunction(&lambda_native::__if));
+        varmap.insert("rand", Variable::NativeFunction(&lambda_native::rand));
         varmap.insert("sqrt", Variable::NativeFunction(&lambda_native::sqrt));
         varmap.insert("ln", Variable::NativeFunction(&lambda_native::ln));
         varmap.insert("log", Variable::NativeFunction(&lambda_native::log));
     }
 
+
+    lambda_native_func!(rand() {
+        Some(ExprNode::Num(random::<f64>()))
+    });
 
 
     lambda_native_func!(clear() {

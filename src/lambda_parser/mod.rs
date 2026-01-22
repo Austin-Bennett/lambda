@@ -20,3 +20,17 @@ impl FloatHelpers for f64 {
         (self - other).abs() < EPSILON
     }
 }
+
+#[macro_export]
+macro_rules! time {
+    {$($body:tt)*} => {{
+
+        let start = std::time::Instant::now();
+
+        {
+            $($body)*
+        }
+
+        std::time::Instant::now() - start
+    }};
+}

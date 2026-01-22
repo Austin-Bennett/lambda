@@ -23,11 +23,13 @@ fn main() -> std::io::Result<()> {
     loop {
         match ExprNode::from_str(&inp) {
             Ok(n) => {
-                match n.solve(&mut varmap) {
+                let solved;
+                let time = time! { solved = n.solve(&mut varmap) };
+                match solved {
                     Ok(n ) => {
                         if let ExprNode::Void = n {
                         } else {
-                            println!("{:?}", n);
+                            println!("{:?} [{:?}]", n, time);
                             varmap.insert("ans", Variable::Expression(n));
                         }
                     }
