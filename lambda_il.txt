@@ -28,7 +28,7 @@ example compilations:
 |  [PUSH BOTTOM        ]
 |  [STORE BOTTOM, STACK]
 |  [STORE RET, 3       ]
-|  [MUL RET, [BOTTOM-1]] ;x is at bottom-1
+|  [MUL RET, [BOTTOM-2]] ;x is at bottom-0
 |  [ADD RET, 1         ]
 |  [POP BOTTOM         ]
 |  [RETURN             ]
@@ -36,5 +36,25 @@ example compilations:
 |  PUSH BOTTOM
 |  STORE BOTTOM, STACK
 |  PUSH 3
-|  CALL F
+|  CALL f
+|  POPN 2
 |  RETURN ;RET already contains the return value
+
++  log(3, 2) ;log 3 base 2
+|  [definition of log]
+|  [NATIVE_CALL log  ] ;calls a rust function
+|  PUSH BOTTOM
+|  STORE BOTTOM, STACK
+|  PUSH 3
+|  PUSH 2
+|  CALL ln
+|  POPN 2 ;pops 2 times off the stack (O(1) however)
+|  RETURN
+
+example native rust function:
+def log(STACK: usize, BOTTOM: usize, RET: &mut Variable, env: &mut Env) {
+    let x = env.get_stack(BOTTOM - 3);
+    let b = env.get_stack(BOTTOM - 2);
+
+    RET = Variable::Num(x.log(b))
+}
