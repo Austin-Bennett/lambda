@@ -5,7 +5,7 @@ use std::io::Write;
 
 mod lambda_parser;
 mod macros;
-
+mod lambda_jit;
 
 fn main() -> std::io::Result<()> {
 

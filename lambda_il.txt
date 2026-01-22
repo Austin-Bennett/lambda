@@ -1,0 +1,19 @@
+stack management registers:
+BOTTOM -> holds the bottom of the local context
+
+
+RET register contains final value
+STACK points to the current stack position
+
+example compilations:
++  3 + 3
+|  STORE RET, 3 ;move 3 into A
+|  ADD RET, 3
+|  RETURN  ;outputs the value
+
++  a = 3
++  a + 3
+|  PUSH STACK
+|  STORE BOTTOM, STACK ;move the bottom of the stack onto the stack
+|  PUSH 3 ;push 3 onto the stack, (increments stack pointer, 3 is now at stack-1 (or )
+|  ADD [BOTTOM+1]
