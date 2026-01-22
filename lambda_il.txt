@@ -13,7 +13,26 @@ example compilations:
 
 +  a = 3
 +  a + 3
-|  PUSH STACK
+|  PUSH BOTTOM ;<- bottom points to its previous value
 |  STORE BOTTOM, STACK ;move the bottom of the stack onto the stack
 |  PUSH 3 ;push 3 onto the stack, (increments stack pointer, 3 is now at stack-1 (or )
-|  ADD [BOTTOM+1]
+|  STORE RET, [BOTTOM+1] ;[] means access on the stack
+|  ADD RET, 3
+|  POP ;pops 'a' off the stack
+|  POP BOTTOM ;pops the previous bottom into bottom
+|  RETURN
+
++  f(x) = 3x + 1
++  f(3)
+|  [definition of f(x) (f is added to a HashMap with its bytecode as the key) ]
+|  [PUSH BOTTOM        ]
+|  [STORE BOTTOM, STACK]
+|  [STORE RET, 3       ]
+|  [MUL RET, [BOTTOM-1]] ;x is at bottom-1
+|  [ADD RET, 1         ]
+|  [POP BOTTOM         ]
+|  [RETURN             ]
+|  ;main code
+|  PUSH BOTTOM
+|  STORE BOTTOM, STACK
+|
