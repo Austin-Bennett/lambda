@@ -24,7 +24,7 @@ example compilations:
 
 +  f(x) = 3x + 1
 +  f(3)
-|  [definition of f(x) (f is added to a HashMap with its bytecode as the key) ]
+|  [definition of f(x) (f is added to a HashMap with its bytecode as the value) ]
 |  [PUSH BOTTOM        ]
 |  [STORE BOTTOM, STACK]
 |  [STORE RET, 3       ]
@@ -35,4 +35,6 @@ example compilations:
 |  ;main code
 |  PUSH BOTTOM
 |  STORE BOTTOM, STACK
-|
+|  PUSH 3
+|  CALL F
+|  RETURN ;RET already contains the return value
