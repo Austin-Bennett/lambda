@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Display, Formatter, Write};
 use std::ops::{Add, Div, Mul, Sub};
 
 
@@ -10,6 +10,7 @@ pub enum Register {
     Stack,
     Ret,
     Pc,
+    Cmp,
 }
 
 impl Debug for Register {
@@ -19,6 +20,7 @@ impl Debug for Register {
             Register::Stack => f.write_str("STACK"),
             Register::Ret => f.write_str("RET"),
             Register::Pc => f.write_str("PC"),
+            Register::Cmp => f.write_str("CMP"),
         }
     }
 }
@@ -106,6 +108,14 @@ impl Value {
         }
     }
 
+    pub fn val(&self) -> f64 {
+        match self {
+            Value::Num(n) => *n,
+            Value::Offset(i) => *i as f64,
+            Value::Pointer(u) => *u as f64,
+            Value::Void => 0.0
+        }
+    }
 }
 
 #[inline]
@@ -195,7 +205,10 @@ pub enum Instruction {
     PopN(usize),
     Store(DataLocation, IArg),
     Return,
+    Cmp(IArg, IArg),
     Jump(usize),
+    JumpZ(usize),
+    JumpL(usize),
     Call(usize),
     //CallNative(fnptr) TODO
     Add(DataLocation, IArg),
@@ -211,7 +224,10 @@ pub struct Bytecode {
 
 enum BytecodePrecomp {
     Instruction(Instruction),
-    Call(String)
+    Call(String),
+    Jump(String),
+    JumpZero(String),
+    JumpLess(String),
 }
 
 pub struct BytecodeBuilder {
@@ -233,10 +249,28 @@ impl BytecodeBuilder {
     }
 
     //inserts the call assuming the function exists
-    pub fn call(mut self, func: impl AsRef<str>) -> Self {
+    pub fn call(mut self, label: impl AsRef<str>) -> Self {
 
 
-        self.code.push(BytecodePrecomp::Call(func.as_ref().to_string()));
+        self.code.push(BytecodePrecomp::Call(label.as_ref().to_string()));
+
+        self
+    }
+    
+    pub fn jump(mut self, label: impl AsRef<str>) -> Self {
+        self.code.push(BytecodePrecomp::Jump(label.as_ref().to_string()));
+
+        self
+    }
+
+    pub fn jump_zero(mut self, label: impl AsRef<str>) -> Self {
+        self.code.push(BytecodePrecomp::JumpZero(label.as_ref().to_string()));
+
+        self
+    }
+
+    pub fn jump_less(mut self, label: impl AsRef<str>) -> Self {
+        self.code.push(BytecodePrecomp::JumpLess(label.as_ref().to_string()));
 
         self
     }
@@ -261,6 +295,27 @@ impl BytecodeBuilder {
                 BytecodePrecomp::Call(s) => {
                     if let Some(n) = self.labels.get(&s) {
                         result.code.push(Instruction::Call(*n))
+                    } else {
+                        return Err(format!("Couldnt find symbol: {}", s))
+                    }
+                }
+                BytecodePrecomp::Jump(s) => {
+                    if let Some(n) = self.labels.get(&s) {
+                        result.code.push(Instruction::Jump(*n))
+                    } else {
+                        return Err(format!("Couldnt find symbol: {}", s))
+                    }
+                }
+                BytecodePrecomp::JumpZero(s) => {
+                    if let Some(n) = self.labels.get(&s) {
+                        result.code.push(Instruction::JumpZ(*n))
+                    } else {
+                        return Err(format!("Couldnt find symbol: {}", s))
+                    }
+                }
+                BytecodePrecomp::JumpLess(s) => {
+                    if let Some(n) = self.labels.get(&s) {
+                        result.code.push(Instruction::JumpL(*n))
                     } else {
                         return Err(format!("Couldnt find symbol: {}", s))
                     }

@@ -1,18 +1,21 @@
 use std::collections::HashMap;
 use std::error::Error;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Display, Formatter, Write};
+use std::io::{stdin, stdout, Write as w};
 use std::sync::Arc;
 use log::debug;
 use crate::lambda_jit::il_env::EnvError::BadRegisterMutation;
 use crate::lambda_jit::lambda_il::*;
 use crate::lambda_jit::lambda_il::Instruction::Return;
 use crate::lambda_jit::lambda_il::Value::Void;
+use crate::lambda_parser::FloatHelpers;
 
 pub struct Env {
     pub reg_ret: Value,
     pub reg_stack: usize,
     pub reg_bottom: usize,
     pub reg_pc: usize,
+    pub reg_cmp: f64,
 
     pub stack: Vec<Value>, //increases when necessary
 }
@@ -20,7 +23,8 @@ pub struct Env {
 pub enum EnvError {
     OutOfBoundsAccess(DataLocation),
     EmptyStack,
-    BadRegisterMutation(Register)
+    BadRegisterMutation(Register),
+    Stackoverflow,
 }
 
 impl Debug for EnvError {
@@ -33,7 +37,8 @@ impl Debug for EnvError {
                     write!(f, "Attempted to access memory outside of stack: {:?}+{}", reg, o)
             },
             EnvError::EmptyStack => f.write_str("Attempted to access data on empty stack"),
-            EnvError::BadRegisterMutation(r) => write!(f, "Cannot mutate register: {:?}", r)
+            EnvError::BadRegisterMutation(r) => write!(f, "Cannot mutate register: {:?}", r),
+            EnvError::Stackoverflow => f.write_str("Stack overflowed")
         }
     }
 }
@@ -53,6 +58,7 @@ impl Env {
             reg_ret: Value::Void,
             reg_bottom: 0,
             reg_pc: 0,
+            reg_cmp: 0.0,
             stack: Vec::with_capacity(10),
         }
     }
@@ -65,6 +71,7 @@ impl Env {
             Register::Stack => Value::Pointer(self.reg_stack),
             Register::Ret => self.reg_ret,
             Register::Pc => Value::Pointer(self.reg_pc),
+            Register::Cmp => Value::Num(self.reg_cmp),
         }
     }
 
@@ -91,6 +98,9 @@ impl Env {
                     Value::Pointer(p) => self.reg_pc = p,
                     Void => self.reg_pc = 0,
                 }
+            }
+            Register::Cmp => {
+                self.reg_cmp = d.val();
             }
         }
         Ok(())
@@ -150,7 +160,7 @@ impl Env {
         }
     }
 
-    pub fn push_stack(&mut self, v: Value) {
+    pub fn push_stack(&mut self, v: Value) -> Result<(), EnvError> {
         if self.reg_stack >= self.stack.len() {
             self.reg_stack = self.stack.len(); //clamp
             self.stack.push(Void);
@@ -158,6 +168,12 @@ impl Env {
 
         self.stack[self.reg_stack] = v;
         self.reg_stack += 1;
+
+        if self.reg_stack >= 100 {
+            Err(EnvError::Stackoverflow)
+        } else {
+            Ok(())
+        }
     }
 
     pub fn pop_stack(&mut self) -> Result<Value, EnvError> {
@@ -179,17 +195,43 @@ impl Env {
             for (i, j) in code.code.iter().enumerate() {
                 println!("{}: {:?}", i, j);
             }
+            println!()
         }
 
         while self.reg_pc < code.code.len() {
             let i = &code.code[self.reg_pc];
             if debug {
-                println!("DEBUG {}: {:?}", self.reg_pc, i);
+                let mut buf = "___".to_string();
+                while !buf.is_empty() {
+                    buf.clear();
+                    println!("DEBUG {}: {:?}", self.reg_pc, i);
+                    print!("> ");
+                    let _ = stdout().flush();
+                    let _ = stdin().read_line(&mut buf);
+                    buf = buf.trim().to_string();
+
+                    if buf.trim() == "data" {
+                        println!("STACK: {}, PC: {}, BOTTOM: {}, RET: {:?}, CMP: {}", self.reg_stack, self.reg_pc, self.reg_bottom, self.reg_ret, self.reg_cmp);
+                        for i in 0..self.stack.len() {
+                            print!("STACK[{}]: {:?}", i, self.stack[i]);
+                            if i == self.reg_stack && i == self.reg_bottom  {
+                                println!(" <- STACK, BOTTOM");
+                            } else if i == self.reg_stack {
+                                println!(" <- STACK");
+                            } else if i == self.reg_bottom {
+                                println!(" <- BOTTOM");
+                            } else {
+                                println!();
+                            }
+                        }
+                    }
+                    println!()
+                }
             }
             let mut dont_inc_pc = false;
             match i {
                 Instruction::Push(v) => {
-                    self.push_stack(self.arg_to_val(v)?);
+                    self.push_stack(self.arg_to_val(v)?)?;
                 }
                 Instruction::Pop(loc) => {
                     let v = self.pop_stack()?;
@@ -213,13 +255,31 @@ impl Env {
                     let ret = self.pop_stack()?.to_pointer();
                     self.reg_pc = ret;
                 }
+                Instruction::Cmp(i1, i2) => {
+                    let v1 = self.arg_to_val(i1)?;
+                    let v2 = self.arg_to_val(i2)?;
+
+                    self.reg_cmp = v1.val() - v2.val();
+                }
                 Instruction::Jump(loc) => {
                     self.reg_pc = *loc;
                     dont_inc_pc = true;
                 }
+                Instruction::JumpZ(loc) => {
+                    if self.reg_cmp.equates(0.0) {
+                        self.reg_pc = *loc;
+                        dont_inc_pc = true;
+                    }
+                }
+                Instruction::JumpL(loc) => {
+                    if self.reg_cmp < 0.0 && !self.reg_cmp.equates(0.0) {
+                        self.reg_pc = *loc;
+                        dont_inc_pc = true;
+                    }
+                }
                 Instruction::Call(loc) => {
                     //push the current addr
-                    self.push_stack(Value::Pointer(self.reg_pc));
+                    self.push_stack(Value::Pointer(self.reg_pc))?;
 
                     self.reg_pc = *loc;
                     dont_inc_pc = true;
