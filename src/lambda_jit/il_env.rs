@@ -1,7 +1,9 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error;
-use std::fmt::{Debug, Display, Formatter, Write};
+use std::fmt::{write, Debug, Display, Formatter, Write};
 use std::io::{stdin, stdout, Write as w};
+use std::rc::Rc;
 use std::sync::Arc;
 use log::debug;
 use crate::lambda_jit::il_env::EnvError::BadRegisterMutation;
@@ -18,6 +20,9 @@ pub struct Env {
     pub reg_cmp: f64,
 
     pub stack: Vec<Value>, //increases when necessary
+
+    pub dynamic_modules: HashMap<String, Rc<Bytecode>>, //have to be run via recursion
+    pub dynamic_values: HashMap<String, Value>,
 }
 
 pub enum EnvError {
@@ -25,6 +30,7 @@ pub enum EnvError {
     EmptyStack,
     BadRegisterMutation(Register),
     Stackoverflow,
+    NoDynamicFunction(String),
 }
 
 impl Debug for EnvError {
@@ -34,11 +40,13 @@ impl Debug for EnvError {
                 DataLocation::Register(r) => write!(f, "Attempted to access register: {:?}", r),
                 DataLocation::StackOffset(o) => write!(f, "Attempted to access memory outside of stack: {}", o),
                 DataLocation::StackRegOffset(reg, o) =>
-                    write!(f, "Attempted to access memory outside of stack: {:?}+{}", reg, o)
+                    write!(f, "Attempted to access memory outside of stack: {:?}+{}", reg, o),
+                DataLocation::Dynamic(s) => write!(f, "Attempted to access non-existent variable: {}", s)
             },
             EnvError::EmptyStack => f.write_str("Attempted to access data on empty stack"),
             EnvError::BadRegisterMutation(r) => write!(f, "Cannot mutate register: {:?}", r),
-            EnvError::Stackoverflow => f.write_str("Stack overflowed")
+            EnvError::Stackoverflow => f.write_str("Stack overflowed"),
+            EnvError::NoDynamicFunction(s) => write!(f, "Could not find dynamic function: {}", s),
         }
     }
 }
@@ -60,10 +68,14 @@ impl Env {
             reg_pc: 0,
             reg_cmp: 0.0,
             stack: Vec::with_capacity(10),
+            dynamic_modules: HashMap::new(),
+            dynamic_values: HashMap::new(),
         }
     }
 
-
+    pub fn load_dynamic_mod(&mut self, name: String, code: Bytecode) {
+        self.dynamic_modules.insert(name, Rc::new(code));
+    }
 
     pub fn get_register(&self, r: &Register) -> Value {
         match r {
@@ -135,6 +147,12 @@ impl Env {
                     _ => Err(EnvError::OutOfBoundsAccess(DataLocation::StackRegOffset(*r, *o))),
                 }
             }
+            DataLocation::Dynamic(s) => {
+                match self.dynamic_values.get(s) {
+                    Some(v) => Ok(*v),
+                    None => Err(EnvError::OutOfBoundsAccess(DataLocation::Dynamic(s.clone())))
+                }
+            }
         }
     }
 
@@ -149,6 +167,10 @@ impl Env {
                     return Err(EnvError::OutOfBoundsAccess(DataLocation::StackRegOffset(*r, *i)));
                 };
                 self.set_stack(unsafe{ (o as isize).unchecked_add(*i) } as usize, src)
+            }
+            DataLocation::Dynamic(s) => {
+                self.dynamic_values.insert(s.clone(), src);
+                Ok(())
             }
         }
     }
@@ -169,7 +191,7 @@ impl Env {
         self.stack[self.reg_stack] = v;
         self.reg_stack += 1;
 
-        if self.reg_stack >= 100 {
+        if self.reg_stack >= 1_000_000 {
             Err(EnvError::Stackoverflow)
         } else {
             Ok(())
@@ -187,8 +209,6 @@ impl Env {
 
     pub fn execute(&mut self, code: &Bytecode, debug: bool) -> Result<Value, EnvError> {
         self.reg_pc = code.entry;
-        self.reg_stack = 0;
-        self.reg_bottom = 0;
 
         if debug {
             println!("PROGRAM:");
@@ -198,7 +218,9 @@ impl Env {
             println!()
         }
 
-        while self.reg_pc < code.code.len() {
+        let mut run = true;
+
+        while self.reg_pc < code.code.len() && run {
             let i = &code.code[self.reg_pc];
             if debug {
                 let mut buf = "___".to_string();
@@ -212,7 +234,8 @@ impl Env {
 
                     if buf.trim() == "data" {
                         println!("STACK: {}, PC: {}, BOTTOM: {}, RET: {:?}, CMP: {}", self.reg_stack, self.reg_pc, self.reg_bottom, self.reg_ret, self.reg_cmp);
-                        for i in 0..self.stack.len() {
+                        let mut i = 0;
+                        while i < self.reg_stack && i < self.stack.len() {
                             print!("STACK[{}]: {:?}", i, self.stack[i]);
                             if i == self.reg_stack && i == self.reg_bottom  {
                                 println!(" <- STACK, BOTTOM");
@@ -223,93 +246,114 @@ impl Env {
                             } else {
                                 println!();
                             }
+
+                            i+=1;
                         }
                     }
                     println!()
                 }
             }
-            let mut dont_inc_pc = false;
-            match i {
-                Instruction::Push(v) => {
-                    self.push_stack(self.arg_to_val(v)?)?;
-                }
-                Instruction::Pop(loc) => {
-                    let v = self.pop_stack()?;
-                    self.set_data(loc, v)?;
-                }
-                Instruction::PopN(i) => {
-                    if *i > self.reg_stack { self.reg_stack = 0 } else { self.reg_stack -= i }
-                }
-                Instruction::Store(dest, src) => {
-                    let v = self.arg_to_val(src)?;
-                    self.set_data(dest, v)?;
-                }
-                Return => {
-                    //in order to return, we need to get the call return address
-                    //off the stack, should be the last value on the return address stack
-                    //if not, well that's the programmers fault
-                    if self.reg_stack == 0 {
-                        //no stack left to read
-                        break;
-                    }
-                    let ret = self.pop_stack()?.to_pointer();
-                    self.reg_pc = ret;
-                }
-                Instruction::Cmp(i1, i2) => {
-                    let v1 = self.arg_to_val(i1)?;
-                    let v2 = self.arg_to_val(i2)?;
 
-                    self.reg_cmp = v1.val() - v2.val();
-                }
-                Instruction::Jump(loc) => {
-                    self.reg_pc = *loc;
-                    dont_inc_pc = true;
-                }
-                Instruction::JumpZ(loc) => {
-                    if self.reg_cmp.equates(0.0) {
-                        self.reg_pc = *loc;
-                        dont_inc_pc = true;
-                    }
-                }
-                Instruction::JumpL(loc) => {
-                    if self.reg_cmp < 0.0 && !self.reg_cmp.equates(0.0) {
-                        self.reg_pc = *loc;
-                        dont_inc_pc = true;
-                    }
-                }
-                Instruction::Call(loc) => {
-                    //push the current addr
-                    self.push_stack(Value::Pointer(self.reg_pc))?;
-
-                    self.reg_pc = *loc;
-                    dont_inc_pc = true;
-                }
-                Instruction::Add(loc, v) => {
-                    let v1 = self.get_data(loc)?;
-                    let v2 = self.arg_to_val(v)?;
-                    self.set_data(loc, v1+v2)?;
-                }
-                Instruction::Sub(loc, v) => {
-                    let v1 = self.get_data(loc)?;
-                    let v2 = self.arg_to_val(v)?;
-                    self.set_data(loc, v1-v2)?;
-                }
-                Instruction::Mul(loc, v) => {
-                    let v1 = self.get_data(loc)?;
-                    let v2 = self.arg_to_val(v)?;
-                    self.set_data(loc, v1*v2)?;
-                }
-                Instruction::Div(loc, v) => {
-                    let v1 = self.get_data(loc)?;
-                    let v2 = self.arg_to_val(v)?;
-                    self.set_data(loc, v1/v2)?;
-                }
-            }
-            if !dont_inc_pc {
+            if !self.execute_instruction(i, &mut run)? {
                 self.reg_pc += 1;
             }
         }
 
         Ok(self.reg_ret)
+    }
+
+    pub fn execute_instruction(&mut self, i: &Instruction, run: &mut bool) -> Result<bool, EnvError> {
+
+        let mut dont_inc_pc = false;
+        match i {
+            Instruction::Push(v) => {
+                self.push_stack(self.arg_to_val(v)?)?;
+            }
+            Instruction::Pop(loc) => {
+                let v = self.pop_stack()?;
+                self.set_data(loc, v)?;
+            }
+            Instruction::PopN(i) => {
+                if *i > self.reg_stack { self.reg_stack = 0 } else { self.reg_stack -= i }
+            }
+            Instruction::Store(dest, src) => {
+                let v = self.arg_to_val(src)?;
+                self.set_data(dest, v)?;
+            }
+            Return => {
+                //in order to return, we need to get the call return address
+                //off the stack, should be the last value on the return address stack
+                //if not, well that's the programmers fault
+                if self.reg_stack == 0 {
+                    //no stack left to read
+                    *run = false;
+                    return Ok(true);
+                }
+                let ret = self.pop_stack()?.to_pointer();
+                self.reg_pc = ret;
+            }
+            Instruction::Cmp(i1, i2) => {
+                let v1 = self.arg_to_val(i1)?;
+                let v2 = self.arg_to_val(i2)?;
+
+                self.reg_cmp = v1.val() - v2.val();
+            }
+            Instruction::Jump(loc) => {
+                self.reg_pc = *loc;
+                dont_inc_pc = true;
+            }
+            Instruction::JumpZ(loc) => {
+                if self.reg_cmp.equates(0.0) {
+                    self.reg_pc = *loc;
+                    dont_inc_pc = true;
+                }
+            }
+            Instruction::JumpL(loc) => {
+                if self.reg_cmp < 0.0 && !self.reg_cmp.equates(0.0) {
+                    self.reg_pc = *loc;
+                    dont_inc_pc = true;
+                }
+            }
+            Instruction::Call(loc) => {
+                //push the current addr
+                self.push_stack(Value::Pointer(self.reg_pc))?;
+
+                self.reg_pc = *loc;
+                dont_inc_pc = true;
+            }
+            Instruction::CallDynamic(s) => {
+                let pc = self.reg_pc;
+
+                if let Some(func) = self.dynamic_modules.get(s) {
+                    let func = func.clone();
+                    self.execute(&func, false)?;
+                    self.reg_pc = pc;
+                } else {
+                    return Err(EnvError::NoDynamicFunction(s.clone()))
+                }
+            }
+            Instruction::Add(loc, v) => {
+                let v1 = self.get_data(loc)?;
+                let v2 = self.arg_to_val(v)?;
+                self.set_data(loc, v1+v2)?;
+            }
+            Instruction::Sub(loc, v) => {
+                let v1 = self.get_data(loc)?;
+                let v2 = self.arg_to_val(v)?;
+                self.set_data(loc, v1-v2)?;
+            }
+            Instruction::Mul(loc, v) => {
+                let v1 = self.get_data(loc)?;
+                let v2 = self.arg_to_val(v)?;
+                self.set_data(loc, v1*v2)?;
+            }
+            Instruction::Div(loc, v) => {
+                let v1 = self.get_data(loc)?;
+                let v2 = self.arg_to_val(v)?;
+                self.set_data(loc, v1/v2)?;
+            }
+        }
+
+        Ok(dont_inc_pc)
     }
 }

@@ -26,11 +26,12 @@ impl Debug for Register {
 }
 
 #[allow(unused)]
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum DataLocation {
     Register(Register), //REG
     StackOffset(usize), //[isize]
-    StackRegOffset(Register, isize) //[REG + isize]
+    StackRegOffset(Register, isize), //[REG + isize]
+    Dynamic(String),
 }
 
 #[derive(Copy, Clone)]
@@ -190,7 +191,7 @@ impl Div for Value {
 }
 
 #[allow(unused)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub enum IArg {
     Value(Value), //1.1, 2.5, etc
     Data(DataLocation)
@@ -210,6 +211,7 @@ pub enum Instruction {
     JumpZ(usize),
     JumpL(usize),
     Call(usize),
+    CallDynamic(String),
     //CallNative(fnptr) TODO
     Add(DataLocation, IArg),
     Sub(DataLocation, IArg),

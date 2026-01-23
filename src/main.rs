@@ -9,7 +9,7 @@ use crate::tests::test_bytecode;
 mod lambda_parser;
 mod macros;
 mod lambda_jit;
-
+mod lambda;
 
 mod tests {
     use crate::lambda_jit::il_env;
@@ -72,20 +72,22 @@ mod tests {
             .emit(Push(IArg::Data(DataLocation::StackRegOffset(Register::Bottom, -3)))) //save the instruction to stack
             .emit(Sub(DataLocation::StackRegOffset(Register::Bottom, 0), IArg::Value(Value::Num(1.0))))
             .call("fib")
-            //save the return result
+            //clean up argument
+            .emit(PopN(1))
+            //save the return result to the stack at bottom + 0
             .emit(Push(IArg::Data(DataLocation::Register(Register::Ret))))
-            //move the arg back into the stack
-            .emit(Store(DataLocation::StackRegOffset(Register::Bottom, 0), IArg::Data(DataLocation::StackRegOffset(Register::Bottom, -3))))
-            .emit(Sub(DataLocation::StackRegOffset(Register::Bottom, 0), IArg::Value(Value::Num(2.0))))
+            //push the arg back onto the stack
+            .emit(Push(IArg::Data(DataLocation::StackRegOffset(Register::Bottom, -3))))
+            .emit(Sub(DataLocation::StackRegOffset(Register::Bottom, 1), IArg::Value(Value::Num(2.0))))
             .call("fib")
-            .emit(Add(DataLocation::StackRegOffset(Register::Bottom, 1), IArg::Data(DataLocation::Register(Register::Ret))))
-            .emit(Store(DataLocation::Register(Register::Ret), IArg::Data(DataLocation::StackRegOffset(Register::Bottom, 1))))
+            .emit(Add(DataLocation::StackRegOffset(Register::Bottom, 0), IArg::Data(DataLocation::Register(Register::Ret))))
+            .emit(Store(DataLocation::Register(Register::Ret), IArg::Data(DataLocation::StackRegOffset(Register::Bottom, 0))))
             .emit(PopN(2))
             .decl_label("end_early")
             .emit(Pop(DataLocation::Register(Register::Bottom)))
             .emit(Return)
             .decl_label("main")
-            .emit(Push(IArg::Value(Value::Num(4.0))))
+            .emit(Push(IArg::Value(Value::Num(30.0))))
             .call("fib")
             .emit(PopN(1))
             .emit(Return)
@@ -118,6 +120,7 @@ mod tests {
         }
     }
 }
+
 
 pub fn main() {
     let arg = &env::args().collect::<Vec<_>>()[1];
