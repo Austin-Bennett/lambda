@@ -39,7 +39,7 @@ lazy_static!(
             Operator::new("-", BindingPower::BinaryOrUnary(1.0, 1.1)),
             Operator::new("*", BindingPower::Binary(2.0, 2.1)),
             Operator::new("/", BindingPower::Binary(2.0, 2.1)),
-            Operator::new("**", BindingPower::Binary(3.0, 3.1)),
+            //Operator::new("**", BindingPower::Binary(3.0, 3.1)),
 
             Operator::new("<", BindingPower::Binary(1.0, 1.1)),
             Operator::new(">", BindingPower::Binary(1.0, 1.1)),

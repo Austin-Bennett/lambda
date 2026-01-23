@@ -33,6 +33,7 @@ mod tests {
         loop {
             match ExprNode::from_str(&inp) {
                 Ok(n) => {
+                    println!("{:?}", n);
                     let solved;
                     let time = time! { solved = n.solve(&mut varmap) };
                     match solved {
