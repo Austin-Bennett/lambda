@@ -1,4 +1,3 @@
-use crate::lambda_parser::native_funcs::lambda_native;
 use crate::lambda_parser::{constants, Env, ExprNode, Variable};
 use std::collections::HashMap;
 use std::env;
@@ -17,47 +16,6 @@ mod tests {
     use crate::lambda_jit::lambda_il::{BytecodeBuilder, DataLocation, IArg, Instruction, Register, Value};
     use crate::lambda_jit::lambda_il::Instruction::*;
     use super::*;
-
-    pub fn test_interpreter() -> std::io::Result<()> {
-        print!("> ");
-        std::io::stdout().flush()?;
-        let mut inp = String::new();
-        std::io::stdin().read_line(&mut inp)?;
-        inp = inp.trim().to_string();
-
-        let mut varmap = Env { scopes: vec![HashMap::new()] };
-
-        lambda_native::init(&mut varmap);
-        constants::init(&mut varmap);
-
-        loop {
-            match ExprNode::from_str(&inp) {
-                Ok(n) => {
-                    println!("{:?}", n);
-                    let solved;
-                    let time = time! { solved = n.solve(&mut varmap) };
-                    match solved {
-                        Ok(n) => {
-                            if let ExprNode::Void = n {} else {
-                                println!("{:?} [{:?}]", n, time);
-                                varmap.insert("ans", Variable::Expression(n));
-                            }
-                        }
-                        Err(s) => println!("Error: {}", s)
-                    }
-                }
-                Err(e) => {
-                    println!("Error: {}", e)
-                }
-            }
-
-            print!("> ");
-            std::io::stdout().flush()?;
-            inp.clear();
-            std::io::stdin().read_line(&mut inp)?;
-            inp = inp.trim().to_string();
-        }
-    }
 
     pub fn test_bytecode() {
 
@@ -127,9 +85,6 @@ pub fn main() {
     let arg = &env::args().collect::<Vec<_>>()[1];
 
     match arg.as_str() {
-        "interpreter" => {
-            let _ = tests::test_interpreter();
-        }
         "bytecode" => {
             let _ = test_bytecode();
         }

@@ -1,8 +1,6 @@
 pub mod tokenization;
 pub mod expression;
 pub mod variables;
-pub mod solver;
-pub mod native_funcs;
 pub mod constants;
 
 pub use expression::*;

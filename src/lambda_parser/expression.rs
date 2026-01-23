@@ -2,7 +2,7 @@ use crate::lambda_parser::tokenization::{tokenize, BindingPower, Token};
 use crate::lambda_parser::ExprNode::{BinaryOperation, CallOperation, Error};
 use crate::lambda_parser::{Operator, MINBP};
 use std::collections::VecDeque;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Formatter, Write};
 use std::process::abort;
 
 
@@ -13,6 +13,7 @@ pub enum ExprNode {
     UnaryOperation{op: &'static str, operand: Box<ExprNode>},
     Ident(String),
     Num(f64),
+    Argument(usize),
     Void,
     Error(String), //internal, shouldn't show up in the tree
 }
@@ -131,6 +132,7 @@ impl Debug for ExprNode {
             ExprNode::Num(n) => f.write_str(n.to_string().as_str()),
             Error(s) => write!(f, "(Error: {})", s),
             ExprNode::Void => f.write_str("void"),
+            ExprNode::Argument(u) => write!(f, "Argument({})", u)
         }
     }
 }
