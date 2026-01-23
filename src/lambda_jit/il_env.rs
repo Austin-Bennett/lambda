@@ -3,24 +3,24 @@ use std::error::Error;
 use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
 use log::debug;
+use crate::lambda_jit::il_env::EnvError::BadRegisterMutation;
 use crate::lambda_jit::lambda_il::*;
 use crate::lambda_jit::lambda_il::Instruction::Return;
 use crate::lambda_jit::lambda_il::Value::Void;
 
 pub struct Env {
-    reg_ret: Value,
-    reg_stack: usize,
-    reg_bottom: usize,
+    pub reg_ret: Value,
+    pub reg_stack: usize,
+    pub reg_bottom: usize,
+    pub reg_pc: usize,
 
-    stack: Vec<Value>, //increases when necessary
-    functions: HashMap<String, Arc<Bytecode>>,
+    pub stack: Vec<Value>, //increases when necessary
 }
 
 pub enum EnvError {
     OutOfBoundsAccess(DataLocation),
     EmptyStack,
-    #[allow(unused)]
-    UnknownFunction(String),
+    BadRegisterMutation(Register)
 }
 
 impl Debug for EnvError {
@@ -33,7 +33,7 @@ impl Debug for EnvError {
                     write!(f, "Attempted to access memory outside of stack: {:?}+{}", reg, o)
             },
             EnvError::EmptyStack => f.write_str("Attempted to access data on empty stack"),
-            EnvError::UnknownFunction(s) => write!(f, "Unknown function name: {}", s)
+            EnvError::BadRegisterMutation(r) => write!(f, "Cannot mutate register: {:?}", r)
         }
     }
 }
@@ -52,25 +52,23 @@ impl Env {
             reg_stack: 0,
             reg_ret: Value::Void,
             reg_bottom: 0,
+            reg_pc: 0,
             stack: Vec::with_capacity(10),
-            functions: HashMap::new()
         }
     }
 
-    #[allow(unused)]
-    pub fn add_function(&mut self, name: impl AsRef<str>, bc: Bytecode) {
-        self.functions.insert(name.as_ref().to_string(), Arc::new(bc));
-    }
+
 
     pub fn get_register(&self, r: &Register) -> Value {
         match r {
             Register::Bottom => Value::Pointer(self.reg_bottom),
             Register::Stack => Value::Pointer(self.reg_stack),
-            Register::Ret => self.reg_ret
+            Register::Ret => self.reg_ret,
+            Register::Pc => Value::Pointer(self.reg_pc),
         }
     }
 
-    pub fn set_register(&mut self, r: &Register, d: Value) {
+    pub fn set_register(&mut self, r: &Register, d: Value) -> Result<(), EnvError> {
         match r {
             Register::Bottom => {
                 match d {
@@ -81,17 +79,21 @@ impl Env {
                 }
             }
             Register::Stack => {
-                match d {
-                    Value::Num(n) => self.reg_stack = n as usize,
-                    Value::Offset(o) => self.reg_stack = o as usize,
-                    Value::Pointer(p) => self.reg_stack = p,
-                    Void => self.reg_stack = 0,
-                }
+                return Err(BadRegisterMutation(Register::Stack))
             }
             Register::Ret => {
                 self.reg_ret = d;
             }
+            Register::Pc => {
+                match d {
+                    Value::Num(n) => self.reg_pc = n as usize,
+                    Value::Offset(o) => self.reg_pc = o as usize,
+                    Value::Pointer(p) => self.reg_pc = p,
+                    Void => self.reg_pc = 0,
+                }
+            }
         }
+        Ok(())
     }
 
 
@@ -128,7 +130,7 @@ impl Env {
 
     pub fn set_data(&mut self, dest: &DataLocation, src: Value) -> Result<(), EnvError> {
         match dest {
-            DataLocation::Register(r) => Ok(self.set_register(r, src)),
+            DataLocation::Register(r) => Ok(self.set_register(r, src)?),
             DataLocation::StackOffset(i) => {
                 self.set_stack(*i, src)
             }
@@ -155,6 +157,7 @@ impl Env {
         }
 
         self.stack[self.reg_stack] = v;
+        self.reg_stack += 1;
     }
 
     pub fn pop_stack(&mut self) -> Result<Value, EnvError> {
@@ -166,51 +169,84 @@ impl Env {
         }
     }
 
-    pub fn execute(&mut self, code: &Bytecode) -> Result<Value, EnvError> {
-        for i in code {
+    pub fn execute(&mut self, code: &Bytecode, debug: bool) -> Result<Value, EnvError> {
+        self.reg_pc = code.entry;
+        self.reg_stack = 0;
+        self.reg_bottom = 0;
+
+        if debug {
+            println!("PROGRAM:");
+            for (i, j) in code.code.iter().enumerate() {
+                println!("{}: {:?}", i, j);
+            }
+        }
+
+        while self.reg_pc < code.code.len() {
+            let i = &code.code[self.reg_pc];
+            if debug {
+                println!("DEBUG {}: {:?}", self.reg_pc, i);
+            }
+            let mut dont_inc_pc = false;
             match i {
                 Instruction::Push(v) => {
                     self.push_stack(self.arg_to_val(v)?);
                 }
-                Instruction::Pop(dl) => {
-                    let val = self.pop_stack()?;
-                    self.set_data(dl, val)?;
+                Instruction::Pop(loc) => {
+                    let v = self.pop_stack()?;
+                    self.set_data(loc, v)?;
+                }
+                Instruction::PopN(i) => {
+                    if *i > self.reg_stack { self.reg_stack = 0 } else { self.reg_stack -= i }
                 }
                 Instruction::Store(dest, src) => {
-                    self.set_data(dest, self.arg_to_val(src)?)?
+                    let v = self.arg_to_val(src)?;
+                    self.set_data(dest, v)?;
                 }
-                Instruction::Return => {
-                    return Ok(self.get_register(&Register::Ret));
-                }
-                Instruction::Call(func) => {
-                    if let Some(bc) = self.functions.get(func).cloned() {
-                        self.execute(bc.as_ref())?; //we can ignore the return value
+                Return => {
+                    //in order to return, we need to get the call return address
+                    //off the stack, should be the last value on the return address stack
+                    //if not, well that's the programmers fault
+                    if self.reg_stack == 0 {
+                        //no stack left to read
+                        break;
                     }
+                    let ret = self.pop_stack()?.to_pointer();
+                    self.reg_pc = ret;
                 }
-                Instruction::ADD(dl, v) => {
-                    let v1 = self.get_data(dl)?;
-                    let v2 = self.arg_to_val(v)?;
+                Instruction::Jump(loc) => {
+                    self.reg_pc = *loc;
+                    dont_inc_pc = true;
+                }
+                Instruction::Call(loc) => {
+                    //push the current addr
+                    self.push_stack(Value::Pointer(self.reg_pc));
 
-                    self.set_data(dl, v1 + v2)?;
+                    self.reg_pc = *loc;
+                    dont_inc_pc = true;
                 }
-                Instruction::SUB(dl, v) => {
-                    let v1 = self.get_data(dl)?;
+                Instruction::Add(loc, v) => {
+                    let v1 = self.get_data(loc)?;
                     let v2 = self.arg_to_val(v)?;
-
-                    self.set_data(dl, v1 - v2)?;
+                    self.set_data(loc, v1+v2)?;
                 }
-                Instruction::MUL(dl, v) => {
-                    let v1 = self.get_data(dl)?;
+                Instruction::Sub(loc, v) => {
+                    let v1 = self.get_data(loc)?;
                     let v2 = self.arg_to_val(v)?;
-
-                    self.set_data(dl, v1 * v2)?;
+                    self.set_data(loc, v1-v2)?;
                 }
-                Instruction::DIV(dl, v) => {
-                    let v1 = self.get_data(dl)?;
+                Instruction::Mul(loc, v) => {
+                    let v1 = self.get_data(loc)?;
                     let v2 = self.arg_to_val(v)?;
-
-                    self.set_data(dl, v1 / v2)?;
+                    self.set_data(loc, v1*v2)?;
                 }
+                Instruction::Div(loc, v) => {
+                    let v1 = self.get_data(loc)?;
+                    let v2 = self.arg_to_val(v)?;
+                    self.set_data(loc, v1/v2)?;
+                }
+            }
+            if !dont_inc_pc {
+                self.reg_pc += 1;
             }
         }
 

@@ -58,20 +58,42 @@ mod tests {
     }
 
     pub fn test_bytecode() {
-        let bc = BytecodeBuilder::new()
-            .exec(Instruction::Store(DataLocation::Register(Register::Ret), IArg::Value(Value::Num(3.0))))
-            .exec(Instruction::ADD(DataLocation::Register(Register::Ret), IArg::Value(Value::Num(3.0))))
-            .exec(Instruction::Return)
-            .build();
+        let code = BytecodeBuilder::new()
+            .decl_label("add")
+            .emit(Instruction::Push(IArg::Data(DataLocation::Register(Register::Bottom))))
+            .emit(Instruction::Store(DataLocation::Register(Register::Bottom), IArg::Data(DataLocation::Register(Register::Stack))))
+            //bottom points to the previous stack bottom + 1, so bottom is at bottom -1, return addr is at bottom -2, y at bottom-3, and x at bottom-4
+            .emit(Instruction::Store(DataLocation::Register(Register::Ret), IArg::Data(DataLocation::StackRegOffset(Register::Bottom, -4))))
+            .emit(Instruction::Add(DataLocation::Register(Register::Ret), IArg::Data(DataLocation::StackRegOffset(Register::Bottom, -3))))
+            .emit(Instruction::Pop(DataLocation::Register(Register::Bottom)))
+            .emit(Instruction::Return)
+            .decl_label("main")
+            .emit(Instruction::Push(IArg::Value(Value::Num(2.0))))
+            .emit(Instruction::Push(IArg::Value(Value::Num(2.0))))
+            .call("add")
+            .emit(Instruction::PopN(2))
+            .emit(Instruction::Return)
+            .build().unwrap();
 
         let mut env = il_env::Env::new();
-        
-        match env.execute(&bc) {
+
+        match env.execute(&code, true) {
             Ok(v) => {
-                println!("{:?}", v);
+                println!("Result: {:?}", v)
             }
             Err(e) => {
-                eprintln!("Error: {}", e);
+                println!("Error: {:?}", e);
+                println!("STACK: {}, PC: {}, BOTTOM: {}, RET: {:?}", env.reg_stack, env.reg_pc, env.reg_bottom, env.reg_ret);
+                for i in 0..env.stack.len() {
+                    print!("STACK[{}]: {:?}", i, env.stack[i]);
+                    if i == env.reg_stack {
+                        println!(" <- STACK");
+                    } else if i == env.reg_bottom {
+                        println!(" <- BOTTOM");
+                    } else {
+                        println!();
+                    }
+                }
             }
         }
     }

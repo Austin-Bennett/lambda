@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Add, Div, Mul, Sub};
 
@@ -7,7 +8,8 @@ use std::ops::{Add, Div, Mul, Sub};
 pub enum Register {
     Bottom,
     Stack,
-    Ret
+    Ret,
+    Pc,
 }
 
 impl Debug for Register {
@@ -16,6 +18,7 @@ impl Debug for Register {
             Register::Bottom => f.write_str("BOTTOM"),
             Register::Stack => f.write_str("STACK"),
             Register::Ret => f.write_str("RET"),
+            Register::Pc => f.write_str("PC"),
         }
     }
 }
@@ -57,6 +60,16 @@ impl Debug for Value {
 }
 
 impl Value {
+    
+    #[inline]
+    pub fn to_pointer(self) -> usize {
+        match self {
+            Value::Num(n) => n as usize,
+            Value::Offset(o) => o as usize,
+            Value::Pointer(p) => p,
+            Value::Void => 0
+        }
+    }
 
     #[inline]
     pub fn bop_num<T>(self, n: f64, bop: T) -> Self
@@ -167,7 +180,7 @@ impl Div for Value {
 }
 
 #[allow(unused)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum IArg {
     Value(Value), //1.1, 2.5, etc
     Data(DataLocation)
@@ -175,38 +188,85 @@ pub enum IArg {
 
 
 #[allow(unused)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Instruction {
     Push(IArg),
     Pop(DataLocation),
+    PopN(usize),
     Store(DataLocation, IArg),
     Return,
-    Call(String),
+    Jump(usize),
+    Call(usize),
     //CallNative(fnptr) TODO
-    ADD(DataLocation, IArg),
-    SUB(DataLocation, IArg),
-    MUL(DataLocation, IArg),
-    DIV(DataLocation, IArg)
+    Add(DataLocation, IArg),
+    Sub(DataLocation, IArg),
+    Mul(DataLocation, IArg),
+    Div(DataLocation, IArg)
 }
 
-pub type Bytecode = Vec<Instruction>;
+pub struct Bytecode {
+    pub code: Vec<Instruction>,
+    pub entry: usize,
+}
+
+enum BytecodePrecomp {
+    Instruction(Instruction),
+    Call(String)
+}
 
 pub struct BytecodeBuilder {
-    result: Bytecode
+    code: Vec<BytecodePrecomp>,
+    entry: usize,
+    labels: HashMap<String, usize> //points to functions, entry is MAIN
 }
 
 impl BytecodeBuilder {
     pub fn new() -> Self {
-        Self{ result: Vec::new() }
+        Self{  code: Vec::new(), entry: usize::MAX , labels: HashMap::new() }
     }
 
-    pub fn exec(mut self, i: Instruction) -> Self {
-        self.result.push(i);
+    pub fn emit(mut self, i: Instruction) -> Self {
+
+        self.code.push(BytecodePrecomp::Instruction(i));
 
         self
     }
 
-    pub fn build(self) -> Bytecode {
-        self.result
+    //inserts the call assuming the function exists
+    pub fn call(mut self, func: impl AsRef<str>) -> Self {
+
+
+        self.code.push(BytecodePrecomp::Call(func.as_ref().to_string()));
+
+        self
+    }
+
+    pub fn decl_label(mut self, name: impl AsRef<str>) -> Self {
+        let loc = self.code.len();
+        if name.as_ref() == "main" {
+            self.entry = loc;
+        }
+        self.labels.insert(name.as_ref().to_string(), loc);
+        self
+    }
+
+    pub fn build(self) -> Result<Bytecode, String> {
+        let mut result = Bytecode{ code: Vec::new(), entry: self.entry };
+
+        for i in self.code {
+            match i {
+                BytecodePrecomp::Instruction(i) => {
+                    result.code.push(i)
+                }
+                BytecodePrecomp::Call(s) => {
+                    if let Some(n) = self.labels.get(&s) {
+                        result.code.push(Instruction::Call(*n))
+                    } else {
+                        return Err(format!("Couldnt find symbol: {}", s))
+                    }
+                }
+            }
+        }
+        Ok(result)
     }
 }

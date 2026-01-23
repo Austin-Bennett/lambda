@@ -1,17 +1,25 @@
 Registers:
+-----------------------------
 BOTTOM -> mutable, should store the bottom of the local address space, loads as 0
 STACK -> immutable, stores the position of the next free space on the stack
 RET -> mutable, stores the value that would be returned
+PC -> Program counter, stores the current bytecode index
 
 
+Operations:
+-----------------------------
 PUSH x -> pushes x onto the stack
 POP P -> pops 1 element off the stack and returns it into P (can be stack pointer, RET, or BOTTOM)
 STORE dest, src -> copies the contents of src into dest
 RETURN -> returns to the previously called function
-CALL name -> calls a function
+JUMP loc -> jumps to the desired location
+CALL loc -> calls a function at the loc index in the bytecode
 CALL_NATIVE ptr -> calls a native function (requires the function pointer)
 //arithmetic
 ADD
 SUB
 MUL
 DIV
+
+Human-readable:
+LABEL name
