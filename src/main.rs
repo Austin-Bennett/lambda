@@ -1,5 +1,5 @@
 use crate::lambda_parser::ExprNode;
-use crate::tests::{test_bytecode, test_interpreter};
+use crate::tests::{test_interpreter};
 use std::env;
 use std::io::Write;
 
