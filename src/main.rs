@@ -1,9 +1,7 @@
-use crate::lambda_parser::{constants, Env, ExprNode, Variable};
-use std::collections::HashMap;
+use crate::lambda_parser::ExprNode;
+use crate::tests::{test_bytecode, test_interpreter};
 use std::env;
 use std::io::Write;
-use std::mem::swap;
-use crate::tests::test_bytecode;
 
 mod lambda_parser;
 mod macros;
@@ -11,73 +9,91 @@ mod lambda_jit;
 mod lambda;
 
 mod tests {
-    use crate::lambda_jit::il_env;
-    use crate::lambda_jit::il_env::EnvError;
-    use crate::lambda_jit::lambda_il::{BytecodeBuilder, DataLocation, IArg, Instruction, Register, Value};
-    use crate::lambda_jit::lambda_il::Instruction::*;
     use super::*;
+    use crate::lambda::jit::compile_expr;
+    use crate::lambda::native_funcs::*;
+    use crate::lambda_jit::il_env;
+    use crate::lambda_jit::il_env::Env;
+    use crate::lambda_jit::lambda_il::Instruction::*;
+    use crate::lambda_jit::lambda_il::{BytecodeBuilder, DataLocation, IArg, Register, Value};
+    use std::io;
 
-    pub fn test_bytecode() {
 
-        //bytecode that calculates fibonacci(30)
-        let code = BytecodeBuilder::new()
-            .decl_label("fib")
-            .emit(Push(IArg::Data(DataLocation::Register(Register::Bottom))))
-            .emit(Store(DataLocation::Register(Register::Bottom), IArg::Data(DataLocation::Register(Register::Stack))))
-            .emit(Store(DataLocation::Register(Register::Ret), IArg::Value(Value::Num(1.0))))
-            .emit(Cmp(IArg::Data(DataLocation::StackRegOffset(Register::Bottom, -3)), IArg::Value(Value::Num(2.0))))
-            .jump_less("end_early")
-            //arg value is at bottom - 3
-            .emit(Push(IArg::Data(DataLocation::StackRegOffset(Register::Bottom, -3)))) //save the instruction to stack
-            .emit(Sub(DataLocation::StackRegOffset(Register::Bottom, 0), IArg::Value(Value::Num(1.0))))
-            .call("fib")
-            //clean up argument
-            .emit(PopN(1))
-            //save the return result to the stack at bottom + 0
-            .emit(Push(IArg::Data(DataLocation::Register(Register::Ret))))
-            //push the arg back onto the stack
-            .emit(Push(IArg::Data(DataLocation::StackRegOffset(Register::Bottom, -3))))
-            .emit(Sub(DataLocation::StackRegOffset(Register::Bottom, 1), IArg::Value(Value::Num(2.0))))
-            .call("fib")
-            .emit(Add(DataLocation::StackRegOffset(Register::Bottom, 0), IArg::Data(DataLocation::Register(Register::Ret))))
-            .emit(Store(DataLocation::Register(Register::Ret), IArg::Data(DataLocation::StackRegOffset(Register::Bottom, 0))))
-            .emit(PopN(2))
-            .decl_label("end_early")
-            .emit(Pop(DataLocation::Register(Register::Bottom)))
-            .emit(Return)
-            .decl_label("main")
-            .emit(Push(IArg::Value(Value::Num(30.0))))
-            .call("fib")
-            .emit(PopN(1))
-            .emit(Return)
-            .build().unwrap();
 
-        let mut env = il_env::Env::new();
-        let res;
-        let t = time! {
-            res = env.execute(&code, false);
-        };
 
-        match res {
-            Ok(v) => {
-                println!("Result: {:?} [{:?}]", v, t)
+    pub fn test_interpreter() -> ! {
+
+        let mut env = Env::new();
+
+        env.add_native_function("clear", l_clear);
+        let _ =compile_expr(&ExprNode::from_str("f(n) = if(n < 2, 1, f(n-1)+f(n-2))").unwrap(), &mut env, false);
+
+
+        let mut s = String::new();
+
+        loop {
+            env.reg_ret = Value::Void;
+            s.clear();
+            print!("> ");
+            let _ = io::stdout().flush();
+            let _ = io::stdin().read_line(&mut s);
+
+            if s.starts_with("inspect") {
+                println!("{:?}", env.dynamic_functions);
+                println!("{:?}", env.dynamic_values);
+                continue;
             }
-            Err(e) => {
-                println!("Error: {:?} [{:?}]", e, t);
-                println!("STACK: {}, PC: {}, BOTTOM: {}, RET: {:?}", env.reg_stack, env.reg_pc, env.reg_bottom, env.reg_ret);
-                for i in 0..env.stack.len() {
-                    print!("STACK[{}]: {:?}", i, env.stack[i]);
-                    if i == env.reg_stack {
-                        println!(" <- STACK");
-                    } else if i == env.reg_bottom {
-                        println!(" <- BOTTOM");
-                    } else {
-                        println!();
-                    }
+
+
+            let tree_time;
+            let expr = match {
+                let res;
+                tree_time = time!{ res = ExprNode::from_str(&s); };
+                res
+            } {
+                Ok(e) => e,
+                Err(e) => {
+                    println!("Failed to compile expression: {}", e);
+                    continue;
                 }
+            };
+
+
+            let compiled;
+
+            let ctime = time! {
+                compiled = match compile_expr(&expr, &mut env, true) {
+                    Ok(c) => match env.link(c) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            println!("Failed to link expression: {}", e);
+                            continue;
+                        }
+                    },
+                    Err(e) => {
+                        println!("Failed to compile expression: {}", e);
+                        continue;
+                    }
+                };
+            };
+
+
+
+            //println!("Compiled [entry={}]:\n{:?}", compiled.entry, compiled);
+
+            let result;
+            let time = time!{
+                result = env.execute(&compiled);
+            };
+
+            match result {
+                Ok(v) => println!("Result: {:?} [Eval: {:?}][Tree: {:?}][Compiling: {:?}]", v, time, tree_time, ctime),
+                Err(e) => println!("Failed: {:?} [Eval: {:?}][Tree: {:?}][Compiling: {:?}]", e, time, tree_time, ctime),
             }
         }
     }
+
+
 }
 
 
@@ -85,8 +101,8 @@ pub fn main() {
     let arg = &env::args().collect::<Vec<_>>()[1];
 
     match arg.as_str() {
-        "bytecode" => {
-            let _ = test_bytecode();
+        "interpreter" => {
+            let _ = test_interpreter();
         }
 
         s => eprintln!("Unknown test: {}", s),

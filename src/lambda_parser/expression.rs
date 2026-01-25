@@ -4,7 +4,7 @@ use crate::lambda_parser::{Operator, MINBP};
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter, Write};
 use std::process::abort;
-
+use rust_decimal::Decimal;
 
 #[derive(Clone, PartialOrd, PartialEq)]
 pub enum ExprNode {
@@ -12,7 +12,8 @@ pub enum ExprNode {
     BinaryOperation{op: &'static str, operands: Box<(ExprNode, ExprNode)>},
     UnaryOperation{op: &'static str, operand: Box<ExprNode>},
     Ident(String),
-    Num(f64),
+    Num(Decimal),
+    FunctionDecl{ident: String, expr: Box<ExprNode>},
     Argument(usize),
     Void,
     Error(String), //internal, shouldn't show up in the tree
@@ -21,6 +22,39 @@ pub enum ExprNode {
 
 
 impl ExprNode {
+
+
+    pub fn replace_identifier(&mut self, ident: &impl AsRef<str>, node: ExprNode) {
+        //walks the tree and replaces the corresponding identifier with the node
+        match self {
+            ExprNode::CallOperation { caller, args } => {
+                caller.replace_identifier(ident, node.clone());
+                for n in args {
+                    n.replace_identifier(ident, node.clone());
+                }
+            }
+            ExprNode::BinaryOperation { op, operands } => {
+                operands.0.replace_identifier(ident, node.clone());
+                operands.1.replace_identifier(ident, node.clone());
+            }
+            ExprNode::UnaryOperation { op, operand } => {
+                operand.replace_identifier(ident, node)
+            }
+            ExprNode::Ident(id) => {
+                if id == ident.as_ref() {
+                    *self = node;
+                }
+            }
+            ExprNode::Num(_) => {}
+            ExprNode::FunctionDecl { expr, .. } => {
+                expr.replace_identifier(ident, node)
+            }
+            ExprNode::Argument(_) => {}
+            ExprNode::Void => {}
+            Error(_) => {}
+        }
+
+    }
 
     #[allow(dead_code)]
     pub fn not_eof(self) -> Result<Self, String> {
@@ -93,8 +127,32 @@ impl ExprNode {
                 }
                 //call operation
                 Token::ParenthesesGroup(_) => {
-                    if let Some(Token::ParenthesesGroup(mut tks)) = tks.pop_front() {
-                        CallOperation { caller: Box::new(lhs), args: Self::parse_call(&mut tks)? }
+                    if let Some(Token::ParenthesesGroup(mut arg_tks)) = tks.pop_front() {
+                        let args = Self::parse_call(&mut arg_tks)?;
+                        // check if the next token is '=', if so, this is (probably) a function declaration
+                        if let ExprNode::Ident(id) = &mut lhs &&
+                            let Some(Token::Operator(Operator{ token: "=", bp })) = tks.front() {
+                            tks.pop_front();
+
+                            let mut argvec = Vec::new();
+                            for a in args {
+                                if let ExprNode::Ident(s) = a {
+                                    argvec.push(s);
+                                } else {
+                                    return Err(format!("Expected identifier for function argument, got {:?}", a));
+                                }
+                            }
+
+                            let mut rhs = Self::make(tks, f32::NEG_INFINITY)?;
+
+                            for (i, a) in argvec.iter().enumerate() {
+                                rhs.replace_identifier(a, ExprNode::Argument(argvec.len()-i-1))
+                            }
+
+                            ExprNode::FunctionDecl { ident: std::mem::replace(id, String::new()), expr: Box::new(rhs) }
+                        } else {
+                            CallOperation { caller: Box::new(lhs), args }
+                        }
                     } else {
                         abort(); //shouldn't ever happen
                     }
@@ -132,7 +190,8 @@ impl Debug for ExprNode {
             ExprNode::Num(n) => f.write_str(n.to_string().as_str()),
             Error(s) => write!(f, "(Error: {})", s),
             ExprNode::Void => f.write_str("void"),
-            ExprNode::Argument(u) => write!(f, "Argument({})", u)
+            ExprNode::Argument(u) => write!(f, "Argument({})", u),
+            ExprNode::FunctionDecl { ident, expr } => write!(f, "{}() = {:?}", ident, expr),
         }
     }
 }

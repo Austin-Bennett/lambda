@@ -1,8 +1,9 @@
 use lazy_static::lazy_static;
+use rust_decimal::Decimal;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
-
+use std::str::FromStr;
 
 #[derive(Copy, Clone, PartialOrd, PartialEq)]
 pub enum BindingPower {
@@ -65,7 +66,7 @@ pub fn get_operator(st: &str) -> Option<(usize, Operator)> {
     None
 }
 
-pub fn get_number(st: &str) -> Option<(usize, f64)> {
+pub fn get_number(st: &str) -> Option<(usize, Decimal)> {
 
 
     //consume all numbers, and 1 optional decimal
@@ -90,8 +91,8 @@ pub fn get_number(st: &str) -> Option<(usize, f64)> {
 
 
     if res.len() > 0 {
-        let val = res.parse().unwrap();
-        Some((res.len(), if prcnt { val / 100.0 } else { val }))
+        let val = Decimal::from_str(&res).unwrap();
+        Some((res.len(), if prcnt { val / Decimal::new(100, 1) } else { val }))
     } else {
         None
     }
@@ -121,7 +122,7 @@ pub fn get_identifier(st: &str) -> Option<(usize, String)> {
 #[derive(Clone)]
 pub enum Token {
     Ident(String),
-    Num(f64),
+    Num(Decimal),
     Operator(Operator),
     ParenthesesGroup(VecDeque<Token>)
 }

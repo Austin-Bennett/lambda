@@ -1,21 +1,31 @@
 pub mod tokenization;
 pub mod expression;
-pub mod variables;
-pub mod constants;
 
+use std::cmp::{Ordering, PartialOrd};
+use std::str::FromStr;
+use lazy_static::lazy_static;
+use rust_decimal::Decimal;
 pub use expression::*;
 pub use tokenization::*;
-pub use variables::*;
 
-const EPSILON: f64 = 1e-15;
-
-pub trait FloatHelpers {
-    fn equates(self, other: Self) -> bool;
+lazy_static!{
+    pub static ref EPSILON: Decimal = Decimal::from_str("0.0000000000000000000000000001").unwrap();
 }
 
-impl FloatHelpers for f64 {
-    fn equates(self, other: Self) -> bool {
-        (self - other).abs() < EPSILON
+pub trait FloatHelpers {
+    fn equates(&self, other: Self) -> bool;
+    fn is_zero(&self) -> bool;
+}
+
+
+
+impl FloatHelpers for Decimal {
+    fn equates(&self, other: Self) -> bool {
+        (self - other).abs() <= *EPSILON
+    }
+
+    fn is_zero(&self) -> bool {
+        self.abs() <= *EPSILON
     }
 }
 

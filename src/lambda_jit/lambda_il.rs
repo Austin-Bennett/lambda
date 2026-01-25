@@ -1,6 +1,10 @@
 use std::collections::HashMap;
-use std::fmt::{Debug, Display, Formatter, Write};
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Add, Div, Mul, Sub};
+use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
+use crate::lambda_jit::il_env::Env;
+
 
 
 #[allow(unused)]
@@ -9,6 +13,7 @@ pub enum Register {
     Bottom,
     Stack,
     Ret,
+    Aux,
     Pc,
     Cmp,
 }
@@ -19,6 +24,7 @@ impl Debug for Register {
             Register::Bottom => f.write_str("BOTTOM"),
             Register::Stack => f.write_str("STACK"),
             Register::Ret => f.write_str("RET"),
+            Register::Aux => f.write_str("AUX"),
             Register::Pc => f.write_str("PC"),
             Register::Cmp => f.write_str("CMP"),
         }
@@ -36,17 +42,20 @@ pub enum DataLocation {
 
 #[derive(Copy, Clone)]
 pub enum Value {
-    Num(f64),
+    Num(Decimal),
     Offset(isize),
     Pointer(usize),
     Void
 }
 
+
+
 impl Debug for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Value::Num(n) => {
-                f.write_str(n.to_string().as_str())
+                //let l = n.clone().fract().to_string().len();
+                write!(f, "{}", n)
             }
             Value::Offset(n) => {
                 f.write_str(n.to_string().as_str())
@@ -63,11 +72,22 @@ impl Debug for Value {
 }
 
 impl Value {
+
+    #[inline]
+    pub fn num<T>(val: T) -> Self
+    where Decimal: From<T>{
+        Self::Num(Decimal::from(val))
+    }
+
+    #[inline]
+    pub fn numf64(val: f64) -> Self {
+        Self::Num(Decimal::from_f64_retain(val).unwrap())
+    }
     
     #[inline]
     pub fn to_pointer(self) -> usize {
         match self {
-            Value::Num(n) => n as usize,
+            Value::Num(n) => n.to_usize().unwrap(),
             Value::Offset(o) => o as usize,
             Value::Pointer(p) => p,
             Value::Void => 0
@@ -75,12 +95,22 @@ impl Value {
     }
 
     #[inline]
-    pub fn bop_num<T>(self, n: f64, bop: T) -> Self
-    where T: Fn(f64, f64) -> f64 {
+    pub fn to_number(self) -> Decimal {
+        match self {
+            Value::Num(n) => n,
+            Value::Offset(o) => Decimal::from(o),
+            Value::Pointer(p) => Decimal::from(p),
+            Value::Void => Decimal::new(0, 0)
+        }
+    }
+
+    #[inline]
+    pub fn bop_num<T>(self, n: Decimal, bop: T) -> Self
+    where T: Fn(Decimal, Decimal) -> Decimal {
         match self {
             Value::Num(n1) => Value::Num(bop(n1, n)),
-            Value::Offset(i) => Value::Num(bop(i as f64, n)),
-            Value::Pointer(u) => Value::Num(bop(u as f64, n)),
+            Value::Offset(i) => Value::Num(bop(Decimal::from(i), n)),
+            Value::Pointer(u) => Value::Num(bop(Decimal::from(u), n)),
             Value::Void => Value::Num(n),
         }
     }
@@ -90,7 +120,7 @@ impl Value {
     pub fn bop_offset<T>(self, n: isize, bop: T) -> Self
     where T: Fn(isize, isize) -> isize {
         match self {
-            Value::Num(n1) => Value::Offset(bop(n1 as isize, n)),
+            Value::Num(n1) => Value::Offset(bop(n1.to_isize().unwrap(), n)),
             Value::Offset(i) => Value::Offset(bop(i, n)),
             Value::Pointer(u) => Value::Offset(bop(u as isize, n)),
             Value::Void => Value::Offset(n),
@@ -102,19 +132,19 @@ impl Value {
     pub fn bop_pointer<T>(self, n: usize, bop: T) -> Self
     where T: Fn(usize, usize) -> usize {
         match self {
-            Value::Num(n1) => Value::Pointer(bop(n1 as usize, n)),
+            Value::Num(n1) => Value::Pointer(bop(n1.to_usize().unwrap(), n)),
             Value::Offset(i) => Value::Pointer(bop(i as usize, n)),
             Value::Pointer(u) => Value::Pointer(bop(u, n)),
             Value::Void => Value::Pointer(n),
         }
     }
 
-    pub fn val(&self) -> f64 {
+    pub fn val(&self) -> Decimal {
         match self {
-            Value::Num(n) => *n,
-            Value::Offset(i) => *i as f64,
-            Value::Pointer(u) => *u as f64,
-            Value::Void => 0.0
+            Value::Num(n) => n.clone(),
+            Value::Offset(i) => Decimal::from(*i),
+            Value::Pointer(u) => Decimal::from(*u),
+            Value::Void => Decimal::new(0, 0)
         }
     }
 }
@@ -209,19 +239,31 @@ pub enum Instruction {
     Cmp(IArg, IArg),
     Jump(usize),
     JumpZ(usize),
+    JumpNZ(usize),
     JumpL(usize),
     Call(usize),
     CallDynamic(String),
-    //CallNative(fnptr) TODO
+    CallNative(fn(&mut Env) -> ()),
     Add(DataLocation, IArg),
     Sub(DataLocation, IArg),
     Mul(DataLocation, IArg),
     Div(DataLocation, IArg)
 }
 
+#[derive(Clone)]
 pub struct Bytecode {
     pub code: Vec<Instruction>,
     pub entry: usize,
+}
+
+impl Debug for Bytecode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        for (i, j) in self.code.iter().enumerate() {
+            write!(f, "{}: {:?}\n", i, j)?;
+        }
+
+        Ok(())
+    }
 }
 
 enum BytecodePrecomp {
@@ -229,6 +271,7 @@ enum BytecodePrecomp {
     Call(String),
     Jump(String),
     JumpZero(String),
+    JumpNotZero(String),
     JumpLess(String),
 }
 
@@ -240,7 +283,28 @@ pub struct BytecodeBuilder {
 
 impl BytecodeBuilder {
     pub fn new() -> Self {
-        Self{  code: Vec::new(), entry: usize::MAX , labels: HashMap::new() }
+        Self{  code: Vec::new(), entry: 0, labels: HashMap::new() }
+    }
+
+    pub fn add_code(mut self, mut code: Bytecode) -> Self {
+        let label_offsets = self.code.len();
+
+        for mut i in code.code {
+            match &mut i {
+                Instruction::Call(u) |
+                Instruction::Jump(u) |
+                Instruction::JumpL(u) |
+                Instruction::JumpNZ(u) |
+                Instruction::JumpZ(u) => {
+                    *u += label_offsets;
+                }
+                _ => {}
+            }
+
+            self.code.push(BytecodePrecomp::Instruction(i))
+        }
+
+        self
     }
 
     pub fn emit(mut self, i: Instruction) -> Self {
@@ -267,6 +331,12 @@ impl BytecodeBuilder {
 
     pub fn jump_zero(mut self, label: impl AsRef<str>) -> Self {
         self.code.push(BytecodePrecomp::JumpZero(label.as_ref().to_string()));
+
+        self
+    }
+
+    pub fn jump_not_zero(mut self, label: impl AsRef<str>) -> Self {
+        self.code.push(BytecodePrecomp::JumpNotZero(label.as_ref().to_string()));
 
         self
     }
@@ -318,6 +388,13 @@ impl BytecodeBuilder {
                 BytecodePrecomp::JumpLess(s) => {
                     if let Some(n) = self.labels.get(&s) {
                         result.code.push(Instruction::JumpL(*n))
+                    } else {
+                        return Err(format!("Couldnt find symbol: {}", s))
+                    }
+                }
+                BytecodePrecomp::JumpNotZero(s) => {
+                    if let Some(n) = self.labels.get(&s) {
+                        result.code.push(Instruction::JumpNZ(*n))
                     } else {
                         return Err(format!("Couldnt find symbol: {}", s))
                     }
