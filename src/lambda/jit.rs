@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::ops::{Deref, Mul};
 use crate::lambda_jit::il_env::Env;
 use crate::lambda_jit::lambda_il::{Bytecode, BytecodeBuilder, DataLocation, IArg, Instruction, Register, Value};
 use crate::lambda_parser::ExprNode;
@@ -10,27 +10,42 @@ pub fn compile_expr(expr: &ExprNode, env: &mut Env, is_func: bool) -> Result<Byt
     let mut builder = BytecodeBuilder::new();
 
     if is_func {
-        builder = builder
+        builder
         .emit(Instruction::Push(IArg::Data(DataLocation::Register(Register::Bottom))))
             .emit(Instruction::Store(DataLocation::Register(Register::Bottom), IArg::Data(DataLocation::Register(Register::Stack))));
     }
     let mut label = 0;
 
-    builder = compile_node(expr, builder, &mut label, env, is_func)?;
+
+    let v = compile_node(expr, &mut builder, &mut label, env, is_func, &DataLocation::Register(Register::Ret))?;
+    if let Some(v) = v {
+        builder.emit(Instruction::Store(DataLocation::Register(Register::Ret), IArg::Value(v)));
+    }
 
     if is_func {
-        builder = builder
+        builder
             .emit(Instruction::Pop(DataLocation::Register(Register::Bottom)))
             .emit(Instruction::Return);
     }
     builder.build()
 }
 
-fn compile_node(expr: &ExprNode, mut bc: BytecodeBuilder, label: &mut i32, env: &mut Env, is_func: bool) -> Result<BytecodeBuilder, String> {
+
+
+
+
+
+fn compile_node<'a>(expr: &ExprNode,
+                    bc: &'a mut BytecodeBuilder,
+                    label: &mut i32,
+                    env: &mut Env,
+                    is_func: bool,
+                    output: &DataLocation
+) -> Result<Option<Value>, String> {
     match expr {
         ExprNode::Argument(u) => {
-            bc = bc
-                .emit(Instruction::Store(DataLocation::Register(Register::Ret), IArg::Data(DataLocation::StackRegOffset(Register::Bottom, -3 - (*u as isize)))))
+            bc
+                .emit(Instruction::Store(output.clone(), IArg::Data(DataLocation::StackBottomOffset(-3 - (*u as isize)))));
         }
         ExprNode::CallOperation { caller, args } => {
             if let ExprNode::Ident(s) = &**caller {
@@ -40,7 +55,7 @@ fn compile_node(expr: &ExprNode, mut bc: BytecodeBuilder, label: &mut i32, env: 
                     "if" => {
                         //expect 3 arguments
                         if args.len() != 3 {
-                            return Err("Expected if statement to have 3 parameter!".to_string());
+                            return Err("Expected if statement to have 3 parameters!".to_string());
                         }
 
                         let fl = label.to_string();
@@ -51,29 +66,48 @@ fn compile_node(expr: &ExprNode, mut bc: BytecodeBuilder, label: &mut i32, env: 
                         //compile the first to be used as the determinant
                         //store the result in compare
                         //use that to determine where to jump
-                        bc = compile_node(&args[0], bc, label, env, is_func)?
-                            .emit(Instruction::Store(DataLocation::Register(Register::Cmp), IArg::Data(DataLocation::Register(Register::Ret))))
-                            .jump_zero(&fl);
+                        let v = compile_node(&args[0], bc, label, env, is_func, &DataLocation::Register(Register::Cmp))?;
 
-                        bc = compile_node(&args[1], bc, label, env, is_func)?
-                            .jump(&el)
+
+                        if let Some(v) = v {
+                            bc.emit(Instruction::Store(DataLocation::Register(Register::Cmp), IArg::Value(v)));
+                        }
+
+                        bc.jump_zero(&fl);
+
+                        let v = compile_node(&args[1], bc, label, env, is_func, output)?;
+
+                        if let Some(v) = v {
+                            bc.emit(Instruction::Store(output.clone(), IArg::Value(v)));
+                        }
+
+                            bc.jump(&el)
                             .decl_label(&fl);
 
-                        bc = compile_node(&args[2], bc, label, env, is_func)?;
+                        let v = compile_node(&args[2], bc, label, env, is_func, output)?;
 
-                        bc = bc.decl_label(&el);
+                        if let Some(v) = v {
+                            bc.emit(Instruction::Store(output.clone(), IArg::Value(v)));
+                        }
+
+                        bc.decl_label(&el);
                     }
 
                     //default:
                     s => {
                         //push all the arguments
                         for i in args {
-                            bc = compile_node(i, bc, label, env, is_func)?
-                                .emit(Instruction::Push(IArg::Data(DataLocation::Register(Register::Ret))));
+                            let v = compile_node(i, bc, label, env, is_func, output)?;
+                            //push to stack
+                            if let Some(v) = v{
+                                bc.emit(Instruction::Push(IArg::Value(v)));
+                            } else {
+                                bc.emit(Instruction::Push(IArg::Data(output.clone())));
+                            }
                         }
 
                         //now call the dynamic function
-                        bc = bc
+                        bc
                             .emit(Instruction::CallDynamic(s.to_string()))
                             //we need to pop all the arguments off the stack
                             .emit(Instruction::PopN(args.len()));
@@ -87,16 +121,29 @@ fn compile_node(expr: &ExprNode, mut bc: BytecodeBuilder, label: &mut i32, env: 
                     return Err("Can only multiply expression with 1 argument when using call syntax".to_string())
                 }
                 //compile the rhs
-                bc = compile_node(&args[0], bc, label, env, is_func)?;
-                //push rhs
-                bc = bc.emit(Instruction::Push(IArg::Data(DataLocation::Register(Register::Ret))));
+                let v = compile_node(&args[0], bc, label, env, is_func, output)?;
+
+                //allocate the rhs
+                let (rhs, pop) = if let Some(v) = v {
+                    (IArg::Value(v), false)
+                } else {
+                    bc.emit(Instruction::Push(IArg::Data(output.clone())));
+                    (IArg::Data(DataLocation::StackStackOffset(-1)), true)
+                };
 
                 //compile the lhs (the caller)
-                bc = compile_node(caller.as_ref(), bc, label, env, is_func)?
+                let v = compile_node(caller.as_ref(), bc, label, env, is_func, output)?;
+
+
                 //multiply
-                    .emit(Instruction::Mul(DataLocation::Register(Register::Ret), IArg::Data(DataLocation::StackRegOffset(Register::Stack, -1))))
-                //pop
-                    .emit(Instruction::PopN(1));
+                if let Some(v) = v {
+                    bc.emit(Instruction::Store(output.clone(), IArg::Value(v)));
+                }
+
+                //multiply
+                bc.emit(Instruction::Mul(output.clone(), rhs));
+                if pop { bc.emit(Instruction::PopN(1)); }
+
             }
         }
         ExprNode::BinaryOperation { op, operands } => {
@@ -104,88 +151,182 @@ fn compile_node(expr: &ExprNode, mut bc: BytecodeBuilder, label: &mut i32, env: 
 
             let rhs = &operands.1;
 
-            bc = compile_node(rhs, bc, label, env, is_func)?
-                .emit(Instruction::Push(IArg::Data(DataLocation::Register(Register::Ret))));
 
-            bc = compile_node(lhs, bc, label, env, is_func)?;
+
+            let v =  compile_node(rhs, bc, label, env, is_func, output)?;
+
+
+
+            let (rhs, pop) = if let Some(v) = v {
+                (IArg::Value(v), false)
+            } else {
+                //push to stack
+                bc.emit(Instruction::Push(IArg::Data(output.clone())));
+                (IArg::Data(DataLocation::StackStackOffset(-1)), true)
+            };
+
+            if let ExprNode::Ident(s) = lhs && *op == "=" {
+                bc.emit(Instruction::Store(DataLocation::Dynamic(s.clone()), rhs));
+                if pop {
+                    bc.emit(Instruction::PopN(1));
+                }
+                return Ok(None)
+            }
+
+            let v =  compile_node(lhs, bc, label, env, is_func, output)?;
+
+            if let Some(v) = v {
+                bc.emit(Instruction::Store(output.clone(), IArg::Value(v)));
+            }
 
             //emit the compare instruction if this is a comparison
-            if *op == "<" || *op == "==" {
-                bc = bc
-                    .emit(Instruction::Cmp(IArg::Data(DataLocation::Register(Register::Ret)),
-                        IArg::Data(DataLocation::StackRegOffset(Register::Stack, -1))));
+            if *op == "<" || *op == "<=" || *op == ">" || *op == ">=" || *op == "==" || *op == "!=" {
+                bc
+                    .emit(Instruction::Cmp(IArg::Data(output.clone()),
+                        rhs.clone()));
             }
 
             match *op {
                 "+" => {
-                    bc = bc
-                        .emit(Instruction::Add(DataLocation::Register(Register::Ret),
-                                               IArg::Data(DataLocation::StackRegOffset(Register::Stack, -1))));
+                    bc
+                        .emit(Instruction::Add(output.clone(),
+                                               rhs));
                 },
                 "-" => {
-                    bc = bc
-                        .emit(Instruction::Sub(DataLocation::Register(Register::Ret),
-                                               IArg::Data(DataLocation::StackRegOffset(Register::Stack, -1))));
+                    bc
+                        .emit(Instruction::Sub(output.clone(),
+                                               rhs));
                 },
                 "*" => {
-                    bc = bc
-                        .emit(Instruction::Mul(DataLocation::Register(Register::Ret),
-                                               IArg::Data(DataLocation::StackRegOffset(Register::Stack, -1))));
+                    bc
+                        .emit(Instruction::Mul(output.clone(),
+                                               rhs));
                 },
                 "/" => {
-                    bc = bc
-                        .emit(Instruction::Div(DataLocation::Register(Register::Ret),
-                                               IArg::Data(DataLocation::StackRegOffset(Register::Stack, -1))));
+                    bc
+                        .emit(Instruction::Div(output.clone(),
+                                               rhs));
                 },
 
                 "<" => {
-                    let l = label.to_string();
+                    let less = label.to_string();
                     *label += 1;
-                    bc = bc
-                        .emit(Instruction::Store(DataLocation::Register(Register::Ret),
-                                                IArg::Value(Value::numf64(1.0))))
-                        .jump_less(l.clone())
-                        .emit(Instruction::Store(DataLocation::Register(Register::Ret),
-                                                IArg::Value(Value::numf64(0.0))))
-                        .decl_label(l)
+                    let end = label.to_string();
+                    *label += 1;
+                    bc
+                        .jump_less(&less)
+                        .emit(Instruction::Store(output.clone(), IArg::Value(Value::numf64(0.0))))
+                        .jump(&end)
+                        .decl_label(less)
+                        .emit(Instruction::Store(output.clone(), IArg::Value(Value::numf64(1.0))))
+                        .decl_label(end)
+                    ;
+                }
+                ">" => {
+                    let greater = label.to_string();
+                    *label += 1;
+                    let end = label.to_string();
+                    *label += 1;
+                    bc
+                        .jump_greater(&greater)
+                        .emit(Instruction::Store(output.clone(), IArg::Value(Value::numf64(0.0))))
+                        .jump(&end)
+                        .decl_label(greater)
+                        .emit(Instruction::Store(output.clone(), IArg::Value(Value::numf64(1.0))))
+                        .decl_label(end)
+                    ;
+                }
+                "<=" => {
+                    let less = label.to_string();
+                    *label += 1;
+                    let end = label.to_string();
+                    *label += 1;
+                    bc
+                        .jump_less_eq(&less)
+                        .emit(Instruction::Store(output.clone(), IArg::Value(Value::numf64(0.0))))
+                        .jump(&end)
+                        .decl_label(less)
+                        .emit(Instruction::Store(output.clone(), IArg::Value(Value::numf64(1.0))))
+                        .decl_label(end)
+                    ;
+                }
+                ">=" => {
+                    let greater = label.to_string();
+                    *label += 1;
+                    let end = label.to_string();
+                    *label += 1;
+                    bc
+                        .jump_greater_eq(&greater)
+                        .emit(Instruction::Store(output.clone(), IArg::Value(Value::numf64(0.0))))
+                        .jump(&end)
+                        .decl_label(greater)
+                        .emit(Instruction::Store(output.clone(), IArg::Value(Value::numf64(1.0))))
+                        .decl_label(end)
                     ;
                 }
                 "==" => {
-                    let l = label.to_string();
+                    let eq = label.to_string();
                     *label += 1;
-                    bc = bc
-                        .emit(Instruction::Store(DataLocation::Register(Register::Ret),
-                                                 IArg::Value(Value::numf64(1.0))))
-                        .jump_zero(l.clone())
-                        .emit(Instruction::Store(DataLocation::Register(Register::Ret),
-                                                 IArg::Value(Value::numf64(0.0))))
-                        .decl_label(l)
+                    let end = label.to_string();
+                    *label += 1;
+                    bc
+                        .jump_zero(&eq)
+                        .emit(Instruction::Store(output.clone(), IArg::Value(Value::numf64(0.0))))
+                        .jump(&end)
+                        .decl_label(eq)
+                        .emit(Instruction::Store(output.clone(), IArg::Value(Value::numf64(1.0))))
+                        .decl_label(end)
+                    ;
+                }
+                "!=" => {
+                    let neq = label.to_string();
+                    *label += 1;
+                    let end = label.to_string();
+                    *label += 1;
+                    bc
+                        .jump_not_zero(&neq)
+                        .emit(Instruction::Store(output.clone(), IArg::Value(Value::numf64(0.0))))
+                        .jump(&end)
+                        .decl_label(neq)
+                        .emit(Instruction::Store(output.clone(), IArg::Value(Value::numf64(1.0))))
+                        .decl_label(end)
                     ;
                 }
 
+
                 o => return Err(format!("Unknown operator: {}", o))
             }
-            //once we've done the operation we need to pop from the stack
-            bc = bc.emit(Instruction::PopN(1))
+            if pop {
+                bc.emit(Instruction::PopN(1));
+            }
         }
         ExprNode::UnaryOperation { op, operand } => {
-            bc = compile_node(operand.as_ref(), bc, label, env, is_func)?;
+            let v = compile_node(operand.as_ref(), bc, label, env, is_func, output)?;
+            if let Some(mut v) = v {
+                return match *op {
+                    "-" => {
+                        v = v.mul(Value::numf64(-1.0));
+                        Ok(Some(v))
+                    }
+                    "+" => { Ok(Some(v)) },
+                    s => Err(format!("Unknown unary operator: {}", s))
+                }
+            }
             match *op {
                 "-" => {
-                    bc = bc
-                        .emit(Instruction::Mul(DataLocation::Register(Register::Ret), IArg::Value(Value::numf64(-1.0))));
+                    bc
+                        .emit(Instruction::Mul(output.clone(), IArg::Value(Value::numf64(-1.0))));
                 }
                 "+" => {},
-                s => return Err(format!("Unknown operator: {}", s))
+                s => return Err(format!("Unknown unary operator: {}", s))
             }
         }
         ExprNode::Ident(id) => {
-            bc = bc
-                .emit(Instruction::Store(DataLocation::Register(Register::Ret), IArg::Data(DataLocation::Dynamic(id.clone()))));
+            bc
+                .emit(Instruction::Store(output.clone(), IArg::Data(DataLocation::Dynamic(id.clone()))));
         }
         ExprNode::Num(n) => {
-            bc = bc
-                .emit(Instruction::Store(DataLocation::Register(Register::Ret), IArg::Value(Value::Num(n.clone()))))
+            return Ok( Some(Value::Num(*n)))
         }
         ExprNode::Void => {}
         ExprNode::Error(e) => return Err(e.clone()),
@@ -195,32 +336,46 @@ fn compile_node(expr: &ExprNode, mut bc: BytecodeBuilder, label: &mut i32, env: 
         }
     }
 
-    Ok(bc)
+    Ok(None)
 }
 
 impl Env {
     //replaces dynamic calls with static calls
     pub fn link(&self, main: Bytecode) -> Result<Bytecode, String> {
         let mut builder = BytecodeBuilder::new();
-        
-        //first add all dynamic functions inside us
-        for (i, bc) in &self.dynamic_functions {
-            builder = builder
-                .decl_label(&i)
-                .add_code(bc.deref().clone());
+
+        let mut dyns = Vec::new();
+        //figure out what dynamic functions we need
+        for i in &main.code {
+            if let Instruction::CallDynamic(s) = i {
+                dyns.push(s);
+            }
         }
         
-        builder = builder.decl_label("main");
+
+        for i in dyns {
+
+            if let Some(bc) = self.dynamic_functions.get(i)
+            {
+                builder
+                    .decl_label(&i)
+                    .add_code(bc.deref().clone(), true);
+            }
+        }
+        
+        builder.decl_label("main");
         
         
         //link with main
         for i in main.code {
             if let Instruction::CallDynamic(s) = i {
-                builder = builder.call(s);
+                builder.call(s);
             } else {
-                builder = builder.emit(i);
+                builder.emit(i);
             }
         }
+        
+        
         
         builder.build()
     }

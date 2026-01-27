@@ -9,13 +9,18 @@ use crate::lambda_jit::il_env::Env;
 
 #[allow(unused)]
 #[derive(Copy, Clone)]
+#[derive(PartialEq)]
 pub enum Register {
     Bottom,
     Stack,
     Ret,
-    Aux,
     Pc,
     Cmp,
+    R1,
+    R2,
+    R3,
+    R4,
+    R5,
 }
 
 impl Debug for Register {
@@ -24,19 +29,26 @@ impl Debug for Register {
             Register::Bottom => f.write_str("BOTTOM"),
             Register::Stack => f.write_str("STACK"),
             Register::Ret => f.write_str("RET"),
-            Register::Aux => f.write_str("AUX"),
             Register::Pc => f.write_str("PC"),
             Register::Cmp => f.write_str("CMP"),
+            Register::R1 => f.write_str("R1"),
+            Register::R2 => f.write_str("R2"),
+            Register::R3 => f.write_str("R3"),
+            Register::R4 => f.write_str("R4"),
+            Register::R5 => f.write_str("R5"),
         }
     }
 }
 
 #[allow(unused)]
 #[derive(Clone, Debug)]
+#[derive(PartialEq)]
 pub enum DataLocation {
     Register(Register), //REG
     StackOffset(usize), //[isize]
     StackRegOffset(Register, isize), //[REG + isize]
+    StackBottomOffset(isize),
+    StackStackOffset(isize),
     Dynamic(String),
 }
 
@@ -73,18 +85,18 @@ impl Debug for Value {
 
 impl Value {
 
-    #[inline]
+    #[inline(always)]
     pub fn num<T>(val: T) -> Self
     where Decimal: From<T>{
         Self::Num(Decimal::from(val))
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn numf64(val: f64) -> Self {
         Self::Num(Decimal::from_f64_retain(val).unwrap())
     }
     
-    #[inline]
+    #[inline(always)]
     pub fn to_pointer(self) -> usize {
         match self {
             Value::Num(n) => n.to_usize().unwrap(),
@@ -94,48 +106,13 @@ impl Value {
         }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn to_number(self) -> Decimal {
         match self {
             Value::Num(n) => n,
             Value::Offset(o) => Decimal::from(o),
             Value::Pointer(p) => Decimal::from(p),
             Value::Void => Decimal::new(0, 0)
-        }
-    }
-
-    #[inline]
-    pub fn bop_num<T>(self, n: Decimal, bop: T) -> Self
-    where T: Fn(Decimal, Decimal) -> Decimal {
-        match self {
-            Value::Num(n1) => Value::Num(bop(n1, n)),
-            Value::Offset(i) => Value::Num(bop(Decimal::from(i), n)),
-            Value::Pointer(u) => Value::Num(bop(Decimal::from(u), n)),
-            Value::Void => Value::Num(n),
-        }
-    }
-
-
-    #[inline]
-    pub fn bop_offset<T>(self, n: isize, bop: T) -> Self
-    where T: Fn(isize, isize) -> isize {
-        match self {
-            Value::Num(n1) => Value::Offset(bop(n1.to_isize().unwrap(), n)),
-            Value::Offset(i) => Value::Offset(bop(i, n)),
-            Value::Pointer(u) => Value::Offset(bop(u as isize, n)),
-            Value::Void => Value::Offset(n),
-        }
-    }
-
-
-    #[inline]
-    pub fn bop_pointer<T>(self, n: usize, bop: T) -> Self
-    where T: Fn(usize, usize) -> usize {
-        match self {
-            Value::Num(n1) => Value::Pointer(bop(n1.to_usize().unwrap(), n)),
-            Value::Offset(i) => Value::Pointer(bop(i as usize, n)),
-            Value::Pointer(u) => Value::Pointer(bop(u, n)),
-            Value::Void => Value::Pointer(n),
         }
     }
 
@@ -149,35 +126,16 @@ impl Value {
     }
 }
 
-#[inline]
-fn gadd<T: Add<Output=T>>(a: T, b: T) -> T {
-    a + b
-}
-
-#[inline]
-fn gsub<T: Sub<Output=T>>(a: T, b: T) -> T {
-    a - b
-}
-
-#[inline]
-fn gmul<T: Mul<Output=T>>(a: T, b: T) -> T {
-    a * b
-}
-
-#[inline]
-fn gdiv<T: Div<Output=T>>(a: T, b: T) -> T {
-    a / b
-}
 
 impl Add for Value {
     type Output = Self;
 
+    #[inline(always)]
     fn add(self, rhs: Self) -> Self::Output {
-        match rhs {
-            Value::Num(n) => self.bop_num(n, &gadd),
-            Value::Offset(o) => self.bop_offset(o, &gadd),
-            Value::Pointer(p) => self.bop_pointer(p, &gadd),
-            Value::Void => self
+        if let Value::Num(n1) = self && let Value::Num(n2) = rhs {
+            Self::Num(n1 + n2)
+        } else {
+            Self::Void
         }
     }
 }
@@ -185,12 +143,12 @@ impl Add for Value {
 impl Sub for Value {
     type Output = Self;
 
+    #[inline(always)]
     fn sub(self, rhs: Self) -> Self::Output {
-        match rhs {
-            Value::Num(n) => self.bop_num(n, &gsub),
-            Value::Offset(o) => self.bop_offset(o, &gsub),
-            Value::Pointer(p) => self.bop_pointer(p, &gsub),
-            Value::Void => self
+        if let Value::Num(n1) = self && let Value::Num(n2) = rhs {
+            Self::Num(n1 - n2)
+        } else {
+            Self::Void
         }
     }
 }
@@ -198,24 +156,25 @@ impl Sub for Value {
 impl Mul for Value {
     type Output = Self;
 
+    #[inline(always)]
     fn mul(self, rhs: Self) -> Self::Output {
-        match rhs {
-            Value::Num(n) => self.bop_num(n, &gmul),
-            Value::Offset(o) => self.bop_offset(o, &gmul),
-            Value::Pointer(p) => self.bop_pointer(p, &gmul),
-            Value::Void => self
+        if let Value::Num(n1) = self && let Value::Num(n2) = rhs {
+            Self::Num(n1 * n2)
+        } else {
+            Self::Void
         }
     }
 }
 
 impl Div for Value {
     type Output = Self;
+
+    #[inline(always)]
     fn div(self, rhs: Self) -> Self::Output {
-        match rhs {
-            Value::Num(n) => self.bop_num(n, &gdiv),
-            Value::Offset(o) => self.bop_offset(o, &gdiv),
-            Value::Pointer(p) => self.bop_pointer(p, &gdiv),
-            Value::Void => self
+        if let Value::Num(n1) = self && let Value::Num(n2) = rhs {
+            Self::Num(n1 / n2)
+        } else {
+            Self::Void
         }
     }
 }
@@ -231,6 +190,7 @@ pub enum IArg {
 #[allow(unused)]
 #[derive(Clone, Debug)]
 pub enum Instruction {
+    Nop,
     Push(IArg),
     Pop(DataLocation),
     PopN(usize),
@@ -241,6 +201,9 @@ pub enum Instruction {
     JumpZ(usize),
     JumpNZ(usize),
     JumpL(usize),
+    JumpG(usize),
+    JumpLE(usize),
+    JumpGE(usize),
     Call(usize),
     CallDynamic(String),
     CallNative(fn(&mut Env) -> ()),
@@ -273,6 +236,9 @@ enum BytecodePrecomp {
     JumpZero(String),
     JumpNotZero(String),
     JumpLess(String),
+    JumpGreater(String),
+    JumpLessEq(String),
+    JumpGreatEq(String),
 }
 
 pub struct BytecodeBuilder {
@@ -286,7 +252,7 @@ impl BytecodeBuilder {
         Self{  code: Vec::new(), entry: 0, labels: HashMap::new() }
     }
 
-    pub fn add_code(mut self, mut code: Bytecode) -> Self {
+    pub fn add_code(&mut self, mut code: Bytecode, replace_dynamics: bool) -> &mut Self {
         let label_offsets = self.code.len();
 
         for mut i in code.code {
@@ -300,22 +266,26 @@ impl BytecodeBuilder {
                 }
                 _ => {}
             }
-
-            self.code.push(BytecodePrecomp::Instruction(i))
+            if let Instruction::CallDynamic(s) = i {
+                self.call(s);
+            } else {
+                self.code.push(BytecodePrecomp::Instruction(i))
+            }
         }
 
         self
     }
 
-    pub fn emit(mut self, i: Instruction) -> Self {
+    pub fn emit(&mut self, i: Instruction) -> &mut Self {
 
         self.code.push(BytecodePrecomp::Instruction(i));
-
         self
     }
 
+
+
     //inserts the call assuming the function exists
-    pub fn call(mut self, label: impl AsRef<str>) -> Self {
+    pub fn call(&mut self, label: impl AsRef<str>) -> &mut Self {
 
 
         self.code.push(BytecodePrecomp::Call(label.as_ref().to_string()));
@@ -323,37 +293,75 @@ impl BytecodeBuilder {
         self
     }
     
-    pub fn jump(mut self, label: impl AsRef<str>) -> Self {
+    pub fn jump(&mut self, label: impl AsRef<str>) -> &mut Self {
         self.code.push(BytecodePrecomp::Jump(label.as_ref().to_string()));
 
         self
     }
 
-    pub fn jump_zero(mut self, label: impl AsRef<str>) -> Self {
+    pub fn jump_zero(&mut self, label: impl AsRef<str>) -> &mut Self {
         self.code.push(BytecodePrecomp::JumpZero(label.as_ref().to_string()));
 
         self
     }
 
-    pub fn jump_not_zero(mut self, label: impl AsRef<str>) -> Self {
+    pub fn jump_not_zero(&mut self, label: impl AsRef<str>) -> &mut Self {
         self.code.push(BytecodePrecomp::JumpNotZero(label.as_ref().to_string()));
 
         self
     }
 
-    pub fn jump_less(mut self, label: impl AsRef<str>) -> Self {
+    pub fn jump_less(&mut self, label: impl AsRef<str>) -> &mut Self {
         self.code.push(BytecodePrecomp::JumpLess(label.as_ref().to_string()));
 
         self
     }
 
-    pub fn decl_label(mut self, name: impl AsRef<str>) -> Self {
+    pub fn jump_greater(&mut self, label: impl AsRef<str>) -> &mut Self {
+        self.code.push(BytecodePrecomp::JumpGreater(label.as_ref().to_string()));
+
+        self
+    }
+
+    pub fn jump_less_eq(&mut self, label: impl AsRef<str>) -> &mut Self {
+        self.code.push(BytecodePrecomp::JumpLessEq(label.as_ref().to_string()));
+
+        self
+    }
+
+    pub fn jump_greater_eq(&mut self, label: impl AsRef<str>) -> &mut Self {
+        self.code.push(BytecodePrecomp::JumpGreatEq(label.as_ref().to_string()));
+
+        self
+    }
+
+    pub fn decl_label(&mut self, name: impl AsRef<str>) -> &mut Self {
         let loc = self.code.len();
         if name.as_ref() == "main" {
             self.entry = loc;
         }
         self.labels.insert(name.as_ref().to_string(), loc);
+
         self
+    }
+
+
+    pub fn pop_instruction(&mut self) -> Option<Instruction> {
+
+        if let Some(BytecodePrecomp::Instruction(i)) = self.code.pop() {
+            Some(i)
+        } else {
+            None
+        }
+    }
+
+    pub fn peek_last_instruct(&mut self) -> Option<&Instruction> {
+
+        if let Some(BytecodePrecomp::Instruction(i)) = self.code.last() {
+            Some(i)
+        } else {
+            None
+        }
     }
 
     pub fn build(self) -> Result<Bytecode, String> {
@@ -385,6 +393,14 @@ impl BytecodeBuilder {
                         return Err(format!("Couldnt find symbol: {}", s))
                     }
                 }
+
+                BytecodePrecomp::JumpNotZero(s) => {
+                    if let Some(n) = self.labels.get(&s) {
+                        result.code.push(Instruction::JumpNZ(*n))
+                    } else {
+                        return Err(format!("Couldnt find symbol: {}", s))
+                    }
+                }
                 BytecodePrecomp::JumpLess(s) => {
                     if let Some(n) = self.labels.get(&s) {
                         result.code.push(Instruction::JumpL(*n))
@@ -392,9 +408,23 @@ impl BytecodeBuilder {
                         return Err(format!("Couldnt find symbol: {}", s))
                     }
                 }
-                BytecodePrecomp::JumpNotZero(s) => {
+                BytecodePrecomp::JumpGreater(s) => {
                     if let Some(n) = self.labels.get(&s) {
-                        result.code.push(Instruction::JumpNZ(*n))
+                        result.code.push(Instruction::JumpG(*n))
+                    } else {
+                        return Err(format!("Couldnt find symbol: {}", s))
+                    }
+                }
+                BytecodePrecomp::JumpLessEq(s) => {
+                    if let Some(n) = self.labels.get(&s) {
+                        result.code.push(Instruction::JumpLE(*n))
+                    } else {
+                        return Err(format!("Couldnt find symbol: {}", s))
+                    }
+                }
+                BytecodePrecomp::JumpGreatEq(s) => {
+                    if let Some(n) = self.labels.get(&s) {
+                        result.code.push(Instruction::JumpGE(*n))
                     } else {
                         return Err(format!("Couldnt find symbol: {}", s))
                     }

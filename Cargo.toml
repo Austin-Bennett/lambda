@@ -3,17 +3,20 @@ name = "lambda"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+profiling-mode = []
+
 [dependencies]
 lazy_static = "1.5.0"
 crossterm = "0.29.0"
 rand = "0.10.0-rc.7"
 log = "0.4.29"
-rust_decimal = "1.40.0"
-
-
-[profile.dev]
-debug = true
-opt-level = 3
+rust_decimal = { version = "1.40.0", features = ["maths"] }
 
 [profile.release]
 opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+panic = "abort"
+overflow-checks = false
