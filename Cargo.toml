@@ -12,6 +12,7 @@ crossterm = "0.29.0"
 rand = "0.10.0-rc.7"
 log = "0.4.29"
 rust_decimal = { version = "1.40.0", features = ["maths"] }
+ctrlc = "3.5.1"
 
 [profile.release]
 opt-level = 3

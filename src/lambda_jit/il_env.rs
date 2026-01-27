@@ -14,6 +14,8 @@ use std::hint::{likely, unlikely};
 use std::io::Write as w;
 use std::ptr;
 use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use crate::time;
 
 const STACK_SIZE: usize = 1_000_000;
@@ -37,6 +39,8 @@ pub struct Env {
     pub dynamic_functions: HashMap<String, Rc<Bytecode>>, //has to be run via recursion
     pub dynamic_values: HashMap<String, Value>, //todo
     pub last_error: EnvError,
+
+    pub run: bool,
 }
 
 #[derive(Clone)]
@@ -90,7 +94,6 @@ impl Env {
         unsafe {
             (*ptr).stack.fill(Void);
 
-
             ptr::write(&mut (*ptr).last_error, EnvError::None);
 
             ptr::write(&mut (*ptr).dynamic_functions, HashMap::new());
@@ -111,6 +114,7 @@ impl Env {
     }
 
     pub fn new() -> Box<Self> {
+
         let mut boxed = Box::<Self>::new_uninit();
 
         unsafe {
@@ -316,18 +320,18 @@ impl Env {
         let len = code.code.len();
 
 
-        let mut run = true;
+        self.run = true;
 
-        while self.reg_pc < len && run {
+        while self.reg_pc < len && self.run {
             let i = unsafe{ code.code.get_unchecked(self.reg_pc) };
             let inc;
-
             if !cfg!(feature = "profiling-mode") {
-                inc = self.execute_instruction(&i, &mut run);
+
+                inc = self.execute_instruction(&i);
             } else {
 
                 let time = time! {
-                    inc = self.execute_instruction(&i, &mut run)
+                    inc = self.execute_instruction(&i)
                 };
                 println!("Instruction: {:?} [time: {:?}]", &i, time);
             }
@@ -344,7 +348,7 @@ impl Env {
 
 
     #[inline(always)]
-    fn execute_instruction(&mut self, i: &Instruction, run: &mut bool) -> bool {
+    fn execute_instruction(&mut self, i: &Instruction) -> bool {
 
         let mut dont_inc_pc = false;
 
@@ -369,14 +373,14 @@ impl Env {
             Return => {
                 //exit if nothing is on the stack
                 if self.reg_stack == 0 {
-                    *run = false;
+                    self.run = false;
                     return true;
                 }
 
                 let ret = self.pop_stack();
                 if let Void = ret {
                     //exit if the return address is VOID
-                    *run = false;
+                    self.run = false;
                     return true;
                 }
                 self.reg_pc = ret.to_pointer();
