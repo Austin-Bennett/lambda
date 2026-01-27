@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::{Add, Div, Mul, Sub};
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, MathematicalOps};
 use rust_decimal::prelude::ToPrimitive;
 use crate::lambda_jit::il_env::Env;
 
@@ -53,6 +53,7 @@ pub enum DataLocation {
 }
 
 #[derive(Copy, Clone)]
+#[derive(PartialEq)]
 pub enum Value {
     Num(Decimal),
     Offset(isize),
@@ -124,6 +125,14 @@ impl Value {
             Value::Void => Decimal::new(0, 0)
         }
     }
+
+    pub fn pow(self, power: Self) -> Self {
+        if let Value::Num(n1) = self && let Value::Num(n2) = power {
+            Self::Num(n1.powd(n2))
+        } else {
+            Self::Void
+        }
+    }
 }
 
 
@@ -181,6 +190,7 @@ impl Div for Value {
 
 #[allow(unused)]
 #[derive(Clone, Debug)]
+#[derive(PartialEq)]
 pub enum IArg {
     Value(Value), //1.1, 2.5, etc
     Data(DataLocation)
@@ -189,8 +199,10 @@ pub enum IArg {
 
 #[allow(unused)]
 #[derive(Clone, Debug)]
+#[derive(PartialEq)]
 pub enum Instruction {
     Nop,
+    DebugPrint(DataLocation),
     Push(IArg),
     Pop(DataLocation),
     PopN(usize),
@@ -210,7 +222,8 @@ pub enum Instruction {
     Add(DataLocation, IArg),
     Sub(DataLocation, IArg),
     Mul(DataLocation, IArg),
-    Div(DataLocation, IArg)
+    Div(DataLocation, IArg),
+    Pow(DataLocation, IArg),
 }
 
 #[derive(Clone)]

@@ -1,6 +1,7 @@
 use std::ops::{Deref, Mul};
 use crate::lambda_jit::il_env::Env;
 use crate::lambda_jit::lambda_il::{Bytecode, BytecodeBuilder, DataLocation, IArg, Instruction, Register, Value};
+use crate::lambda_jit::lambda_il::DataLocation::Dynamic;
 use crate::lambda_parser::ExprNode;
 
 //compiles the expression to a function, does not handle the '=' operator since that
@@ -17,7 +18,7 @@ pub fn compile_expr(expr: &ExprNode, env: &mut Env, is_func: bool) -> Result<Byt
     let mut label = 0;
 
 
-    let v = compile_node(expr, &mut builder, &mut label, env, is_func, &DataLocation::Register(Register::Ret))?;
+    let v = compile_node(expr, &mut builder, &mut label, env, &DataLocation::Register(Register::Ret))?;
     if let Some(v) = v {
         builder.emit(Instruction::Store(DataLocation::Register(Register::Ret), IArg::Value(v)));
     }
@@ -39,10 +40,12 @@ fn compile_node<'a>(expr: &ExprNode,
                     bc: &'a mut BytecodeBuilder,
                     label: &mut i32,
                     env: &mut Env,
-                    is_func: bool,
                     output: &DataLocation
 ) -> Result<Option<Value>, String> {
     match expr {
+        ExprNode::InlineInstruction(i) => {
+            bc.emit(i.clone());
+        }
         ExprNode::Argument(u) => {
             bc
                 .emit(Instruction::Store(output.clone(), IArg::Data(DataLocation::StackBottomOffset(-3 - (*u as isize)))));
@@ -66,7 +69,7 @@ fn compile_node<'a>(expr: &ExprNode,
                         //compile the first to be used as the determinant
                         //store the result in compare
                         //use that to determine where to jump
-                        let v = compile_node(&args[0], bc, label, env, is_func, &DataLocation::Register(Register::Cmp))?;
+                        let v = compile_node(&args[0], bc, label, env, &DataLocation::Register(Register::Cmp))?;
 
 
                         if let Some(v) = v {
@@ -75,7 +78,7 @@ fn compile_node<'a>(expr: &ExprNode,
 
                         bc.jump_zero(&fl);
 
-                        let v = compile_node(&args[1], bc, label, env, is_func, output)?;
+                        let v = compile_node(&args[1], bc, label, env, output)?;
 
                         if let Some(v) = v {
                             bc.emit(Instruction::Store(output.clone(), IArg::Value(v)));
@@ -84,20 +87,77 @@ fn compile_node<'a>(expr: &ExprNode,
                             bc.jump(&el)
                             .decl_label(&fl);
 
-                        let v = compile_node(&args[2], bc, label, env, is_func, output)?;
+                        let v = compile_node(&args[2], bc, label, env, output)?;
 
                         if let Some(v) = v {
                             bc.emit(Instruction::Store(output.clone(), IArg::Value(v)));
                         }
 
                         bc.decl_label(&el);
+                    },
+                    "sum" => {
+                        if args.len() != 3 {
+                            return Err("Expected if statement to have 3 parameters!".to_string());
+                        }
+
+                        //first result is the start
+                        if let Some(v) = compile_node(&args[0], bc, label, env, &DataLocation::Register(Register::R1))? {
+                            bc.emit(Instruction::Store(Dynamic("n".to_string()), IArg::Value(v)));
+                        } else {
+                            bc.emit(Instruction::Store(Dynamic("n".to_string()),
+                                                       IArg::Data(DataLocation::Register(Register::R1))));
+                        }
+
+                        bc.emit(Instruction::Push(IArg::Value(Value::numf64(0.0)))); //stack-2
+
+                        if let Some(v) = compile_node(&args[1], bc, label, env, &DataLocation::Register(Register::R1))? {
+                            bc.emit(Instruction::Push(IArg::Value(v)));
+                        } else {
+                            bc.emit(Instruction::Push(IArg::Data(DataLocation::Register(Register::R1))));//stack-1
+                        }
+
+
+
+                        let l_start = label.to_string();
+                        *label += 1;
+                        let l_end = label.to_string();
+                        *label += 1;
+
+
+
+                        //the loop
+                        bc
+                            .decl_label(l_start.clone())
+                            .emit(Instruction::Cmp(IArg::Data(DataLocation::Dynamic("n".to_string())),
+                                        IArg::Data(DataLocation::StackStackOffset(-1))))
+                            .jump_greater(l_end.clone());
+
+                        //bc.emit(Instruction::DebugPrint(DataLocation::Dynamic("n".to_string())));
+
+                        if let Some(v) = compile_node(&args[2], bc, label, env, &DataLocation::Register(Register::R1))? {
+                            bc.emit(Instruction::Add(DataLocation::StackStackOffset(-2), IArg::Value(v)));
+                        } else {
+                            bc.emit(Instruction::Add(DataLocation::StackStackOffset(-2),
+                                                     IArg::Data(DataLocation::Register(Register::R1))));
+                        }
+
+                        bc
+                            .emit(Instruction::Add(DataLocation::Dynamic("n".to_string()),
+                                                   IArg::Value(Value::numf64(1.0))))
+                            .jump(l_start)
+                            .decl_label(l_end)
+                            .emit(Instruction::Store(DataLocation::Register(Register::Ret),
+                                                     IArg::Data(DataLocation::StackStackOffset(-2))))
+                            .emit(Instruction::PopN(2));
+
+
                     }
 
                     //default:
                     s => {
                         //push all the arguments
                         for i in args {
-                            let v = compile_node(i, bc, label, env, is_func, output)?;
+                            let v = compile_node(i, bc, label, env, output)?;
                             //push to stack
                             if let Some(v) = v{
                                 bc.emit(Instruction::Push(IArg::Value(v)));
@@ -121,7 +181,7 @@ fn compile_node<'a>(expr: &ExprNode,
                     return Err("Can only multiply expression with 1 argument when using call syntax".to_string())
                 }
                 //compile the rhs
-                let v = compile_node(&args[0], bc, label, env, is_func, output)?;
+                let v = compile_node(&args[0], bc, label, env, output)?;
 
                 //allocate the rhs
                 let (rhs, pop) = if let Some(v) = v {
@@ -132,7 +192,7 @@ fn compile_node<'a>(expr: &ExprNode,
                 };
 
                 //compile the lhs (the caller)
-                let v = compile_node(caller.as_ref(), bc, label, env, is_func, output)?;
+                let v = compile_node(caller.as_ref(), bc, label, env, output)?;
 
 
                 //multiply
@@ -153,7 +213,7 @@ fn compile_node<'a>(expr: &ExprNode,
 
 
 
-            let v =  compile_node(rhs, bc, label, env, is_func, output)?;
+            let v =  compile_node(rhs, bc, label, env, output)?;
 
 
 
@@ -173,7 +233,7 @@ fn compile_node<'a>(expr: &ExprNode,
                 return Ok(None)
             }
 
-            let v =  compile_node(lhs, bc, label, env, is_func, output)?;
+            let v =  compile_node(lhs, bc, label, env, output)?;
 
             if let Some(v) = v {
                 bc.emit(Instruction::Store(output.clone(), IArg::Value(v)));
@@ -202,6 +262,9 @@ fn compile_node<'a>(expr: &ExprNode,
                         .emit(Instruction::Mul(output.clone(),
                                                rhs));
                 },
+                "**" => {
+                    bc.emit(Instruction::Pow(output.clone(), rhs));
+                }
                 "/" => {
                     bc
                         .emit(Instruction::Div(output.clone(),
@@ -301,7 +364,7 @@ fn compile_node<'a>(expr: &ExprNode,
             }
         }
         ExprNode::UnaryOperation { op, operand } => {
-            let v = compile_node(operand.as_ref(), bc, label, env, is_func, output)?;
+            let v = compile_node(operand.as_ref(), bc, label, env, output)?;
             if let Some(mut v) = v {
                 return match *op {
                     "-" => {

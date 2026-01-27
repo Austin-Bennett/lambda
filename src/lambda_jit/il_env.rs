@@ -247,7 +247,7 @@ impl Env {
         }
     }
 
-    #[inline(always)]
+    //#[inline(always)]
     pub fn set_data(&mut self, dest: &DataLocation, src: Value) {
         match dest {
             DataLocation::Register(r) => self.set_register(r, src),
@@ -355,6 +355,9 @@ impl Env {
 
         match i {
             Instruction::Nop => {},
+            Instruction::DebugPrint(dl) => {
+                println!("{:?}", self.get_data(dl));
+            }
             Instruction::Push(v) => {
                 let v = self.arg_to_val(v);
                 self.push_stack(v);
@@ -472,6 +475,12 @@ impl Env {
                 let v1 = self.get_data(loc);
                 let v2 = self.arg_to_val(v);
                 self.set_data(loc, v1/v2);
+            }
+            Instruction::Pow(loc, v) => {
+                let v1 = self.get_data(loc);
+                let v2 = self.arg_to_val(v);
+
+                self.set_data(loc, v1.pow(v2))
             }
         }
 

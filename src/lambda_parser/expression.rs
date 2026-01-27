@@ -5,8 +5,9 @@ use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter, Write};
 use std::process::abort;
 use rust_decimal::Decimal;
+use crate::lambda_jit::lambda_il::Instruction;
 
-#[derive(Clone, PartialOrd, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum ExprNode {
     CallOperation{caller: Box<ExprNode>, args: Vec<ExprNode>},
     BinaryOperation{op: &'static str, operands: Box<(ExprNode, ExprNode)>},
@@ -15,6 +16,7 @@ pub enum ExprNode {
     Num(Decimal),
     FunctionDecl{ident: String, expr: Box<ExprNode>},
     Argument(usize),
+    InlineInstruction(Instruction),
     Void,
     Error(String), //internal, shouldn't show up in the tree
 }
@@ -45,6 +47,7 @@ impl ExprNode {
                     *self = node;
                 }
             }
+            ExprNode::InlineInstruction(_) => {}
             ExprNode::Num(_) => {}
             ExprNode::FunctionDecl { expr, .. } => {
                 expr.replace_identifier(ident, node)
@@ -172,6 +175,7 @@ impl Debug for ExprNode {
         match self {
             ExprNode::BinaryOperation { op, operands } => write!(f, "({:?} {} {:?})", operands.0, op, operands.1),
             ExprNode::UnaryOperation { op, operand } => write!(f, "({}{:?})", op, operand),
+            ExprNode::InlineInstruction(i) => write!(f, "{:?}", i),
             ExprNode::CallOperation{ caller, args } => {
                 f.write_str("(")?;
                 caller.as_ref().fmt(f)?;

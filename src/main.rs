@@ -3,7 +3,9 @@
 
 use std::io::{stdin, stdout, Write};
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::spin_loop_hint;
 use crate::lambda::jit::compile_expr;
+use crate::lambda::native_funcs::{constants, l_clear, l_quit, l_sqrt};
 use crate::lambda_jit::il_env::Env;
 use crate::lambda_jit::lambda_il::Value::Void;
 use crate::lambda_parser::ExprNode;
@@ -34,6 +36,11 @@ unsafe impl<T> Send for SendPtr<T> {}
 pub fn main() {
     let mut env = Env::new();
 
+    constants(&mut env);
+    env.add_native_function("quit", l_quit);
+    env.add_native_function("clear", l_clear);
+    env.add_native_function("sqrt", l_sqrt);
+
     let mut rptr = SendPtr(&mut env.run as *mut bool);
     ctrlc::set_handler(move || {
         println!("Interrupted");
@@ -52,6 +59,9 @@ pub fn main() {
         let _ = stdout().flush();
         let _ = stdin().read_line(&mut s);
         s = s.trim().to_string();
+        if s.is_empty() {
+            continue;
+        }
 
         let expr = match ExprNode::from_str(& s) {
             Ok(v) => v,
@@ -78,6 +88,8 @@ pub fn main() {
                 }
             }
         };
+
+        println!("Compiled [entry: {:?}]:\n{:?}", bc.entry, bc);
 
         match env.execute(&bc) {
             Ok(v) => println!("Result: {:?}", v),
