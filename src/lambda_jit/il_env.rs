@@ -325,7 +325,10 @@ impl Env {
         while self.reg_pc < len && self.run {
             let i = unsafe{ code.code.get_unchecked(self.reg_pc) };
             let inc;
-            if !cfg!(feature = "profiling-mode") {
+
+            if cfg!(feature = "debug-mode") {
+
+            } else if !cfg!(feature = "profiling-mode") {
 
                 inc = self.execute_instruction(&i);
             } else {

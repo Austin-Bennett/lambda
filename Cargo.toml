@@ -5,6 +5,7 @@ edition = "2024"
 
 [features]
 profiling-mode = []
+debug-mode = []
 
 [dependencies]
 lazy_static = "1.5.0"
