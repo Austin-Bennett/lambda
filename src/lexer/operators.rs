@@ -6,6 +6,7 @@ use crate::lexer::tokenizer::Token;
 
 #[derive(Debug, Clone, Copy)]
 pub enum OperatorType {
+    Feature,
     Unary,
     Binary(u8, u8),
     BinaryOrUnary(u8, u8)
@@ -49,7 +50,11 @@ lazy_static!{
 
     pub static ref operators: Vec<Operator> = {
         let mut res = vec![
-            Operator::new("=", OperatorType::BinaryOrUnary(0, 1)),
+            Operator::new("(", OperatorType::Feature),
+            Operator::new(")", OperatorType::Feature),
+            Operator::new("{", OperatorType::Feature),
+            Operator::new("}", OperatorType::Feature),
+            Operator::new("=", OperatorType::Binary(0, 1)),
             Operator::new("+", OperatorType::BinaryOrUnary(2, 3)),
             Operator::new("-", OperatorType::BinaryOrUnary(2, 3)),
             Operator::new("*", OperatorType::BinaryOrUnary(4, 5)),
