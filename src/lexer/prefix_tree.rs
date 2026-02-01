@@ -1,51 +1,59 @@
 use std::collections::BTreeMap;
 
-struct Node<T: Ord + Clone> {
-    children: BTreeMap<T, Self>,
-    is_end: bool,
+
+
+
+struct Node<K: Ord + Clone, V> {
+    children: BTreeMap<K, Self>,
+    val: Option<V>
 }
 
-impl<T: Ord + Clone> Node<T> {
-    pub fn new(end: bool) -> Self {
+impl<K: Ord + Clone, V> Node<K, V> {
+    pub fn new(val: Option<V>) -> Self {
         Self{
             children: BTreeMap::new(),
-            is_end: end,
+            val,
         }
     }
 
-    pub fn get_or_insert(&mut self, val: T, end: bool) -> &mut Self {
-        let res = self.children.entry(val).or_insert(Node::new(end));
-        if end {  // Only set to true, never overwrite true with false
-            res.is_end = true;
+    pub fn empty() -> Self {
+        Self::new(None)
+    }
+
+    pub fn get_or_insert(&mut self, key: K, val: Option<V>) -> &mut Self {
+        if let Some(k) = self.children.get_mut(&key) {
+            let k: *mut Node<K, V> = k as *mut _;
+            if let Some(v) = val {
+                unsafe{ (*k).val = Some(v); }
+            }
+            return unsafe{ &mut *k };
         }
-        res
+
+
+        self.children.entry(key).or_insert(Node::new(val))
     }
 }
 
-pub struct Trie<T: Ord + Clone> {
-    roots: BTreeMap<T, Node<T>>
+pub struct Trie<K: Ord + Clone, V> {
+    roots: BTreeMap<K, Node<K, V>>
 }
 
-impl<T: Ord + Clone> Trie<T> {
+impl<K: Ord + Clone, V> Trie<K, V> {
     pub fn new() -> Self {
         Self{ roots: BTreeMap::new() }
     }
 
-    pub fn insert(&mut self, slice: &[T]) {
+    pub fn insert(&mut self, slice: &[K], val: V) {
         if slice.is_empty() {
             return;
         }
 
-        let mut start = self.roots.entry(slice[0].clone()).or_insert(
-            Node::new(slice.len() == 1)
-        );
+        
 
-        for i in 1..slice.len() {
-            start = start.get_or_insert(slice[i].clone(), i+1 == slice.len());
-        }
     }
 
-    pub fn contains(&self, slice: &[T]) -> bool {
+    pub fn contains(&self, slice: &[K]) -> bool {
+        if slice.is_empty() { return false; }
         let Some(mut start) = self.roots.get(&slice[0]) else {
             return false;
         };
@@ -61,7 +69,28 @@ impl<T: Ord + Clone> Trie<T> {
         start.is_end
     }
 
-    pub fn match_prefix_greedy(&self, slice: &T) {
+    pub fn match_prefix_greedy(&self, slice: &[K]) -> usize {
+        if slice.is_empty() {
+            return 0;
+        }
 
+        let Some(mut node) = self.roots.get(&slice[0]) else {
+            return 0;
+        };
+
+        let mut last_match = if node.is_end { 1 } else { 0 };
+
+        for i in 1..slice.len() {
+            if let Some(next) = node.children.get(&slice[i]) {
+                node = next;
+                if node.is_end {
+                    last_match = i + 1;
+                }
+            } else {
+                break;
+            }
+        }
+
+        last_match
     }
 }
