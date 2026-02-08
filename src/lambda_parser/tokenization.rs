@@ -2,7 +2,7 @@ use lazy_static::lazy_static;
 use rust_decimal::Decimal;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Formatter, Write};
 use std::str::FromStr;
 
 #[derive(Copy, Clone, PartialOrd, PartialEq)]
@@ -31,7 +31,10 @@ impl Operator {
     }
 }
 
-
+#[derive(Copy, Clone, Debug)]
+pub enum Keyword {
+    If,
+}
 
 lazy_static!(
     pub static ref operators: Vec<Operator> = {
@@ -52,10 +55,31 @@ lazy_static!(
             Operator::new(",", BindingPower::Seperator),
             Operator::new("=", BindingPower::Binary(-10.0, -9.9)),
         ];
-        res.sort_by(|f, s|  if f.token.len() > s.token.len() { Ordering::Less } else { Ordering::Greater } );
+
+        res.sort_by(|f, s|
+            if f.token.len() > s.token.len() { Ordering::Less } else { Ordering::Greater } );
+        res
+    };
+
+    pub static ref keywords: Vec<(&'static str, Keyword)> = {
+        let mut res = vec![
+            ("if", Keyword::If)
+        ];
+
+        res.sort_by(|f, s|
+            if f.0.len() > s.0.len() { Ordering::Less } else { Ordering::Greater } );
         res
     };
 );
+
+pub fn get_keyword(st: &str) -> Option<(usize, Keyword)> {
+    for k in (&keywords).iter() {
+        if st.starts_with(k.0) {
+            return Some((k.0.len(), k.1))
+        }
+    }
+    None
+}
 
 pub fn get_operator(st: &str) -> Option<(usize, Operator)> {
     for op in (&operators).iter() {
@@ -119,12 +143,17 @@ pub fn get_identifier(st: &str) -> Option<(usize, String)> {
     }
 }
 
+
+
 #[derive(Clone)]
 pub enum Token {
     Ident(String),
     Num(Decimal),
     Operator(Operator),
-    ParenthesesGroup(VecDeque<Token>)
+    Keyword(Keyword),
+    ParenthesesGroup(VecDeque<Token>),
+    OpenBrace,
+    CloseBrace,
 }
 
 impl Debug for Token {
@@ -136,6 +165,9 @@ impl Debug for Token {
             Token::ParenthesesGroup(tks) => {
                 tks.fmt(f)
             }
+            Token::CloseBrace => f.write_str("}"),
+            Token::OpenBrace => f.write_str("{"),
+            Token::Keyword(k) => k.fmt(f)
         }
     }
 }
@@ -154,6 +186,12 @@ pub fn tokenize(chars: impl AsRef<str>) -> VecDeque<Token> {
         let tk = if let Some((len, op)) = get_operator(&str[i..]) {
             i += len;
             Token::Operator(op)
+        } else if str[i..].chars().next().unwrap_or('\0') == '{' {
+            i += 1;
+            Token::OpenBrace
+        } else if str[i..].chars().next().unwrap_or('\0') == '}' {
+            i += 1;
+            Token::CloseBrace
         } else if str[i..].chars().next().unwrap_or('\0') == '(' {
             i += 1;
 
