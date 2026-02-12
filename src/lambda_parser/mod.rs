@@ -1,5 +1,6 @@
 pub mod tokenization;
 pub mod expression;
+pub mod statement;
 
 use std::cmp::{Ordering, PartialOrd};
 use std::str::FromStr;

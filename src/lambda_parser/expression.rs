@@ -1,6 +1,6 @@
 use crate::lambda_parser::tokenization::{tokenize, BindingPower, Token};
 use crate::lambda_parser::ExprNode::{BinaryOperation, CallOperation, Error, Void};
-use crate::lambda_parser::{Operator, MINBP};
+use crate::lambda_parser::{Operator, TokenHelpers, MINBP};
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::process::abort;
@@ -13,7 +13,6 @@ pub enum ExprNode {
     UnaryOperation{op: &'static str, operand: Box<ExprNode>},
     Ident(String),
     Num(Decimal),
-    FunctionDecl{ident: String, expr: Box<ExprNode>},
     Argument(usize),
     Void,
     Error(String), //internal, shouldn't show up in the tree
@@ -46,9 +45,6 @@ impl ExprNode {
                 }
             }
             ExprNode::Num(_) => {}
-            ExprNode::FunctionDecl { expr, .. } => {
-                expr.replace_identifier(ident, node)
-            }
             ExprNode::Argument(_) => {}
             ExprNode::Void => {}
             Error(_) => {}
@@ -65,18 +61,14 @@ impl ExprNode {
         }
     }
 
-    pub fn from_str(s: impl AsRef<str>) -> Result<Self, String> {
-        Self::from_tokens(tokenize(s))
-    }
-
-    pub fn from_tokens(mut tks: VecDeque<Token>) -> Result<Self, String> {
-        Self::make(&mut tks, MINBP)
+    pub fn from_tokens(tks: &mut VecDeque<Token>) -> Result<Self, String> {
+        Self::make(tks, MINBP)
     }
 
     fn parse_call(tks: &mut VecDeque<Token>) -> Result<Vec<Self>, String> {
         let mut res = Vec::new();
 
-        while !tks.is_empty() {
+        while tks.next_is_expr() {
             let arg = Self::make(tks, MINBP)?;
             res.push(arg);
 
@@ -90,7 +82,7 @@ impl ExprNode {
 
     fn make(tks: &mut VecDeque<Token>, min_bp: f32) -> Result<Self, String> {
 
-        if tks.is_empty() { return Ok(Error("Didnt expect end of tokens".to_string())); }
+        if !tks.next_is_expr() { return Ok(Error("Didnt expect end of tokens".to_string())); }
 
 
         let mut lhs = match tks.pop_front().unwrap() {
@@ -111,7 +103,7 @@ impl ExprNode {
         };
 
 
-        while !tks.is_empty() {
+        while tks.next_is_expr() {
 
 
             lhs = match tks.front().unwrap().clone() {
@@ -131,29 +123,8 @@ impl ExprNode {
                     if let Some(Token::ParenthesesGroup(mut arg_tks)) = tks.pop_front() {
                         let args = Self::parse_call(&mut arg_tks)?;
                         // check if the next token is '=', if so, this is (probably) a function declaration
-                        if let ExprNode::Ident(id) = &mut lhs &&
-                            let Some(Token::Operator(Operator{ token: "=", bp })) = tks.front() {
-                            tks.pop_front();
+                        CallOperation { caller: Box::new(lhs), args }
 
-                            let mut argvec = Vec::new();
-                            for a in args {
-                                if let ExprNode::Ident(s) = a {
-                                    argvec.push(s);
-                                } else {
-                                    return Err(format!("Expected identifier for function argument, got {:?}", a));
-                                }
-                            }
-
-                            let mut rhs = Self::make(tks, f32::NEG_INFINITY)?;
-
-                            for (i, a) in argvec.iter().enumerate() {
-                                rhs.replace_identifier(a, ExprNode::Argument(argvec.len()-i-1))
-                            }
-
-                            ExprNode::FunctionDecl { ident: std::mem::replace(id, String::new()), expr: Box::new(rhs) }
-                        } else {
-                            CallOperation { caller: Box::new(lhs), args }
-                        }
                     } else {
                         abort(); //shouldn't ever happen
                     }
@@ -193,7 +164,6 @@ impl Debug for ExprNode {
             Error(s) => write!(f, "(Error: {})", s),
             ExprNode::Void => f.write_str("void"),
             ExprNode::Argument(u) => write!(f, "Argument({})", u),
-            ExprNode::FunctionDecl { ident, expr } => write!(f, "{}() = {:?}", ident, expr),
         }
     }
 }

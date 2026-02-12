@@ -17,6 +17,7 @@ pub enum BindingPower {
 pub const MINBP: f32 = f32::NEG_INFINITY;
 
 #[derive(Copy, Clone)]
+#[derive(PartialEq)]
 pub struct Operator {
     pub token: &'static str,
     pub bp: BindingPower
@@ -32,8 +33,10 @@ impl Operator {
 }
 
 #[derive(Copy, Clone, Debug)]
+#[derive(PartialEq)]
 pub enum Keyword {
     If,
+    Else,
 }
 
 lazy_static!(
@@ -63,7 +66,8 @@ lazy_static!(
 
     pub static ref keywords: Vec<(&'static str, Keyword)> = {
         let mut res = vec![
-            ("if", Keyword::If)
+            ("if", Keyword::If),
+            ("else", Keyword::Else),
         ];
 
         res.sort_by(|f, s|
@@ -146,6 +150,7 @@ pub fn get_identifier(st: &str) -> Option<(usize, String)> {
 
 
 #[derive(Clone)]
+#[derive(PartialEq)]
 pub enum Token {
     Ident(String),
     Num(Decimal),
@@ -154,6 +159,7 @@ pub enum Token {
     ParenthesesGroup(VecDeque<Token>),
     OpenBrace,
     CloseBrace,
+    Newline,
 }
 
 impl Debug for Token {
@@ -167,13 +173,25 @@ impl Debug for Token {
             }
             Token::CloseBrace => f.write_str("}"),
             Token::OpenBrace => f.write_str("{"),
-            Token::Keyword(k) => k.fmt(f)
+            Token::Keyword(k) => k.fmt(f),
+            Token::Newline => f.write_str("\\n"),
         }
     }
 }
 
 impl Token {
-    //todo
+    pub fn is_expression(&self) -> bool {
+        match self {
+            Token::Ident(_) => true,
+            Token::Num(_) => true,
+            Token::Operator(_) => true,
+            Token::Keyword(_) => false,
+            Token::ParenthesesGroup(_) => true,
+            Token::OpenBrace => false,
+            Token::CloseBrace => false,
+            Token::Newline => false,
+        }
+    }
 }
 
 pub fn tokenize(chars: impl AsRef<str>) -> VecDeque<Token> {
@@ -186,6 +204,9 @@ pub fn tokenize(chars: impl AsRef<str>) -> VecDeque<Token> {
         let tk = if let Some((len, op)) = get_operator(&str[i..]) {
             i += len;
             Token::Operator(op)
+        } else if str[i..].chars().next().unwrap_or('\0') == '\n' {
+            i += 1;
+            Token::Newline
         } else if str[i..].chars().next().unwrap_or('\0') == '{' {
             i += 1;
             Token::OpenBrace
@@ -206,6 +227,9 @@ pub fn tokenize(chars: impl AsRef<str>) -> VecDeque<Token> {
             } else {
                 continue;
             }
+        } else if let Some((len, n)) = get_keyword(&str[i..]) {
+            i += len;
+            Token::Keyword(n)
         } else if let Some((len, n)) = get_number(&str[i..]) {
             i += len;
             Token::Num(n)
@@ -226,4 +250,47 @@ pub fn tokenize(chars: impl AsRef<str>) -> VecDeque<Token> {
     }
 
     res
+}
+
+pub trait TokenHelpers {
+    fn next_is_expr(&self) -> bool;
+
+}
+
+impl TokenHelpers for VecDeque<Token> {
+    fn next_is_expr(&self) -> bool {
+
+        if let Some(b) = self.front() {
+            b.is_expression()
+        } else {
+            false
+        }
+    }
+
+
+}
+
+#[macro_export]
+macro_rules! match_tokens {
+    ($tokens:expr, $($pat:pat),* $(,)?) => {
+        { match_tokens!(@inner $tokens, 0usize, $($pat),*) }
+    };
+
+    // recursive case
+    (@inner $tokens:expr, $idx:expr, $head:pat, $($tail:pat),*) => {
+        if let Some($head) = $tokens.get($idx) {
+            match_tokens!(@inner $tokens, $idx + 1usize, $($tail),*)
+        } else {
+            false
+        }
+    };
+
+    // base case
+    (@inner $tokens:expr, $idx:expr, $last:pat) => {
+        if let Some($last) = $tokens.get($idx) {
+            true
+        } else {
+            false
+        }
+    };
 }
