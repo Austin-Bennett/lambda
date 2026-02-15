@@ -7,5 +7,3 @@ macro_rules! map {
         { &[$(($key.into(), $val.into())),*].iter().collect() }
     };
 }
-
-
