@@ -1,6 +1,7 @@
 
 
 pub type LPTR = u64;
+pub const L_NULL: LPTR = 0;
 
 pub const LENV_STACK_SIZE: usize = 1_000_000;
 

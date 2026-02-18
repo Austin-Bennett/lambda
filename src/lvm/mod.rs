@@ -1,2 +1,2 @@
-mod lenv;
-mod lheap;
+pub mod lenv;
+pub mod lheap;
