@@ -1,8 +1,7 @@
 use lazy_static::lazy_static;
-use rust_decimal::Decimal;
 use std::cmp::Ordering;
 use std::collections::VecDeque;
-use std::fmt::{Debug, Formatter, Write};
+use std::fmt::{Debug, Display, Formatter, Write};
 use std::str::FromStr;
 
 #[derive(Copy, Clone, PartialOrd, PartialEq)]
@@ -94,7 +93,29 @@ pub fn get_operator(st: &str) -> Option<(usize, Operator)> {
     None
 }
 
-pub fn get_number(st: &str) -> Option<(usize, Decimal)> {
+#[derive(Clone)]
+#[derive(PartialEq)]
+pub struct NumericalLiteral {
+    pub literal: String,
+    pub flags: u8,
+}
+
+impl NumericalLiteral {
+    const F_PERCENTAGE: u8 = 0b1;
+    const F_INTEGER: u8 = 0b10;
+}
+
+impl Display for NumericalLiteral {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut res = self.literal.clone();
+        if self.flags & Self::F_PERCENTAGE > 0 {
+            res.push('%');
+        }
+        write!(f, "{}", res)
+    }
+}
+
+pub fn get_number(st: &str) -> Option<(usize, NumericalLiteral)> {
 
 
     //consume all numbers, and 1 optional decimal
@@ -102,16 +123,20 @@ pub fn get_number(st: &str) -> Option<(usize, Decimal)> {
     let mut prcnt = false;
 
     let mut res: String = String::new();
+    let mut len = 0;
 
     for c in st.chars() {
         if c.is_numeric() {
             res.push(c);
+            len += 1;
         } else if c == '.' && !found_dec {
             found_dec = true;
             res.push('.');
+            len += 1;
         } else {
             if c == '%' {
                 prcnt = true;
+                len += 1;
             }
             break;
         }
@@ -119,8 +144,12 @@ pub fn get_number(st: &str) -> Option<(usize, Decimal)> {
 
 
     if res.len() > 0 {
-        let val = Decimal::from_str(&res).unwrap();
-        Some((res.len(), if prcnt { val / Decimal::new(100, 1) } else { val }))
+        Some((len, NumericalLiteral{
+            literal: res,
+            flags: 0
+                | if prcnt { NumericalLiteral::F_PERCENTAGE } else { 0 }
+                | if !found_dec { NumericalLiteral::F_INTEGER } else { 0 }
+        }))
     } else {
         None
     }
@@ -153,7 +182,7 @@ pub fn get_identifier(st: &str) -> Option<(usize, String)> {
 #[derive(PartialEq)]
 pub enum Token {
     Ident(String),
-    Num(Decimal),
+    Num(NumericalLiteral),
     Operator(Operator),
     Keyword(Keyword),
     ParenthesesGroup(VecDeque<Token>),

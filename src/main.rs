@@ -1,5 +1,4 @@
 use std::fs::read_to_string;
-use rust_decimal::Decimal;
 use crate::lambda_parser::statement::Statement;
 use crate::lambda_parser::tokenize;
 

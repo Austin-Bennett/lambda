@@ -1,10 +1,9 @@
 use crate::lambda_parser::tokenization::{tokenize, BindingPower, Token};
 use crate::lambda_parser::ExprNode::{BinaryOperation, CallOperation, Error, Void};
-use crate::lambda_parser::{Operator, TokenHelpers, MINBP};
+use crate::lambda_parser::{NumericalLiteral, Operator, TokenHelpers, MINBP};
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::process::abort;
-use rust_decimal::Decimal;
 
 #[derive(Clone, PartialEq)]
 pub enum ExprNode {
@@ -12,7 +11,7 @@ pub enum ExprNode {
     BinaryOperation{op: &'static str, operands: Box<(ExprNode, ExprNode)>},
     UnaryOperation{op: &'static str, operand: Box<ExprNode>},
     Ident(String),
-    Num(Decimal),
+    Num(NumericalLiteral),
     Argument(usize),
     Void,
     Error(String), //internal, shouldn't show up in the tree
