@@ -14,6 +14,7 @@ pub struct HeapPageHeader {
     first: u64, //index into the page
 }
 
+#[derive(Clone)]
 pub struct HeapPage {
     pub mem: Box<[u8]>
 }
@@ -133,6 +134,7 @@ impl HeapPage {
     }
 }
 
+#[derive(Clone, Default)]
 pub struct LHeap {
     pub pages: Vec<HeapPage>
 }
@@ -266,6 +268,8 @@ impl LHeap {
     }
     
 }
+
+
 
 impl Debug for LHeap {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
