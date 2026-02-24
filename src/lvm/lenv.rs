@@ -1,4 +1,3 @@
-use crate::lvm::lheap::LHeap;
 use crate::lvm::lvm_exception::LVMException;
 
 
@@ -12,7 +11,7 @@ Pointers:
 
 between stack and heap, constants?
 */
-pub type LPTR = u64;
+pub type LPTR = usize;
 pub const L_NULL: LPTR = 0;
 
 pub const LENV_STACK_SIZE: usize = 1_000_000;
@@ -24,7 +23,6 @@ pub struct LEnvState {
     r_stack: LPTR,
     r_bottom: LPTR,
     stack: [u8; LENV_STACK_SIZE],
-    heap_manager: LHeap,
 }
 
 
@@ -37,7 +35,6 @@ pub struct LEnv {
 
 impl LEnv {
     fn _init(&mut self) {
-        self.state.heap_manager = LHeap::new();
         self.state.r_stack = LENV_STACK_SIZE as LPTR;
         self.state.r_bottom = self.state.r_stack;
     }

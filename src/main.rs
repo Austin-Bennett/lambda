@@ -1,39 +1,20 @@
-use std::fs::read_to_string;
 use crate::lambda_parser::statement::Statement;
 use crate::lambda_parser::tokenize;
+use std::fs::read_to_string;
 
 mod lambda_parser;
-mod macros;
 mod lvm;
+mod macros;
+mod utils;
 
 mod tests {
     use std::ptr::{slice_from_raw_parts, slice_from_raw_parts_mut};
+
     use crate::lvm::lheap::LHeap;
 
     #[test]
     pub fn test_heap() {
-        
-        let mut heap = LHeap::new();
-        
-        //allocate some memory
-        let allocation = heap.alloc(100); //100 bytes (25 32-bit integers)
-        let ray =  unsafe{ &mut *slice_from_raw_parts_mut(heap.get_ptr(allocation) as *mut i32, 25) };
-        
-        
-        ray.fill(0);
-        println!("{:?}", ray);
-        
-        println!("{}", heap);
-
-        ray[0] = 0xFF94;
-
-        println!("{:?}", ray);
-        println!("{}", heap);
-
-        println!("{:?}", heap.free(allocation));
-        println!("{:?}", heap.free(allocation)); //test double free
-
-
+        let mut heap = LHeap::new()
     }
 }
 
@@ -49,8 +30,10 @@ fn main() {
         code = Statement::from_tokens(&mut tokens).unwrap();
     };
 
-
     println!("{:?}", code);
 
-    println!("tokenization: {:?}, tree building: {:?}", token_gen_time, tree_building_time);
+    println!(
+        "tokenization: {:?}, tree building: {:?}",
+        token_gen_time, tree_building_time
+    );
 }
