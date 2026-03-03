@@ -36,6 +36,7 @@ struct LPage {
 }
 
 impl LPage {
+    
     pub fn new(size: usize) -> Self {
         Self {
             allocations: None,
@@ -44,7 +45,7 @@ impl LPage {
     }
 
     //returns the index on success
-    pub fn alloc(&mut self, layout: Layout) -> Option<usize> {
+    pub fn alloc(&mut self, layout: Layout) -> Option<(usize, *const u8)> {
         //find an appropriate chunk of memory that is properly aligned (loc % layout.alignment())
         //== 0
         //store there
@@ -69,7 +70,9 @@ impl LPage {
                 self.allocations = Some(node);
             }
 
-            return Some(alloc_pos);
+            return Some((alloc_pos,
+                         unsafe{ self.data.as_ptr().add(alloc_pos) }
+            ));
         } else {
             while let Some(node) = cur {
                 let alloc_pos;
@@ -79,7 +82,7 @@ impl LPage {
                     next = lock.next.clone();
                     let mut raw_pos = lock.i + lock.len;
                     raw_pos += raw_pos & 1; //make even
-                    alloc_pos = align * (raw_pos.div_ceil(align));
+                    alloc_pos = (raw_pos + align - 1) & !(align - 1);
                 }
 
                 let end = if let Some(node) = &next {
@@ -106,7 +109,7 @@ impl LPage {
                         lock.next = next.clone();
                     }
 
-                    return Some(alloc_pos);
+                    return Some((alloc_pos, unsafe{ self.data.as_ptr().add(alloc_pos) }));
                 }
 
                 cur = next.clone();
@@ -114,6 +117,35 @@ impl LPage {
         }
 
         None
+    }
+
+    pub fn free(&mut self, byte: usize) -> bool {
+        let mut alloc = self.allocations.clone();
+
+        while let Some(node) = alloc {
+            let lock = node.lock().unwrap();
+
+            if lock.i == byte {
+                //remove this link
+                if let Some(prev) = lock.prev.clone() {
+                    let mut prev_lock = prev.lock().unwrap();
+                    prev_lock.next = lock.next.clone();
+                } else {
+                    //must be the first node
+                    self.allocations = lock.next.clone()
+                }
+
+                if let Some(next) = lock.next.clone() {
+                    let mut next_lock = next.lock().unwrap();
+                    next_lock.prev = lock.prev.clone();
+                }
+
+                return true;
+            }
+
+            alloc = lock.next.clone()
+        }
+        false
     }
 }
 
@@ -125,26 +157,61 @@ pub struct LHeap {
 }
 
 impl LHeap {
+    
+    pub const MIN_HEAP_ADDR: LPTR = 0x0001FFFFFFFFFFFF;
+    
     pub fn new() -> Self {
         Self { pages: Vec::new() }
     }
 
-    pub fn to_ptr(&mut self, ptr: LPTR) -> *const u8 {}
+    fn get_indices(ptr: LPTR) -> (usize, usize) {
+        ((ptr as usize >> 48) - 1, ptr as usize & PAGE_BYTE_INDEX_MASK)
+    }
 
-    pub fn alloc(&mut self, layout: Layout) -> LPTR {
+    pub fn get_ptr(&mut self, ptr: LPTR) -> Option<*mut u8> {
+        let (page_ind, byte_ind) = Self::get_indices(ptr);
+
+        if self.pages.len() <= page_ind {
+            return None;
+        }
+
+        let page = &mut self.pages[page_ind];
+
+        if page.data.len() <= byte_ind {
+            return None;
+        }
+
+        Some(&mut page.data[byte_ind] as *mut u8)
+    }
+
+    pub fn alloc(&mut self, layout: Layout) -> (LPTR, *const u8) {
         for (i, p) in self.pages.iter_mut().enumerate() {
-            if let Some(ind) = p.alloc(layout) {
-                return ((i + 1) << 48) | (ind & PAGE_BYTE_INDEX_MASK);
+            if let Some((ind, ptr)) = p.alloc(layout) {
+                return ((((i + 1) << 48) | (ind & PAGE_BYTE_INDEX_MASK)) as LPTR, ptr);
             }
         }
 
         //min size is 1000 * 1024 bytes
         let mut page = LPage::new(layout.size().max(1_024_000));
         let i = self.pages.len();
-        let Some(ind) = page.alloc(layout) else {
+        let Some((ind, ptr)) = page.alloc(layout) else {
             panic!("Failed to allocate layout: {:?}", layout)
         };
 
-        (i << 48) | (ind & PAGE_BYTE_INDEX_MASK)
+        self.pages.push(page);
+
+        ((((i + 1) << 48) | (ind & PAGE_BYTE_INDEX_MASK)) as LPTR, ptr)
+    }
+
+    pub fn free(&mut self, ptr: LPTR) -> bool {
+        let (page, byte) = Self::get_indices(ptr);
+
+        if let Some(page) = self.pages.get_mut(page) {
+
+
+            page.free(byte)
+        } else {
+            false
+        }
     }
 }

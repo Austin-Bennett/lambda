@@ -1,3 +1,5 @@
 pub mod lenv;
 pub mod lheap;
-mod lvm_exception;
+pub mod lvm_exception;
+pub mod lbc;
+pub mod lexecutable;
