@@ -1,12 +1,15 @@
 extern crate core;
 
-use crate::lvm::lexecutable::LExecutableBuilder;
-use crate::lambda_parser::statement::Statement;
+use std::alloc::Layout;
+use crate::lvm::lexecutable::{LExecutableBuilder, PseudoInstruction};
+use crate::lambda_parser::statement::{Block, Statement};
 use crate::lambda_parser::tokenize;
-use crate::tests::*;
 use std::fs::read_to_string;
+use std::{fs, ptr};
+use crate::compiler::Compiler;
 use crate::lvm::lbc::*;
 use crate::lvm::lenv::LEnv;
+use crate::lvm::lheap::LHeap;
 
 mod lambda_parser;
 mod lvm;
@@ -14,92 +17,60 @@ mod macros;
 mod utils;
 pub mod compiler;
 
-mod tests {
-    use std::{alloc::Layout, ptr, ptr::{slice_from_raw_parts, slice_from_raw_parts_mut}};
-    use std::fs::read_to_string;
-    use crate::lambda_parser::statement::{Block, Statement};
-    use crate::lambda_parser::tokenize;
-    use crate::lvm::lheap::LHeap;
-    use crate::time;
-
-    pub fn test_heap() {
-        let mut heap = LHeap::new();
-
-        let (h_pointer, ptr);
-        let time = time!{
-            (h_pointer, ptr)= heap.alloc(Layout::array::<i32>(10).unwrap());
-        };
-
-        println!("Alloc Time: {:?}", time);
-
-        let ptr = ptr as *mut i32;
-
-        println!("allocation: {:?}", ptr);
-
-        let free;
-        let time = time!{
-            free = heap.free(h_pointer);
-        };
-
-        println!("Free Time: {:?}", time);
-
-
-        println!("Free: {}", free);
-        println!("Double free: {}", heap.free(h_pointer));
 
 
 
-        let (hptr, ptr) = heap.alloc(Layout::new::<Block>());
-        let ptr = ptr as *mut Block;
+//#[inline(always)]
+pub fn test_heap() {
+    let mut heap = LHeap::new();
 
-        let fdata = read_to_string("test.lm").unwrap();
-        let mut tokens;
-        let token_gen_time = time! {
-            tokens = tokenize(fdata);
-        };
+    let (h_pointer, ptr);
+    let time = time!{
+        (h_pointer, ptr)= heap.alloc(Layout::array::<i32>(10).unwrap());
+    };
+
+    println!("Alloc Time: {:?}", time);
+
+    let ptr = ptr as *mut i32;
+
+    println!("allocation: {:?}", ptr);
+
+    let free;
+    let time = time!{
+        free = heap.free(h_pointer);
+    };
+
+    println!("Free Time: {:?}", time);
 
 
+    println!("Free: {}", free);
+    println!("Double free: {}", heap.free(h_pointer));
+}
+
+pub fn test_compiler() {
+    let mut compiler = Compiler::new();
+
+    let file_data = fs::read_to_string("test.lm").unwrap();
+    let mut tokens = tokenize(file_data);
+    let block = Statement::from_tokens(&mut tokens).unwrap();
+
+    let program = compiler.compile_block_executable(&block);
 
 
-        let tree_building_time = time! {
-            unsafe{ ptr::write(ptr, Statement::from_tokens(&mut tokens).unwrap()); }
-        };
-        let code = unsafe{
-            &mut *ptr
-        };
-
-        println!("{:?}", code);
-
-        println!(
-            "tokenization: {:?}, tree building: {:?}",
-            token_gen_time, tree_building_time
-        );
-
-        println!( "{}", heap.free(hptr) );
+    println!("ENTRY: {}", program.entry);
+    for (i, is) in program.instructions.iter().enumerate() {
+        println!("{}: {:?}", i, is)
     }
+
+    let mut env = LEnv::new();
+
+    let time = time! {
+        env.exec(&program, 0);
+    };
+
+    println!("res: {} [{:?}]", env.state.r_ret, time);
 }
 
 fn main() {
-
-    let executable = {
-        let mut builder = LExecutableBuilder::new();
-        
-        builder
-            .add(Instruction::Mov(Register::Ret, 2))
-            .add(Instruction::Mov(Register::Aux, 2))
-            //.add(Instruction::Add(Register::Ret, Register::Aux))
-            .add(Instruction::Exit);
-        
-        builder.build()
-    };
-    
-    let mut env = LEnv::new();
-
-    let t = time! {
-        env.exec(&executable);
-    };
-
-
-    println!("{} ({:?})", env.state.r_ret, t)
-
+    test_compiler()
 }

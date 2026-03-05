@@ -158,7 +158,7 @@ pub struct LHeap {
 
 impl LHeap {
     
-    pub const MIN_HEAP_ADDR: LPTR = 0x0001FFFFFFFFFFFF;
+    pub const MIN_HEAP_ADDR: LPTR = 0x0001000000000000;
     
     pub fn new() -> Self {
         Self { pages: Vec::new() }

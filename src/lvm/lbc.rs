@@ -3,6 +3,7 @@ use crate::lvm::lenv::LPTR;
 
 
 #[derive(Copy, Clone)]
+#[derive(Debug)]
 pub enum Register {
     Ret,
     Aux,
@@ -26,23 +27,31 @@ pub enum DataSize {
 
 
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Instruction {
-    
+
+    StackAlloc(u64),
+    StackFree(u64),
+
     //push a 64-bit sized value onto the stack
     Push(Register),
     
     //pop a 64-bit sized value
     Pop(Register),
+
+    //pops N 64 bit values off the stack
+    PopN(u64),
     Exit,
     
     //64-bit moves
     Mov(Register, u64),
+    MovR(Register, Register),
     MovPtrReg(u64, Register),
     MovRegPtr(Register, u64),
+    MovBottom(Register, i64), //moves the stack value from bottom offset by the specified value into the specified register
     
     //64-bit signed comparison
-    Cmp(Register, Register),
+    Cmp,
     
     //call operation, pushes the current PC onto the stack and jumps to the specified address
     Call(u64),
@@ -57,12 +66,15 @@ pub enum Instruction {
     JumpGreaterEq(u64),
     JumpEq(u64),
     JumpNEq(u64),
-    
+
     //64-bit signed integer operations
-    //first arg is treated as a pointer
-    Add(Register, Register),
-    Sub(Register, Register),
-    Mul(Register, Register),
-    Div(Register, Register),
+    //performs on Ret and Aux
+    Add,
+    Sub,
+    Mul,
+    Div,
+
+    //negates the sign of the RET register
+    Negate,
     
 }

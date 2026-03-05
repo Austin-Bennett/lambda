@@ -7,12 +7,11 @@ use std::process::abort;
 
 #[derive(Clone, PartialEq)]
 pub enum ExprNode {
-    CallOperation{caller: Box<ExprNode>, args: Vec<ExprNode>},
+    CallOperation{caller: String, args: Vec<ExprNode>},
     BinaryOperation{op: &'static str, operands: Box<(ExprNode, ExprNode)>},
     UnaryOperation{op: &'static str, operand: Box<ExprNode>},
     Ident(String),
     Num(NumericalLiteral),
-    Argument(usize),
     Void,
     Error(String), //internal, shouldn't show up in the tree
 }
@@ -26,7 +25,6 @@ impl ExprNode {
         //walks the tree and replaces the corresponding identifier with the node
         match self {
             ExprNode::CallOperation { caller, args } => {
-                caller.replace_identifier(ident, node.clone());
                 for n in args {
                     n.replace_identifier(ident, node.clone());
                 }
@@ -44,7 +42,6 @@ impl ExprNode {
                 }
             }
             ExprNode::Num(_) => {}
-            ExprNode::Argument(_) => {}
             ExprNode::Void => {}
             Error(_) => {}
         }
@@ -121,8 +118,13 @@ impl ExprNode {
                 Token::ParenthesesGroup(_) => {
                     if let Some(Token::ParenthesesGroup(mut arg_tks)) = tks.pop_front() {
                         let args = Self::parse_call(&mut arg_tks)?;
-                        // check if the next token is '=', if so, this is (probably) a function declaration
-                        CallOperation { caller: Box::new(lhs), args }
+                        // check if the next token is '=', if so, this is (probably) a function declaration todo: ?
+                        if let ExprNode::Ident(s) = lhs {
+
+                            CallOperation { caller: s, args }
+                        } else {
+                            Error("Expected function identifier, got expression".to_string())
+                        }
 
                     } else {
                         abort(); //shouldn't ever happen
@@ -146,7 +148,7 @@ impl Debug for ExprNode {
             ExprNode::UnaryOperation { op, operand } => write!(f, "({}{:?})", op, operand),
             ExprNode::CallOperation{ caller, args } => {
                 f.write_str("(")?;
-                caller.as_ref().fmt(f)?;
+                f.write_str(&caller)?;
                 f.write_str("(")?;
                 let mut first = true;
                 for i in args {
@@ -162,7 +164,6 @@ impl Debug for ExprNode {
             ExprNode::Num(n) => f.write_str(n.to_string().as_str()),
             Error(s) => write!(f, "(Error: {})", s),
             ExprNode::Void => f.write_str("void"),
-            ExprNode::Argument(u) => write!(f, "Argument({})", u),
         }
     }
 }
