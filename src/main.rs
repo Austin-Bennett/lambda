@@ -68,7 +68,7 @@ pub fn test_compiler() {
         env.exec(&program, 0);
     };
 
-    println!("res: {} [{:?}]", env.state.r_ret, time);
+    println!("res: {} [{:?}]", f64::from_bits( env.state.r_ret ), time);
 }
 
 fn main() {

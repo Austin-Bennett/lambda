@@ -1,10 +1,10 @@
 use std::alloc::{alloc, Layout};
 use std::io::{stdin, stdout, Write};
-use std::ops::Add;
+use std::ops::{Add, Neg};
 use crate::lvm::lbc::*;
 use crate::lvm::lexecutable::LExecutable;
 use crate::lvm::lheap::LHeap;
-use std::ptr;
+use std::{mem, ptr};
 
 
 /*
@@ -335,6 +335,30 @@ impl LEnv {
 
                 self.state.r_cmp = self.state.r_ret.cast_signed() - self.state.r_aux.cast_signed();
             }
+            Instruction::CmpLT => {
+                self.state.r_cmp = self.state.r_ret.cast_signed() - self.state.r_aux.cast_signed();
+                if self.state.r_cmp < 0 {
+                    self.state.r_cmp = 0;
+                }
+            }
+            Instruction::CmpLTE => {
+                self.state.r_cmp = self.state.r_ret.cast_signed() - self.state.r_aux.cast_signed();
+                if self.state.r_cmp <= 0 {
+                    self.state.r_cmp = 0;
+                }
+            }
+            Instruction::CmpGT => {
+                self.state.r_cmp = self.state.r_ret.cast_signed() - self.state.r_aux.cast_signed();
+                if self.state.r_cmp > 0 {
+                    self.state.r_cmp = 0;
+                }
+            }
+            Instruction::CmpGTE => {
+                self.state.r_cmp = self.state.r_ret.cast_signed() - self.state.r_aux.cast_signed();
+                if self.state.r_cmp >= 0 {
+                    self.state.r_cmp = 0;
+                }
+            }
 
             
             Instruction::Call(pc) => {
@@ -345,7 +369,14 @@ impl LEnv {
             Instruction::Return => {
                 self.state.r_pc = self.pop64();
             }
-            
+
+
+            Instruction::CastInt => {
+                self.state.r_ret = (f64::from_bits(self.state.r_ret) as i64).cast_unsigned()
+            }
+            Instruction::CastFloat => {
+                self.state.r_ret = ((self.state.r_ret.cast_signed()) as f64).to_bits()
+            }
 
             Instruction::Jump(loc) => {
                 self.state.r_pc = *loc;
@@ -409,6 +440,62 @@ impl LEnv {
             }
             Instruction::Div => {
                 self.state.r_ret = (self.state.r_ret.cast_signed() / self.state.r_aux.cast_signed()).cast_unsigned();
+            }
+            
+
+            Instruction::FCmp => {
+
+                //heres how this works:
+                /*
+                FLOATING BIT REPRESENTATION:
+                SIGN  EXPONENT MANTISSA
+                1 bit 11 bits  53 bits
+
+                so if both numbers are exactly equal, cmp = 0,
+                because the bit representation will all be 0's
+                but if less than, then the sign bit will be on, which means the integer will be
+                negative too, and the other way around if positive
+                */
+                self.state.r_cmp = (f64::from_bits( self.state.r_ret ) - f64::from_bits( self.state.r_aux )).to_bits().cast_signed();
+
+            }
+            Instruction::FCmpLT => {
+
+                let res = (f64::from_bits( self.state.r_ret ) - f64::from_bits( self.state.r_aux )).to_bits().cast_signed();
+                self.state.r_cmp = if res < 0 { 0 } else { 1 }
+            }
+            Instruction::FCmpLTE => {
+                let res = (f64::from_bits( self.state.r_ret ) - f64::from_bits( self.state.r_aux )).to_bits().cast_signed();
+                self.state.r_cmp = if res <= 0 { 0 } else { 1 }
+            }
+            Instruction::FCmpGT => {
+                let res = (f64::from_bits( self.state.r_ret ) - f64::from_bits( self.state.r_aux )).to_bits().cast_signed();
+                self.state.r_cmp = if res > 0 { 0 } else { 1 }
+            }
+            Instruction::FCmpGTE => {
+
+                let res = (f64::from_bits( self.state.r_ret ) - f64::from_bits( self.state.r_aux )).to_bits().cast_signed();
+                self.state.r_cmp = if res >= 0 { 0 } else { 1 }
+            }
+
+            Instruction::FAdd => {
+                self.state.r_ret = (f64::from_bits(self.state.r_ret) + f64::from_bits(self.state.r_aux)).to_bits();
+            }
+            Instruction::FSub => {
+                self.state.r_ret = (f64::from_bits(self.state.r_ret) - f64::from_bits(self.state.r_aux)).to_bits();
+
+            }
+            Instruction::FMul => {
+                self.state.r_ret = (f64::from_bits(self.state.r_ret) * f64::from_bits(self.state.r_aux)).to_bits();
+
+            }
+            Instruction::FDiv => {
+                self.state.r_ret = (f64::from_bits(self.state.r_ret) / f64::from_bits(self.state.r_aux)).to_bits();
+
+            }
+
+            Instruction::FNegate => {
+                self.state.r_ret = f64::from_bits(self.state.r_ret).neg().to_bits()
             }
         }
 

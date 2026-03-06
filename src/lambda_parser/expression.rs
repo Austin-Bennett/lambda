@@ -8,10 +8,15 @@ use std::process::abort;
 #[derive(Clone, PartialEq)]
 pub enum ExprNode {
     CallOperation{caller: String, args: Vec<ExprNode>},
-    BinaryOperation{op: &'static str, operands: Box<(ExprNode, ExprNode)>},
-    UnaryOperation{op: &'static str, operand: Box<ExprNode>},
+    FBinaryOperation{op: &'static str, operands: Box<(ExprNode, ExprNode)>},
+    IBinaryOperation{op: &'static str, operands: Box<(ExprNode, ExprNode)>},
+    FUnaryOperation{op: &'static str, operand: Box<ExprNode>},
+    IUnaryOperation{op: &'static str, operand: Box<ExprNode>},
+    CastInt(Box<ExprNode>),
+    CastFloat(Box<ExprNode>),
     Ident(String),
-    Num(NumericalLiteral),
+    IntNum(i64),
+    FloatNum(f64),
     Void,
     Error(String), //internal, shouldn't show up in the tree
 }
@@ -21,41 +26,54 @@ pub enum ExprNode {
 impl ExprNode {
 
 
-    pub fn replace_identifier(&mut self, ident: &impl AsRef<str>, node: ExprNode) {
-        //walks the tree and replaces the corresponding identifier with the node
+    //false if floating, true if integer
+    pub fn is_integer_operation(&self) -> Option<bool> {
         match self {
             ExprNode::CallOperation { caller, args } => {
-                for n in args {
-                    n.replace_identifier(ident, node.clone());
+                if args.is_empty() {
+                    //assume floating
+                    None
+                } else {
+                    args[0].is_integer_operation()
                 }
             }
-            ExprNode::BinaryOperation { op, operands } => {
-                operands.0.replace_identifier(ident, node.clone());
-                operands.1.replace_identifier(ident, node.clone());
+            ExprNode::FBinaryOperation { .. } => {
+                Some(false)
             }
-            ExprNode::UnaryOperation { op, operand } => {
-                operand.replace_identifier(ident, node)
+            ExprNode::IBinaryOperation { .. } => {
+                Some(true)
             }
-            ExprNode::Ident(id) => {
-                if id == ident.as_ref() {
-                    *self = node;
-                }
+            ExprNode::FUnaryOperation { .. } => {
+                Some(false)
             }
-            ExprNode::Num(_) => {}
-            ExprNode::Void => {}
-            Error(_) => {}
+            ExprNode::IUnaryOperation { .. } => {
+                Some(true)
+            }
+            ExprNode::CastInt(_) => {
+                Some(true)
+            }
+            ExprNode::CastFloat(_) => {
+                Some(false)
+            }
+            ExprNode::Ident(ident) => {
+                None
+            }
+            ExprNode::IntNum(_) => {
+                Some(true)
+            }
+            ExprNode::FloatNum(_) => {
+                Some(false)
+            }
+            Void => {
+                None
+            }
+            Error(_) => {
+                None
+            }
         }
-
     }
 
-    #[allow(dead_code)]
-    pub fn not_eof(self) -> Result<Self, String> {
-        if let Self::Error(s) = self {
-            Err(s)
-        } else {
-            Ok(self)
-        }
-    }
+
 
     pub fn from_tokens(tks: &mut VecDeque<Token>) -> Result<Self, String> {
         Self::make(tks, MINBP)

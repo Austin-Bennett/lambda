@@ -3,7 +3,7 @@ use crate::lvm::lenv::LPTR;
 
 
 #[derive(Copy, Clone)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Register {
     Ret,
     Aux,
@@ -49,9 +49,30 @@ pub enum Instruction {
     MovPtrReg(u64, Register),
     MovRegPtr(Register, u64),
     MovBottom(Register, i64), //moves the stack value from bottom offset by the specified value into the specified register
-    
-    //64-bit signed comparison
+
+    //treats the RET register as a floating number and casts it to an integer
+    CastInt,
+    //treats the RET register as a integer and casts it to a float
+    CastFloat,
+
+
+    //64-bit signed integer comparison
     Cmp,
+
+    //compare less than (cmp = 0 if less than)
+    CmpLT,
+    CmpLTE,
+    CmpGT,
+    CmpGTE,
+
+    //64-bit floating-point comparison
+    FCmp,
+
+    //compare less than (cmp = 0 if less than)
+    FCmpLT,
+    FCmpLTE,
+    FCmpGT,
+    FCmpGTE,
     
     //call operation, pushes the current PC onto the stack and jumps to the specified address
     Call(u64),
@@ -74,7 +95,15 @@ pub enum Instruction {
     Mul,
     Div,
 
+    //64-bit signed integer operations
+    //performs on Ret and Aux
+    FAdd,
+    FSub,
+    FMul,
+    FDiv,
+
     //negates the sign of the RET register
     Negate,
-    
+    //floating point negation
+    FNegate,
 }
