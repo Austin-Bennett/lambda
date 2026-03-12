@@ -9,7 +9,7 @@ pub struct IntegerLiteral {
 
 
 impl IntegerLiteral {
-    //fails if there are no digits, no literal, or bigger than a u64
+    //fails if there are no digits, no literal, or bigger than a u128
     pub fn from_string(s: impl AsRef<str>) -> Option<Self> {
         let mut chars = s.as_ref().chars().peekable();
 
@@ -217,25 +217,31 @@ impl IntegerLiteral {
     }
 }
 
+impl LDecimal128 {
 
+    //fails if the value is bigger or smaller than the max/min possible value
+    pub fn from_string(s: impl AsRef<str>) -> Option<Self> {
+        //takes in the max amount of digits an i128 can hold (38) after that
+        //it either ignores the rest (in the case of decimals)
+        //or appends zeros (until end or decimal is reached)
+
+        //collect the >1 digits, <1 digits, combine
+        let s = s.as_ref();
+
+        let parts = s.split('.').collect::<Vec<&str>>();
+
+        //should be the first 2 parts
+        if parts.len() == 1 {
+            let p1 = parts[0];
+        }
+
+
+        todo!()
+    }
+}
 
 pub struct ScientificLiteral {
     pub base: LDecimal128,
     pub exp: LDecimal128,
 }
 
-impl ScientificLiteral {
-    pub fn from_string(s: impl AsRef<str>) -> Option<Self> {
-        //parse up until the e or E
-        let e = s.as_ref().find('e').unwrap_or(s.as_ref().find('E')?);
-
-        let base: LDecimal128 = s.as_ref()[0..e].parse().ok()?;
-
-        let exp: LDecimal128 = s.as_ref()[e+1..].parse().ok()?;
-
-        Some( ScientificLiteral{
-            base,
-            exp
-        } )
-    }
-}

@@ -2,6 +2,8 @@ pub mod decimal64;
 pub mod decimal128;
 
 //primitive lambda types
+
+//4-bit utf-8 char
 pub type LChar = char;
 pub type LU8 =   u8;
 pub type LU16 =  u16;
