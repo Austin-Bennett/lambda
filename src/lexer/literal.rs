@@ -1,12 +1,12 @@
+use std::fmt::{Debug, Formatter};
 use anyhow::Result;
 use crate::common::primitives::decimal128::LDecimal128;
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct IntegerLiteral {
     pub negative: bool,
     pub value: u128,
 }
-
 
 impl IntegerLiteral {
     //fails if there are no digits, no literal, or bigger than a u128
@@ -217,31 +217,4 @@ impl IntegerLiteral {
     }
 }
 
-impl LDecimal128 {
-
-    //fails if the value is bigger or smaller than the max/min possible value
-    pub fn from_string(s: impl AsRef<str>) -> Option<Self> {
-        //takes in the max amount of digits an i128 can hold (38) after that
-        //it either ignores the rest (in the case of decimals)
-        //or appends zeros (until end or decimal is reached)
-
-        //collect the >1 digits, <1 digits, combine
-        let s = s.as_ref();
-
-        let parts = s.split('.').collect::<Vec<&str>>();
-
-        //should be the first 2 parts
-        if parts.len() == 1 {
-            let p1 = parts[0];
-        }
-
-
-        todo!()
-    }
-}
-
-pub struct ScientificLiteral {
-    pub base: LDecimal128,
-    pub exp: LDecimal128,
-}
-
+//todo: decimal literals, scientific literals, etc

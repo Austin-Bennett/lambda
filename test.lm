@@ -1,0 +1,9 @@
+
+struct ivec2 {
+    int x,
+    int y,
+}
+
+void main() = {
+    2 + 2
+}

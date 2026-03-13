@@ -1,4 +1,7 @@
+#![feature(generic_const_exprs)]
 use anyhow::Result;
+use crate::lexer::token::{FeatureToken, Token, TokenType};
+use crate::lexer::tokenizer::Tokens;
 
 pub mod lexer;
 mod common;
@@ -60,8 +63,15 @@ mod tests {
 }
 
 fn main() -> Result<()> {
-    println!("Hello, world!");
-    
+    let tokens = Tokens::tokenize("test.lm")?.collect::<Vec<Token>>();
+
+    for tk in &tokens {
+        if let TokenType::Feature(FeatureToken::StatementEnd) = tk.typ {
+            println!()
+        } else {
+            print!("{:?} ", tk.typ);
+        }
+    }
     
     Ok(())
 }

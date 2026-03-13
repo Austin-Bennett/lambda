@@ -1,11 +1,9 @@
+use std::path::PathBuf;
 
-
-
-
+#[derive(Debug)]
 pub struct SourceMap {
-    pub file: String,
-    pub row: u32, //line
-    pub column: u32, //char
-    pub len: u32,
+    pub owner: String, //either a file, or explicitly specified
+    pub offset: usize, //char
+    pub len: usize,
 }
 
