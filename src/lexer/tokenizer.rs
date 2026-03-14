@@ -6,6 +6,7 @@ use crate::lexer::token_parsers::misc_parsers::{CloseBraceParser, CloseBracketPa
 use crate::lexer::token_parsers::Parser;
 use anyhow::Result;
 use crate::common::sourcemap::SourceMap;
+use crate::lexer::token_parsers::keyword_parser::KeywordParser;
 use crate::lexer::token_parsers::user_parsers::{CommentParser, WhitespaceParser};
 
 pub struct Tokens {
@@ -27,6 +28,7 @@ impl Tokens {
         &OpenBraceParser::new(TokenType::Feature(FeatureToken::OpenBrace)),
         &CloseBraceParser::new(TokenType::Feature(FeatureToken::CloseBrace)),
         &CommaParser::new(TokenType::Feature(FeatureToken::Comma)),
+        &KeywordParser,
         &IdentifierParser,
         &IntLiteralParser,
     ];

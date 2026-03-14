@@ -1,7 +1,9 @@
+use test_import
+
 
 struct ivec2 {
-    int x,
-    int y,
+    int64 x,
+    int64 y,
 }
 
 void main() = {

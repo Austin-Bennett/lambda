@@ -2,6 +2,8 @@ use crate::common::sourcemap::SourceMap;
 use crate::lexer::literal::IntegerLiteral;
 use crate::lexer::token_parsers::Parser;
 
+//anything ending in KW is a keyword
+
 #[derive(Clone, Debug)]
 pub enum ExpressionToken {
     Identifier(String), //variable names
@@ -28,6 +30,13 @@ pub enum ExpressionToken {
     IntegerLiteral(IntegerLiteral)
 }
 
+#[derive(Clone)]
+#[derive(Debug)]
+pub enum StatementToken {
+    UseKW,
+    StructKW,
+}
+
 #[derive(Clone, Debug)]
 pub enum FeatureToken {
     //code braces {}
@@ -50,6 +59,7 @@ pub enum TokenType {
     User(UserToken),
     Expression(ExpressionToken),
     Feature(FeatureToken),
+    Statement(StatementToken),
 
     CompileWarning(String),
     CompileError(String),
