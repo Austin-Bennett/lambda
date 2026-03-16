@@ -1,4 +1,5 @@
 #![feature(try_trait_v2)]
+#![feature(deref_pure_trait)]
 
 use std::collections::HashMap;
 use std::{env, fs};

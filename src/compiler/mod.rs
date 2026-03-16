@@ -10,13 +10,25 @@ use crate::lexer::tokenizer::Tokens;
 pub struct CompileMessage {
     source: SourceMap,
     message: String,
+    notes: Vec<CompileMessage>,
 }
 
-pub enum CompilerError<T> {
-    Ok(T),
-    None,
-    Err(CompileMessage)
+impl CompileMessage {
+    pub fn new(src: SourceMap, msg: String) -> Self {
+        Self{
+            source: src,
+            message: msg,
+            notes: Vec::new()
+        }
+    }
+    
+    pub fn add_note(mut self, msg: CompileMessage) -> Self {
+        self.notes.push(msg);
+        
+        self
+    }
 }
+
 
 
 //keeps track of compilation context
@@ -39,36 +51,38 @@ impl Compiler {
         }
     }
 
-    pub fn emit_compile_warning(&mut self, source: SourceMap, message: String) {
-        self.warnings.push(CompileMessage {
-            source,
-            message
-        });
+    pub fn emit_compile_warning(&mut self, msg: CompileMessage) {
+        self.warnings.push(msg);
     }
 
-    pub fn emit_compile_error(&mut self, source: SourceMap, message: String) {
-        self.errors.push(CompileMessage {
-            source,
-            message
-        });
+    pub fn emit_compile_error(&mut self, msg: CompileMessage) {
+        self.errors.push(msg);
+    }
+    
+    fn print_message(&self, msg: &CompileMessage, ty: &str) {
+        let source_string = &self.source_map[&msg.source.owner];
+        
+        //first print the source
+        println!("Compiler {} at {:?} {} at line {} character {}:",
+                 ty,
+                 msg.source.owner.descriptor,
+                 msg.source.owner.name,
+                 msg.source.line + 1,
+                 msg.source.char + 1,
+        );
+        let end = msg.source.offset + msg.source.len;
+        println!("\"{}\"\n", &source_string[msg.source.offset..end]);
+        println!("{}\n", msg.message);
+        for i in &msg.notes {
+            self.print_message(&i, "note")
+        }
     }
 
     fn raise_messages(&self, messages: &Vec<CompileMessage>, ty: &str) -> bool {
         if !messages.is_empty() {
 
             for e in messages {
-                let source_string = &self.source_map[&e.source.owner];
-                //first print the source
-                println!("Compile {} in {:?} {} at line {} character {}:",
-                         ty,
-                         e.source.owner.descriptor,
-                         e.source.owner.name,
-                         e.source.line + 1,
-                         e.source.char + 1,
-                );
-                let end = e.source.offset + e.source.len;
-                println!("\"{}\"\n", &source_string[e.source.offset..end]);
-                println!("{}", e.message);
+                self.print_message(e, ty)
             }
 
             true
@@ -114,7 +128,9 @@ impl Compiler {
                                 self.add_module_impl(tks, added)
                             }
                             Err(e) => {
-                                self.emit_compile_error(tk.smap.clone(), format!("Failed to find module {:?} due to error: {}", &path, e))
+                                self.emit_compile_error(CompileMessage::new(
+                                    tk.smap.clone(), 
+                                    format!("Failed to find module {:?} due to error: {}", &path, e)))
                             }
                         }
                     }
@@ -124,11 +140,15 @@ impl Compiler {
                 TokenType::User(_) => {},
 
                 TokenType::CompileWarning(message) => {
-                    self.emit_compile_warning(tk.smap.clone(), message.clone());
+                    self.emit_compile_warning(CompileMessage::new(
+                        tk.smap.clone(),
+                        message.clone()))
                 }
 
                 TokenType::CompileError(message) => {
-                    self.emit_compile_error(tk.smap.clone(), message.clone());
+                    self.emit_compile_error(CompileMessage::new(
+                        tk.smap.clone(),
+                        message.clone()))
                 }
 
 
