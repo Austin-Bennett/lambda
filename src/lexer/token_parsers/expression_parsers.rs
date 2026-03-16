@@ -1,24 +1,20 @@
 use std::ops::Deref;
 use lazy_static::lazy_static;
+use crate::common::operator::Operator;
 use crate::lexer::literal::IntegerLiteral;
 use crate::lexer::token::{ExpressionToken, TokenType};
 use crate::lexer::token_parsers::Parser;
 
 lazy_static!{
-    pub static ref OPERATORS: Vec<(&'static str, ExpressionToken)> = {
-            let mut res = vec![
-            ("=", ExpressionToken::Assign),
-
-            ("::", ExpressionToken::ResolveModule),
-            
-            ("+", ExpressionToken::Add),
-            ("-", ExpressionToken::Sub),
-            ("*", ExpressionToken::Mul),
-            ("/", ExpressionToken::Div),
-            
+    pub static ref OPERATORS: Vec<Operator> = {
+        let mut res = vec![
+            Operator{ tk: "+", bp: Operator::ADDITIVE_BP },
+            Operator{ tk: "-", bp: Operator::ADDITIVE_BP },
+            Operator{ tk: "*", bp: Operator::MULTIPLICATIVE_BP },
+            Operator{ tk: "/", bp: Operator::MULTIPLICATIVE_BP },
         ];
 
-        res.sort_by(|f, s| s.0.len().cmp(&f.0.len()));
+        res.sort_by(|f, s| s.tk.len().cmp(&f.tk.len()));
 
         res
     };
@@ -30,11 +26,11 @@ pub struct IntLiteralParser;
 
 impl IdentifierParser {
     pub fn is_identifier_character(c: char) -> bool {
-        c.is_numeric() || c.is_alphabetic() || c == '_'
+        c.is_numeric() || c.is_alphabetic() || c == '_' || c == ':'
     }
 
     pub fn can_start_with(c: char) -> bool {
-        c.is_alphabetic() || c == '_'
+        c.is_alphabetic() || c == '_' || c == ':'
     }
 
     pub fn is_valid_identifier(s: &str) -> bool {
@@ -51,9 +47,12 @@ impl IdentifierParser {
 
 impl Parser for OperatorParser {
     fn parse(&self, s: &str) -> Option<(TokenType, usize)> {
-        for (op, e) in OPERATORS.deref() {
-            if s.starts_with(*op) {
-                return Some((TokenType::Expression(e.clone()), op.len()))
+        for op in OPERATORS.deref() {
+            if s.starts_with(op.tk) {
+                return Some((
+                    TokenType::Expression(ExpressionToken::Operator(op.clone())), 
+                    op.tk.len()
+                ));
             }
         }
 

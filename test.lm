@@ -7,6 +7,6 @@ struct ivec2 {
     int64 y,
 }
 
-void main() = {
+fn main() = {
     in64 a = test_import::add(2, 2 >> 1)
 }

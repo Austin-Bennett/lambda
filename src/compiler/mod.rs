@@ -12,6 +12,13 @@ pub struct CompileMessage {
     message: String,
 }
 
+pub enum CompilerError<T> {
+    Ok(T),
+    None,
+    Err(CompileMessage)
+}
+
+
 //keeps track of compilation context
 pub struct Compiler {
     errors: Vec<CompileMessage>,

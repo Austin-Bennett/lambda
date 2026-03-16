@@ -1,3 +1,5 @@
+#![feature(try_trait_v2)]
+
 use std::collections::HashMap;
 use std::{env, fs};
 use std::ops::Deref;
@@ -10,8 +12,9 @@ use crate::compiler::Compiler;
 use crate::lexer::token::{FeatureToken, TokenType, UserToken};
 
 pub mod lexer;
-mod common;
+pub mod common;
 pub mod compiler;
+pub mod ast;
 
 mod tests {
     use crate::common::primitives::decimal128::LDecimal128;
@@ -79,6 +82,7 @@ pub struct Arguments {
 
 
 fn main() -> Result<()> {
+    #[allow(unused_mut)]
     let mut args = Arguments::parse();
 
 
@@ -103,15 +107,15 @@ fn main() -> Result<()> {
 
 
     compiler.raise_compile_warnings();
-
     if compiler.raise_compile_errors() {
-        panic!("Compiler errors raised!");
+        abort();
     }
-
-
+    
+    
 
     for (modp, m) in compiler.as_ref() {
         println!("{}", modp);
+        
         for tk in &m.tokens {
             if let TokenType::Feature(FeatureToken::StatementEnd) = tk.typ {
                 println!()

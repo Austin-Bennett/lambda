@@ -1,3 +1,4 @@
+use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
 use crate::lexer::literal::IntegerLiteral;
 use crate::lexer::token_parsers::Parser;
@@ -7,30 +8,34 @@ use crate::lexer::token_parsers::Parser;
 #[derive(Clone, Debug)]
 pub enum ExpressionToken {
     Identifier(String), //variable names
-    
-    //module stuff
-    ResolveModule,
+
+    IntegerLiteral(IntegerLiteral),
     
     //arithmetic operators
-    Assign, //=
-
-    Add, // +
-    Sub, // -
-    Mul, // *
-    Div, // /
+    Operator(Operator),
 
     //todo: bitwise operators, boolean operators, etc
-
     //groups
     //parentheses ()
     OpenParentheses,
-    CloseParentheses,
 
+    CloseParentheses,
     //brackets []
     OpenBracket,
-    CloseBracket,
 
-    IntegerLiteral(IntegerLiteral)
+    CloseBracket,
+}
+
+impl ExpressionToken {
+    
+    pub fn is_operator(&self) -> bool {
+        match self {
+            ExpressionToken::Operator(_) => true,
+            _ => false,
+        }
+    }
+    
+    
 }
 
 #[derive(Clone)]

@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 #[derive(Eq, PartialEq, Clone)]
 pub struct ModulePath {
-    components: Vec<String>
+    pub components: Vec<String>
 }
 
 impl ModulePath {
