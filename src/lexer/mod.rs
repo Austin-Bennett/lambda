@@ -15,3 +15,4 @@ pub mod literal;
 pub mod token_parsers;
 pub mod tokenizer;
 pub mod lexer;
+pub mod modules;

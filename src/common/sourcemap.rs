@@ -1,9 +1,12 @@
 use std::path::PathBuf;
+use crate::common::source_owner::SourceOwner;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SourceMap {
-    pub owner: String, //either a file, or explicitly specified
-    pub offset: usize, //char
+    pub owner: SourceOwner,
+    pub offset: usize,
+    pub line: usize,
+    pub char: usize,
     pub len: usize,
 }
 

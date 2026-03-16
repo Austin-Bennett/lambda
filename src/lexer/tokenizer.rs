@@ -5,13 +5,17 @@ use crate::lexer::token_parsers::expression_parsers::{IdentifierParser, IntLiter
 use crate::lexer::token_parsers::misc_parsers::{CloseBraceParser, CloseBracketParser, CloseParenthesesParser, CommaParser, NewlineParser, OpenBraceParser, OpenBracketParser, OpenParenthesesParser};
 use crate::lexer::token_parsers::Parser;
 use anyhow::Result;
+use crate::common::source_owner::{SourceDescriptor, SourceOwner};
 use crate::common::sourcemap::SourceMap;
 use crate::lexer::token_parsers::keyword_parser::KeywordParser;
+use crate::lexer::token_parsers::use_parser::UseParser;
 use crate::lexer::token_parsers::user_parsers::{CommentParser, WhitespaceParser};
 
 pub struct Tokens {
-    owner: String,
+    owner: SourceOwner,
     raw: String,
+    line: usize,
+    char: usize,
     pos: usize,
 }
 
@@ -28,23 +32,29 @@ impl Tokens {
         &OpenBraceParser::new(TokenType::Feature(FeatureToken::OpenBrace)),
         &CloseBraceParser::new(TokenType::Feature(FeatureToken::CloseBrace)),
         &CommaParser::new(TokenType::Feature(FeatureToken::Comma)),
+        &UseParser,
         &KeywordParser,
         &IdentifierParser,
         &IntLiteralParser,
     ];
 
-    pub fn tokenize_string(owner: String, contents: String) -> Self {
+    pub fn tokenize_string(owner: SourceOwner, contents: String) -> Self {
         Self{
             owner,
             raw: contents,
             pos: 0,
+            line: 0,
+            char: 0,
         }
     }
 
     pub fn tokenize(file: impl AsRef<Path>) -> Result<Self> {
         let file_contents = fs::read_to_string(&file)?;
 
-        Ok(Self::tokenize_string(file.as_ref().to_string_lossy().to_string(), file_contents))
+        Ok(Self::tokenize_string(SourceOwner::new(
+            SourceDescriptor::File,
+            file.as_ref().to_string_lossy().to_string()
+        ), file_contents))
     }
 
     //returns None on a compiler error/warning
@@ -57,6 +67,10 @@ impl Tokens {
 
         None
     }
+    
+    pub fn get_owner(&self) -> &SourceOwner {
+        &self.owner
+    }
 }
 
 impl Iterator for Tokens {
@@ -65,8 +79,11 @@ impl Iterator for Tokens {
     fn next(&mut self) -> Option<Self::Item> {
         //get the next token
         let og_pos = self.pos;
+        let og_line = self.line;
+        let og_char = self.char;
         let mut bad_buf = String::new();
         let mut res = None;
+        
         while self.pos < self.raw.len() && res.is_none() {
             if let Some((tk, len)) = Self::parse_next_token(&self.raw[self.pos..]) {
 
@@ -74,6 +91,8 @@ impl Iterator for Tokens {
                     let smap = SourceMap{
                         owner: self.owner.clone(),
                         offset: self.pos,
+                        line: self.line,
+                        char: self.char,
                         len,
                     };
 
@@ -82,13 +101,28 @@ impl Iterator for Tokens {
                         smap
                     });
 
+                    for (i, c) in (&self.raw[self.pos..]).char_indices() {
+                        if i >= len {
+                            break;
+                        }
+                        self.char += 1;
+                        if c == '\n' {
+                            self.line += 1;
+                            self.char = 0;
+                        }
+                    }
                     self.pos += len;
+
+                    
+                    
                 } else {
                     res = Some(Token{
                         typ: TokenType::CompileWarning(format!("Could not make token out of string: \"{}\"", bad_buf)),
                         smap: SourceMap{
                             owner: self.owner.clone(),
                             offset: og_pos,
+                            line: og_line,
+                            char: og_char,
                             len: bad_buf.len(),
                         }
                     });
@@ -106,6 +140,8 @@ impl Iterator for Tokens {
                 smap: SourceMap{
                     owner: self.owner.clone(),
                     offset: og_pos,
+                    line: og_line,
+                    char: og_char,
                     len: bad_buf.len(),
                 }
             });

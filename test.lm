@@ -1,4 +1,5 @@
-use test_import
+
+use doesnt_exist
 
 
 struct ivec2 {
@@ -7,5 +8,5 @@ struct ivec2 {
 }
 
 void main() = {
-    2 + 2
+    in64 a = test_import::add(2, 2 >> 1)
 }

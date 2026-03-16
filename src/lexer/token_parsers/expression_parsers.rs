@@ -8,6 +8,8 @@ lazy_static!{
     pub static ref OPERATORS: Vec<(&'static str, ExpressionToken)> = {
             let mut res = vec![
             ("=", ExpressionToken::Assign),
+
+            ("::", ExpressionToken::ResolveModule),
             
             ("+", ExpressionToken::Add),
             ("-", ExpressionToken::Sub),

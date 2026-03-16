@@ -10,7 +10,6 @@ lazy_static!{
 
     pub static ref keywords: Vec<(&'static str, TokenType)> = {
         let mut res = vec![
-            ("use", TokenType::Statement(StatementToken::UseKW)),
             ("struct", TokenType::Statement(StatementToken::StructKW)),
         ];
 

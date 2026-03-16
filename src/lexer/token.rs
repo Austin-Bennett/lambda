@@ -8,6 +8,9 @@ use crate::lexer::token_parsers::Parser;
 pub enum ExpressionToken {
     Identifier(String), //variable names
     
+    //module stuff
+    ResolveModule,
+    
     //arithmetic operators
     Assign, //=
 
@@ -33,7 +36,7 @@ pub enum ExpressionToken {
 #[derive(Clone)]
 #[derive(Debug)]
 pub enum StatementToken {
-    UseKW,
+    UseKW(String), //containing the module path
     StructKW,
 }
 
