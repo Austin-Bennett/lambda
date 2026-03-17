@@ -10,3 +10,18 @@ pub struct SourceMap {
     pub len: usize,
 }
 
+
+impl SourceMap {
+
+    pub fn end(&self) -> usize {
+        self.offset + self.len
+    }
+
+    pub fn extend(&mut self, other: SourceMap) {
+        if self.end() < other.end() {
+            self.len = other.end() - self.offset;
+        } else if self.offset > other.offset {
+            self.offset = other.offset;
+        }
+    }
+}

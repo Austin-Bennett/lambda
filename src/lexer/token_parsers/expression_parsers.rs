@@ -8,10 +8,11 @@ use crate::lexer::token_parsers::Parser;
 lazy_static!{
     pub static ref OPERATORS: Vec<Operator> = {
         let mut res = vec![
-            Operator{ tk: "+", bp: Operator::ADDITIVE_BP },
-            Operator{ tk: "-", bp: Operator::ADDITIVE_BP },
-            Operator{ tk: "*", bp: Operator::MULTIPLICATIVE_BP },
-            Operator{ tk: "/", bp: Operator::MULTIPLICATIVE_BP },
+            Operator::ADD,
+            Operator::SUB,
+            Operator::MUL,
+            Operator::DIV,
+
         ];
 
         res.sort_by(|f, s| s.tk.len().cmp(&f.tk.len()));

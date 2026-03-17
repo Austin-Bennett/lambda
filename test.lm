@@ -1,5 +1,5 @@
 
-use doesnt_exist
+use test_import
 
 
 struct ivec2 {
@@ -8,5 +8,5 @@ struct ivec2 {
 }
 
 fn main() = {
-    in64 a = test_import::add(2, 2 >> 1)
+    in64 a = test_import::add(2, 2 1)
 }
