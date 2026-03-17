@@ -1,8 +1,5 @@
-use std::collections::{HashMap, HashSet};
-use std::ops::{Deref, DerefMut};
 use crate::common::utils::modulepath::ModulePath;
-use crate::lexer::token::{StatementToken, Token, TokenType};
-use crate::lexer::tokenizer::Tokens;
+use crate::lexer::token::Token;
 
 pub struct LModule {
     pub tokens: Vec<Token>,

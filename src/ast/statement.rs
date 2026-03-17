@@ -1,16 +1,18 @@
 use std::collections::VecDeque;
-use std::iter::Peekable;
+use std::intrinsics::abort;
 use crate::ast::{GenericSyntax, Syntax};
 use crate::ast::expressions::Expr;
+use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::common::utils::outcome::Outcome;
 use crate::compiler::CompileMessage;
-use crate::lexer::token::{Token, TokenType};
+use crate::lexer::token::{ExpressionToken, StatementToken, Token, TokenType};
+use crate::{match_tks, token_match};
 
 pub enum Statement {
     VariableDeclaration{
-        typeid: ModulePath,
+        type_id: ModulePath,
         name: ModulePath,
         val: Option<Expr>
     },
@@ -27,7 +29,11 @@ impl Syntax for StatementSyntax {
     where
         Self: Sized
     {
-        todo!()
+        if token_match!(
+            tokens, 
+        ) {
+            
+        }
     }
 
     fn get_sourcemap(&self) -> &SourceMap {

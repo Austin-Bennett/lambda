@@ -1,4 +1,4 @@
-use crate::lexer::token::{ExpressionToken, FeatureToken, TokenType};
+use crate::lexer::token::TokenType;
 use crate::lexer::token_parsers::Parser;
 
 pub struct SingleCharParser<const C: char>(TokenType);

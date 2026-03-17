@@ -1,10 +1,8 @@
 
 use crate::lexer::iter::TokenIterator;
-use std::iter::Peekable;
-use std::{mem, ptr};
+use std::ptr;
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
-use std::process::abort;
 use crate::ast::{GenericSyntax, Syntax};
 use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
@@ -164,12 +162,12 @@ impl ExprSyntax {
             
             res.push(expr.data);
 
-            if let Some((ExpressionToken::CloseParentheses, emap)) = tokens.peek_expression() {
+            if let Some((ExpressionToken::CloseParentheses, _emap)) = tokens.peek_expression() {
                 let Some((ExpressionToken::CloseParentheses, emap)) = tokens.next_expression() else { panic!("Shouldn't happen") };
 
                 smap.extend(emap);
                 break;
-            } else if let Some(Token{ typ: TokenType::Feature(FeatureToken::Comma), smap: emap }) = tokens.get(0) {
+            } else if let Some(Token{ typ: TokenType::Feature(FeatureToken::Comma), smap: _emap }) = tokens.get(0) {
                 let Some((ExpressionToken::CloseParentheses, emap)) = tokens.next_expression() else { panic!("Shouldn't happen") };
 
                 smap.extend(emap);

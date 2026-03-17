@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 use std::fmt::{Debug, Formatter};
-use std::ops::{Deref, DerefMut};
 use crate::common::source_owner::SourceOwner;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;

@@ -1,6 +1,4 @@
-use std::fmt::{Debug, Display, Formatter, LowerExp, Write};
-use std::ops::Add;
-use std::str::FromStr;
+use std::fmt::{Debug, Display, Formatter, Write};
 
 //64 bit decimal
 #[derive(Copy, Clone)]

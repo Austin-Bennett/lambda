@@ -1,22 +1,20 @@
 #![feature(try_trait_v2)]
 #![feature(deref_pure_trait)]
 
-use std::collections::HashMap;
-use std::{env, fs};
-use std::ops::Deref;
+use std::fs;
 use std::process::abort;
 use anyhow::Result;
-use crate::lexer::tokenizer::Tokens;
 use clap::Parser;
 use crate::common::source_owner::{SourceDescriptor, SourceOwner};
 use crate::compiler::Compiler;
-use crate::lexer::token::{FeatureToken, TokenType, UserToken};
+use crate::lexer::token::{FeatureToken, TokenType};
 
 pub mod lexer;
 pub mod common;
 pub mod compiler;
 pub mod ast;
 
+#[cfg(test)]
 mod tests {
     use crate::ast::expressions::ExprSyntax;
     use crate::ast::Syntax;
@@ -24,7 +22,6 @@ mod tests {
     use crate::common::primitives::decimal64::LDecimal64;
     use crate::common::source_owner::{SourceDescriptor, SourceOwner};
     use crate::common::utils::outcome::Outcome;
-    use crate::compiler::CompileMessage;
     use crate::lexer::token::TokenType;
     use crate::lexer::tokenizer::Tokens;
 

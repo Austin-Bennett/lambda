@@ -1,6 +1,4 @@
 use std::fmt::{Debug, Formatter};
-use anyhow::Result;
-use crate::common::primitives::decimal128::LDecimal128;
 
 #[derive(Copy, Clone)]
 pub struct IntegerLiteral {

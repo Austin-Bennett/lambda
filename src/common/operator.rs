@@ -10,8 +10,8 @@ pub enum BindingPower {
 impl BindingPower {
     pub const fn effective_lbp(&self) -> u8 {
         match self {
-            BindingPower::Binary(l, r) => *l,
-            BindingPower::BinaryOrUnary(l, r) => *l,
+            BindingPower::Binary(l, _r) => *l,
+            BindingPower::BinaryOrUnary(l, _r) => *l,
             //unary operator has no precedence to the left
             BindingPower::Unary => 0,
         }
@@ -19,8 +19,8 @@ impl BindingPower {
 
     pub const fn effective_rbp(&self) -> u8 {
         match self {
-            BindingPower::Binary(l, r) => *r,
-            BindingPower::BinaryOrUnary(l, r) => *r,
+            BindingPower::Binary(_l, r) => *r,
+            BindingPower::BinaryOrUnary(_l, r) => *r,
             //unary operator has max precedence to the right
             BindingPower::Unary => 255,
         }

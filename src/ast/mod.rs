@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::iter::Peekable;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::outcome::Outcome;
 use crate::compiler::CompileMessage;

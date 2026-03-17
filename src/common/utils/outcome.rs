@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 use std::ops::{ControlFlow, Deref, DerefMut, DerefPure, FromResidual, Try};
-use std::ops::ControlFlow::{Break, Continue};
+use std::ops::ControlFlow::Break;
 
 //an error type that can represent Some/Ok, None and Err
 //like a combination of Option and Result
@@ -48,7 +48,7 @@ impl<T, E> Outcome<T, E> {
         match self {
             Outcome::Ok(v) => v,
             Outcome::None => or,
-            Outcome::Err(e) => or
+            Outcome::Err(_e) => or
         }
     }
 
@@ -62,7 +62,7 @@ impl<T, E> Outcome<T, E> {
 
     pub fn unwrap_err_or(self, or: E) -> E {
         match self {
-            Outcome::Ok(v) => or,
+            Outcome::Ok(_v) => or,
             Outcome::None => or,
             Outcome::Err(e) => e,
         }
