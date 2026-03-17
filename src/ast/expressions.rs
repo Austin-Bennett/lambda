@@ -6,7 +6,7 @@ use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::common::utils::outcome::Outcome;
-use crate::compiler::{CompileMessage};
+use crate::compiler::{CompileMessage, CompileMessageType};
 use crate::lexer::literal::IntegerLiteral;
 use crate::lexer::token::{ExpressionToken, FeatureToken, Token, TokenType};
 
@@ -25,7 +25,7 @@ pub enum Expr {
     Identifier(ModulePath),
     BinaryOp(Box<BinaryOperation>),
     UnaryOp(Box<UnaryOperation>),
-    
+
     Tuple(Vec<Expr>),
     IntLiteral(IntegerLiteral),
 }
@@ -81,14 +81,14 @@ impl ExprSyntax {
                 break;
             } else if let Some(tk) = tokens.next() {
                 return Outcome::Err(
-                    CompileMessage::new(tk.smap, format!("Expected ')', got token: {:?}", tk.typ))
+                    CompileMessage::new(tk.smap, format!("Expected ')', got token: {:?}", tk.typ), CompileMessageType::Error)
                         .add_note(
-                            CompileMessage::new(smap, "Note: to end this tuple expression".into())
+                            CompileMessage::note(smap, "Note: to end this tuple expression".into())
                         )
                 )
             } else {
                 return Outcome::Err(
-                    CompileMessage::new(smap, "Expected ')' to end this tuple expression".into())
+                    CompileMessage::new(smap, "Expected ')' to end this tuple expression".into(), CompileMessageType::Error)
                 )
             }
         }
@@ -99,7 +99,7 @@ impl ExprSyntax {
     }
     
     fn make_expression(tokens: &mut Peekable<impl Iterator<Item=Token>>, minbp: u8) -> Outcome<Self, CompileMessage> {
-        let Some((expr, smap)) = tokens.next_expression() else {
+        let Some((expr, mut smap)) = tokens.next_expression() else {
             return Outcome::None;
         };
 
@@ -118,7 +118,10 @@ impl ExprSyntax {
             }
             ExpressionToken::Operator(op) => {
                 //must be a unary operator
-                let rhs = Self::make_expression(tokens, 0)?;
+                let rhs = match Self::make_expression(tokens, 0)? {
+                    Some(v) => v,
+                    None => return Outcome::Err(CompileMessage::new(smap, format!("Expected expression after operator \'{}\'", op.tk), CompileMessageType::Error)),
+                };
                 
                 let end = rhs.smap.offset + rhs.smap.len;
                 smap.len = end - smap.offset;
@@ -136,14 +139,34 @@ impl ExprSyntax {
                 }
             }
             ExpressionToken::OpenParentheses => {
-                
+                let (mut tuple, emap) = match Self::parse_parentheses(tokens)? {
+                    Some(v) => v,
+                    None => return Outcome::Err(
+                        CompileMessage::new(smap, "Expected ')' to close this '('".to_string(), CompileMessageType::Error),
+                    ),
+                };
+
+                let end = emap.offset + emap.len;
+                smap.len = end - smap.offset;
+
+                if tuple.len() == 1 {
+                    ExprSyntax{
+                        smap,
+                        expression: tuple.remove(0)
+                    }
+                } else {
+                    ExprSyntax{
+                        smap,
+                        expression: Expr::Tuple(tuple)
+                    }
+                }
             }
-            _ => return Err(None)
+            _ => return Outcome::None
         };
         
         
         
-        lhs
+        Outcome::Ok(lhs)
     }
 }
 

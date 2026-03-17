@@ -7,18 +7,36 @@ use crate::lexer::modules::{LModule};
 use crate::lexer::token::{StatementToken, Token, TokenType};
 use crate::lexer::tokenizer::Tokens;
 
+
+pub enum CompileMessageType {
+    Error,
+    Warning,
+    Info,
+}
+
 pub struct CompileMessage {
+    ty: CompileMessageType,
     source: SourceMap,
     message: String,
     notes: Vec<CompileMessage>,
 }
 
 impl CompileMessage {
-    pub fn new(src: SourceMap, msg: String) -> Self {
+    pub fn new(src: SourceMap, msg: String, ty: CompileMessageType) -> Self {
         Self{
             source: src,
             message: msg,
-            notes: Vec::new()
+            notes: Vec::new(),
+            ty
+        }
+    }
+
+    pub fn note(src: SourceMap, msg: String) -> Self {
+        Self{
+            source: src,
+            message: msg,
+            notes: Vec::new(),
+            ty: CompileMessageType::Info
         }
     }
     
@@ -51,12 +69,12 @@ impl Compiler {
         }
     }
 
-    pub fn emit_compile_warning(&mut self, msg: CompileMessage) {
-        self.warnings.push(msg);
-    }
-
-    pub fn emit_compile_error(&mut self, msg: CompileMessage) {
-        self.errors.push(msg);
+    pub fn emit_compile_message(&mut self, msg: CompileMessage) {
+        match msg.ty {
+            CompileMessageType::Error => self.errors.push(msg),
+            CompileMessageType::Warning => self.warnings.push(msg),
+            CompileMessageType::Info => self.warnings.push(msg),
+        }
     }
     
     fn print_message(&self, msg: &CompileMessage, ty: &str) {
@@ -128,9 +146,11 @@ impl Compiler {
                                 self.add_module_impl(tks, added)
                             }
                             Err(e) => {
-                                self.emit_compile_error(CompileMessage::new(
+                                self.emit_compile_message(CompileMessage::new(
                                     tk.smap.clone(), 
-                                    format!("Failed to find module {:?} due to error: {}", &path, e)))
+                                    format!("Failed to find module {:?} due to error: {}", &path, e),
+                                    CompileMessageType::Error
+                                ))
                             }
                         }
                     }
@@ -140,15 +160,19 @@ impl Compiler {
                 TokenType::User(_) => {},
 
                 TokenType::CompileWarning(message) => {
-                    self.emit_compile_warning(CompileMessage::new(
+                    self.emit_compile_message(CompileMessage::new(
                         tk.smap.clone(),
-                        message.clone()))
+                        message.clone(),
+                        CompileMessageType::Warning,
+                    ))
                 }
 
                 TokenType::CompileError(message) => {
-                    self.emit_compile_error(CompileMessage::new(
+                    self.emit_compile_message(CompileMessage::new(
                         tk.smap.clone(),
-                        message.clone()))
+                        message.clone(),
+                        CompileMessageType::Error,
+                    ))
                 }
 
 
