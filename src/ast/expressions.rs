@@ -2,8 +2,10 @@
 use crate::lexer::iter::TokenIterator;
 use std::iter::Peekable;
 use std::{mem, ptr};
+use std::collections::VecDeque;
+use std::fmt::{Debug, Formatter};
 use std::process::abort;
-use crate::ast::Syntax;
+use crate::ast::{GenericSyntax, Syntax};
 use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
@@ -23,45 +25,119 @@ pub struct UnaryOperation {
     pub operand: Expr,
 }
 
+pub struct CallOperation {
+    pub caller: Expr,
+    pub arguments: Vec<Expr>,
+}
+
 pub enum Expr {
     Identifier(ModulePath),
-    BinaryOp(Box<BinaryOperation>),
-    UnaryOp(Box<UnaryOperation>),
+    IntLiteral(IntegerLiteral),
 
     Tuple(Vec<Expr>),
-    IntLiteral(IntegerLiteral),
+
+    BinaryOp(Box<BinaryOperation>),
+    UnaryOp(Box<UnaryOperation>),
+    CallOp(Box<CallOperation>),
+
 }
 
-pub struct ExprSyntax {
-    expression: Expr,
-    smap: SourceMap,
+pub type ExprSyntax = GenericSyntax<Expr>;
+
+impl Debug for Expr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+
+
+        match self {
+            Expr::Identifier(ident) => {
+                write!(f, "{:?}", ident)?;
+            }
+            Expr::IntLiteral(int) => {
+                write!(f, "{:?}", int)?;
+            }
+            Expr::Tuple(tuple) => {
+                let mut first = true;
+                for expr in tuple {
+
+                    if !first {
+                        f.write_str(", ")?;
+                    }
+                    first = false;
+
+                    write!(f, "{:?}", expr)?;
+                }
+            }
+            Expr::BinaryOp(bop) => {
+                write!(f, "{:?} {} {:?}", bop.lhs, bop.op.tk, bop.rhs)?;
+            }
+            Expr::UnaryOp(uop) => {
+                write!(f, "{}{:?}", uop.op.tk, uop.operand)?;
+            }
+            Expr::CallOp(call) => {
+
+                write!(f, "{:?}(", call.caller)?;
+
+                let mut first = true;
+                for expr in &call.arguments {
+
+                    if !first {
+                        f.write_str(", ")?;
+                    }
+                    first = false;
+
+                    write!(f, "{:?}", expr)?;
+                }
+                f.write_str(")")?;
+            }
+        }
+
+        Ok(())
+    }
 }
-
-
 
 impl ExprSyntax {
 
+
+
     pub fn make_binary_op(&mut self, op: Operator, other: Expr) {
-        let this = self as *mut Self;
 
         unsafe{
             //SAFETY this is used to move out the old expression and turn it into this
             //this is safe, because if self were just a regular old mut value, then
             //i wouldnt even need the pointer semantics
-            (*this).expression = Expr::BinaryOp(
+            let expr = ptr::read(&raw mut self.data);
+            ptr::write(&raw mut self.data, Expr::BinaryOp(
                 Box::new(
                     BinaryOperation{
                         op,
-                        lhs: ptr::read(&raw mut (*this).expression),
+                        lhs: expr,
                         rhs: other
                     }
                 )
-            );
+            ));
         }
 
     }
+
+    pub fn make_call_expression(&mut self, args: Vec<Expr>) {
+
+        unsafe{
+            //SAFETY this is used to move out the old expression and turn it into this
+            //this is safe, because if self were just a regular old mut value, then
+            //i wouldnt even need the pointer semantics
+            let expr = ptr::read(&raw mut self.data);
+            ptr::write(&raw mut self.data, Expr::CallOp(
+                Box::new(
+                    CallOperation{
+                        caller: expr,
+                        arguments: args
+                    }
+                )
+            ));
+        }
+    }
     
-    pub fn parse_parentheses(tokens: &mut Peekable<impl Iterator<Item=Token>>) -> Outcome<(Vec<Expr>, SourceMap), CompileMessage> {
+    pub fn parse_parentheses(tokens: &mut VecDeque<Token>) -> Outcome<(Vec<Expr>, SourceMap), CompileMessage> {
         let mut smap = if let Some((e, smap)) = tokens.peek_expression() {
 
             if let ExpressionToken::OpenParentheses = e {
@@ -86,19 +162,19 @@ impl ExprSyntax {
             };
             smap.extend(expr.smap);
             
-            res.push(expr.expression);
+            res.push(expr.data);
 
             if let Some((ExpressionToken::CloseParentheses, emap)) = tokens.peek_expression() {
                 let Some((ExpressionToken::CloseParentheses, emap)) = tokens.next_expression() else { panic!("Shouldn't happen") };
 
                 smap.extend(emap);
                 break;
-            } else if let Some(Token{ typ: TokenType::Feature(FeatureToken::Comma), smap: emap }) = tokens.peek() {
+            } else if let Some(Token{ typ: TokenType::Feature(FeatureToken::Comma), smap: emap }) = tokens.get(0) {
                 let Some((ExpressionToken::CloseParentheses, emap)) = tokens.next_expression() else { panic!("Shouldn't happen") };
 
                 smap.extend(emap);
                 break;
-            } else if let Some(tk) = tokens.next() {
+            } else if let Some(tk) = tokens.pop_front() {
                 return Outcome::Err(
                     CompileMessage::new(tk.smap, format!("Expected ')', got token: {:?}", tk.typ), CompileMessageType::Error)
                         .add_note(
@@ -117,25 +193,38 @@ impl ExprSyntax {
         Outcome::Ok((res, smap))
     }
     
-    fn make_expression(tokens: &mut Peekable<impl Iterator<Item=Token>>, minbp: u8) -> Outcome<Self, CompileMessage> {
+    fn make_expression(tokens: &mut VecDeque<Token>, minbp: u8) -> Outcome<Self, CompileMessage> {
+        //get the first expression token
         let Some((expr, mut smap)) = tokens.next_expression() else {
             return Outcome::None;
         };
 
         let mut lhs = match expr {
+            //identifiers or literals
             ExpressionToken::Identifier(ident) => {
                 ExprSyntax{
-                    expression: Expr::Identifier(ModulePath::from_module_path(ident)),
+                    data: Expr::Identifier(ModulePath::from_module_path(ident)),
                     smap
                 }
             }
             ExpressionToken::IntegerLiteral(i) => {
                 ExprSyntax{
-                    expression: Expr::IntLiteral(i),
+                    data: Expr::IntLiteral(i),
                     smap
                 }
             }
             ExpressionToken::Operator(op) => {
+
+                if !op.bp.is_unary() {
+                    return Outcome::Err(
+                        CompileMessage::new(
+                            smap,
+                            format!("operator \'{}\' can not be used in a unary operation", op.tk),
+                            CompileMessageType::Error,
+                        )
+                    )
+                }
+
                 //must be a unary operator
                 let rhs = match Self::make_expression(tokens, 0)? {
                     Some(v) => v,
@@ -143,20 +232,24 @@ impl ExprSyntax {
                 };
 
 
+
                 smap.extend(rhs.smap);
+
+
                 
                 ExprSyntax{
-                    expression: Expr::UnaryOp(
+                    data: Expr::UnaryOp(
                         Box::new(
                             UnaryOperation{
                                 op,
-                                operand: rhs.expression,
+                                operand: rhs.data,
                             }
                         )
                     ),
                     smap
                 }
             }
+            //an open parenthese
             ExpressionToken::OpenParentheses => {
                 let (mut tuple, emap) = match Self::parse_parentheses(tokens)? {
                     Some(v) => v,
@@ -170,40 +263,108 @@ impl ExprSyntax {
                 if tuple.len() == 1 {
                     ExprSyntax{
                         smap,
-                        expression: tuple.remove(0)
+                        data: tuple.remove(0)
                     }
                 } else {
                     ExprSyntax{
                         smap,
-                        expression: Expr::Tuple(tuple)
+                        data: Expr::Tuple(tuple)
                     }
                 }
             }
-            _ => return Outcome::None
+
+            //todo: parse brackets []
+            _ => return Outcome::Err(CompileMessage::new(
+                smap,
+                format!("didnt expect token {:?} here", expr),
+
+                CompileMessageType::Error
+            ))
         };
         
         loop {
 
-            let Some((rhs, emap)) = tokens.next_expression() else {
+            //grab the next token
+            let Some((rhs, emap)) = tokens.peek_expression() else {
                 break;
             };
 
-            //firstly, extend the sourcemap
-            lhs.smap.extend(emap);
-
             match rhs {
-                //an identifier of literal together means multiplication
-                ExpressionToken::Identifier(i) => {
-                lhs.make_binary_op(Operator::MUL, Expr::Identifier(ModulePath::from_module_path(i)))
+                ExpressionToken::Identifier(_) | ExpressionToken::IntegerLiteral(_) => {
+                    //expressions such as 2a will go here, this is multiplication, so we will inline the
+                    //multiplication parse operation here
+                    if Operator::MUL.bp.effective_lbp() < minbp { break }
+
+                    //there is guaranteed to at least be a identifier or integer
+                    let rhs = unsafe { Self::make_expression(tokens, Operator::MUL.bp.effective_rbp())?.unwrap_unchecked() };
+
+                    lhs.smap.extend(rhs.smap);
+                    lhs.make_binary_op(Operator::MUL, rhs.data);
                 }
-                ExpressionToken::IntegerLiteral(i) => {
-                    
+                ExpressionToken::Operator(op) => {
+
+                    if op.bp.effective_lbp() < minbp {
+                        break;
+                    }
+
+                    let Some((ExpressionToken::Operator(op), emap)) = tokens.next_expression() else {
+                        panic!("Shouldn't happen")
+                    };
+
+                    if !op.bp.is_binary() {
+                        return Outcome::Err(CompileMessage::new(
+                            emap,
+                            format!("operator {} cannot be used in binary operation", op.tk),
+                            CompileMessageType::Error
+                        ));
+                    }
+
+
+
+
+
+
+                    //must be a binary operator
+                    let rhs = match Self::make_expression(tokens, op.bp.effective_rbp())? {
+                        Some(v) => v,
+                        //todo: postfix
+                        None => return Outcome::Err(
+                            CompileMessage::new(
+                                emap,
+                                format!("expected expression after operator \'{}\'", op.tk),
+                                CompileMessageType::Error
+                        ))
+                    };
+                    lhs.smap.extend(emap);
+                    lhs.smap.extend(rhs.smap);
+
+
+                    lhs.make_binary_op(op, rhs.data);
                 }
-                ExpressionToken::Operator(_) => {}
-                ExpressionToken::OpenParentheses => {}
-                ExpressionToken::CloseParentheses => {}
-                ExpressionToken::OpenBracket => {}
-                ExpressionToken::CloseBracket => {}
+                ExpressionToken::OpenParentheses => {
+                    //a call expression
+                    let emap = emap.clone();
+                    let (args, emap) = match Self::parse_parentheses(tokens)? {
+                        Some(args) => args,
+                        None => return Outcome::Err(CompileMessage::new(
+                            emap,
+                            "expected ')' to close this tuple expressions!".to_string(),
+                            CompileMessageType::Error
+                        ))
+                    };
+
+
+                    lhs.smap.extend(emap);
+                    lhs.make_call_expression(args)
+                }
+                ExpressionToken::CloseParentheses => {
+                    break;
+                }
+                _ => return Outcome::Err(CompileMessage::new(
+                    emap.clone(),
+                    format!("didnt expect token {:?} here", rhs),
+                    CompileMessageType::Error
+                ))
             }
 
 
@@ -214,7 +375,7 @@ impl ExprSyntax {
 }
 
 impl Syntax for ExprSyntax {
-    fn parse<'a>(tokens: &mut Peekable<impl Iterator<Item=Token>>) -> Outcome<Self, CompileMessage>
+    fn parse<'a>(tokens: &mut VecDeque<Token>) -> Outcome<Self, CompileMessage>
     where
         Self: Sized
     {

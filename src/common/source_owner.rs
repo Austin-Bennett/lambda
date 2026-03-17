@@ -2,18 +2,20 @@ use std::fmt::{Debug, Formatter};
 
 #[derive(Clone, Eq, Hash, PartialEq)]
 pub enum SourceDescriptor {
-    File
+    RustString,
+    File,
 }
 
 impl Debug for SourceDescriptor {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            SourceDescriptor::File => f.write_str("file")
+            SourceDescriptor::File => f.write_str("file"),
+            SourceDescriptor::RustString => f.write_str("rust string"),
         }
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 #[derive(Eq, Hash, PartialEq)]
 pub struct SourceOwner {
     pub descriptor: SourceDescriptor,
@@ -26,5 +28,11 @@ impl SourceOwner {
             descriptor,
             name
         }
+    }
+}
+
+impl Debug for SourceOwner {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} {:?}", self.descriptor, self.name)
     }
 }

@@ -34,8 +34,8 @@ impl Tokens {
         &CommaParser::new(TokenType::Feature(FeatureToken::Comma)),
         &UseParser,
         &KeywordParser,
-        &IdentifierParser,
         &IntLiteralParser,
+        &IdentifierParser,
     ];
 
     pub fn tokenize_string(owner: SourceOwner, contents: String) -> Self {

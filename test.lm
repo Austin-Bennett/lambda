@@ -8,5 +8,6 @@ struct ivec2 {
 }
 
 fn main() = {
-    in64 a = test_import::add(2, 2 1)
+    int64 b = 3
+    int64 a = test_import::add(2, 2b)
 }

@@ -1,7 +1,6 @@
 use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
 use crate::lexer::literal::IntegerLiteral;
-use crate::lexer::token_parsers::Parser;
 
 //anything ending in KW is a keyword
 
@@ -11,12 +10,8 @@ pub enum ExpressionToken {
 
     IntegerLiteral(IntegerLiteral),
     
-    //arithmetic operators
     Operator(Operator),
-
-    //todo: bitwise operators, boolean operators, etc
-    //groups
-    //parentheses ()
+    
     OpenParentheses,
 
     CloseParentheses,

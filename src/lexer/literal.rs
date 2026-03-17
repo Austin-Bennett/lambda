@@ -2,10 +2,16 @@ use std::fmt::{Debug, Formatter};
 use anyhow::Result;
 use crate::common::primitives::decimal128::LDecimal128;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone)]
 pub struct IntegerLiteral {
     pub negative: bool,
     pub value: u128,
+}
+
+impl Debug for IntegerLiteral {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", if self.negative { "-" } else { "" }, self.value)
+    }
 }
 
 impl IntegerLiteral {

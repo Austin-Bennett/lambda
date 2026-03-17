@@ -1,12 +1,14 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Debug, Formatter};
 use std::ops::{Deref, DerefMut};
 use crate::common::source_owner::SourceOwner;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
-use crate::lexer::modules::{LModule};
 use crate::lexer::token::{StatementToken, Token, TokenType};
 use crate::lexer::tokenizer::Tokens;
 
+pub mod modules;
+use modules::*;
 
 pub enum CompileMessageType {
     Error,
@@ -19,6 +21,19 @@ pub struct CompileMessage {
     source: SourceMap,
     message: String,
     notes: Vec<CompileMessage>,
+}
+
+impl Debug for CompileMessage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Compile message at {:?}:\n", self.source)?;
+        write!(f, "{}\n", self.message)?;
+
+        for note in &self.notes {
+            write!(f, "note: {:?}\n", note)?;
+        }
+
+        Ok(())
+    }
 }
 
 impl CompileMessage {

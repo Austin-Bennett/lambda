@@ -18,8 +18,15 @@ pub mod compiler;
 pub mod ast;
 
 mod tests {
+    use crate::ast::expressions::ExprSyntax;
+    use crate::ast::Syntax;
     use crate::common::primitives::decimal128::LDecimal128;
     use crate::common::primitives::decimal64::LDecimal64;
+    use crate::common::source_owner::{SourceDescriptor, SourceOwner};
+    use crate::common::utils::outcome::Outcome;
+    use crate::compiler::CompileMessage;
+    use crate::lexer::token::TokenType;
+    use crate::lexer::tokenizer::Tokens;
 
     #[test]
     pub fn test_decimalf64() {
@@ -70,6 +77,31 @@ mod tests {
 
         let pi2 = LDecimal128::new(-31415926535897932384626433832795028841, -37);
         println!("{}", pi2);
+    }
+
+
+    #[test]
+    pub fn test_expressions() {
+        let mut tokens = Tokens::tokenize_string(
+            SourceOwner{
+                descriptor: SourceDescriptor::RustString,
+                name: "test_expressions_test_string".to_string()
+            },
+            "(b b + sqrt(-b - 4a c)) / 2a".to_string()
+        )
+            .filter(|tk| if let TokenType::User(_) = tk.typ { false } else { true })
+            .collect();
+
+
+        let expr = ExprSyntax::parse(&mut tokens);
+
+        match expr {
+            Outcome::Ok(e) => {
+                println!("{:?}", e.data)
+            }
+            Outcome::None => eprintln!("No expression!"),
+            Outcome::Err(e) => eprintln!("Compile error: {:?}", e)
+        }
     }
 }
 
