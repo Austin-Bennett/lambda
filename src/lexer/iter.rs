@@ -40,20 +40,20 @@ impl TokenIterator for VecDeque<Token> {
 
 #[macro_export]
 macro_rules! token_match {
-    ($vd: expr, $($pat: pat),*) => {
-        token_match!($vd, 0, $($rest),*)
+    ($vd: expr, $($pat: pat),* $(,)?) => {
+        token_match!(@private $vd, 0, $($pat),*)
     };
 
-    (@private $vd: expr, $first: pat, $i: expr, $($rest: pat),*) => {
-        if let Token{ typ: $first, .. } = $vd.get($i) {
-            token_match!($vd, $i+1, $($rest),*)
+    (@private $vd: expr, $i: expr, $first: pat, $($rest: pat),*) => {
+        if let Some(Token{ typ: $first, .. }) = $vd.get($i) {
+            token_match!(@private $vd, $i+1, $($rest),*)
         } else {
             false
         }
     };
 
     (@private $vd: expr, $i: expr, $first: pat) => {
-        if let Token{ typ: $first, .. } = $vd.get($i) {
+        if let Some(Token{ typ: $first, .. }) = $vd.get($i) {
             true
         } else {
             false

@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::intrinsics::abort;
 use crate::ast::{GenericSyntax, Syntax};
 use crate::ast::expressions::Expr;
 use crate::common::operator::Operator;
@@ -8,7 +7,7 @@ use crate::common::utils::modulepath::ModulePath;
 use crate::common::utils::outcome::Outcome;
 use crate::compiler::CompileMessage;
 use crate::lexer::token::{ExpressionToken, StatementToken, Token, TokenType};
-use crate::{match_tks, token_match};
+use crate::{token_match};
 
 pub enum Statement {
     VariableDeclaration{
@@ -30,10 +29,14 @@ impl Syntax for StatementSyntax {
         Self: Sized
     {
         if token_match!(
-            tokens, 
+            tokens,
+            TokenType::Expression(ExpressionToken::Identifier(_)),
+            TokenType::Expression(ExpressionToken::Identifier(_)),
         ) {
-            
+
         }
+
+        todo!()
     }
 
     fn get_sourcemap(&self) -> &SourceMap {
