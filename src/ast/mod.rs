@@ -13,6 +13,8 @@ pub mod items;
 pub mod common;
 pub mod ty;
 
+pub use {items::*, block::*, statement::*, items::*, common::*, ty::*};
+
 pub trait Syntax {
     fn parse(tokens: &mut VecDeque<Token>) -> Outcome<Self, CompileMessage> where Self: Sized;
 

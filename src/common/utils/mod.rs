@@ -4,5 +4,4 @@ pub mod modulepath;
 pub mod outcome;
 pub mod progress;
 
-
-
+pub type Todo = ();
