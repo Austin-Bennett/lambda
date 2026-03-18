@@ -47,6 +47,7 @@ pub enum FeatureToken {
     CloseBrace,
     StatementEnd,
     Comma,
+    Colon,
 }
 
 #[derive(Clone, Debug)]
@@ -74,3 +75,16 @@ pub struct Token {
     pub smap: SourceMap
 }
 
+#[macro_export]
+macro_rules! unpack_tk {
+    ($typ: pat, $smap: pat) => {
+        Token{ typ: $typ, smap: $smap }
+    };
+}
+
+#[macro_export]
+macro_rules! unpack_opt_tk {
+    ($typ: pat, $smap: pat) => {
+        Some( Token{ typ: $typ, smap: $smap } )
+    };
+}

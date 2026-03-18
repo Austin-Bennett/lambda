@@ -53,12 +53,13 @@ pub struct Operator {
 }
 
 impl Operator {
-    pub const MIN_BINARY_BP: BindingPower = BindingPower::Binary(0, 0);
-    pub const ADDITIVE_BP: BindingPower = BindingPower::Binary(1, 1);
-    pub const MULTIPLICATIVE_BP: BindingPower = BindingPower::Binary(2, 2);
+    pub const MIN_BINARY_BP: BindingPower = BindingPower::Binary(0, 1);
+    pub const ADDITIVE_BP: BindingPower = BindingPower::Binary(1, 2);
+    pub const MULTIPLICATIVE_BP: BindingPower = BindingPower::Binary(3, 4);
 
 
 
+    pub const ASSIGN: Self = Operator{ tk: "=", bp: Operator::MIN_BINARY_BP };
 
     pub const ADD: Self = Operator{ tk: "+", bp: Operator::ADDITIVE_BP };
     pub const SUB: Self = Operator{ tk: "-", bp: Self::ADDITIVE_BP.to_binary_or_unary() };

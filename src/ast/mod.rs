@@ -13,9 +13,18 @@ pub trait Syntax {
 pub mod expressions;
 pub mod block;
 pub mod statement;
-
+pub mod items;
 
 pub struct GenericSyntax<T> {
     pub data: T,
     pub smap: SourceMap,
+}
+
+impl<T> GenericSyntax<T> {
+    pub fn new(data: T, smap: SourceMap) -> Self {
+        Self{
+            data,
+            smap
+        }
+    }
 }

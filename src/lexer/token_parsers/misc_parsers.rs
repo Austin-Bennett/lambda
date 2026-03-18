@@ -31,5 +31,6 @@ pub type OpenBraceParser = SingleCharParser<'{'>;
 pub type CloseBraceParser = SingleCharParser<'}'>;
 
 pub type CommaParser = SingleCharParser<','>;
+pub type ColonParser = SingleCharParser<':'>;
 
-pub type NewlineParser = SingleCharParser<'\n'>;
+pub type SemicolonParser = SingleCharParser<';'>;

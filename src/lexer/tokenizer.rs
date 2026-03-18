@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 use crate::lexer::token::{ExpressionToken, FeatureToken, Token, TokenType};
 use crate::lexer::token_parsers::expression_parsers::{IdentifierParser, IntLiteralParser, OperatorParser};
-use crate::lexer::token_parsers::misc_parsers::{CloseBraceParser, CloseBracketParser, CloseParenthesesParser, CommaParser, NewlineParser, OpenBraceParser, OpenBracketParser, OpenParenthesesParser};
+use crate::lexer::token_parsers::misc_parsers::*;
 use crate::lexer::token_parsers::Parser;
 use anyhow::Result;
 use crate::common::source_owner::{SourceDescriptor, SourceOwner};
@@ -21,7 +21,7 @@ pub struct Tokens {
 
 impl Tokens {
     pub const PARSERS: &[&dyn Parser] = &[
-        &NewlineParser::new(TokenType::Feature(FeatureToken::StatementEnd)),
+        &SemicolonParser::new(TokenType::Feature(FeatureToken::StatementEnd)),
         &WhitespaceParser,
         &CommentParser,
         &OperatorParser,
@@ -32,6 +32,7 @@ impl Tokens {
         &OpenBraceParser::new(TokenType::Feature(FeatureToken::OpenBrace)),
         &CloseBraceParser::new(TokenType::Feature(FeatureToken::CloseBrace)),
         &CommaParser::new(TokenType::Feature(FeatureToken::Comma)),
+        &ColonParser::new(TokenType::Feature(FeatureToken::Colon)),
         &UseParser,
         &KeywordParser,
         &IntLiteralParser,

@@ -2,7 +2,7 @@
 use crate::lexer::iter::TokenIterator;
 use std::ptr;
 use std::collections::VecDeque;
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Formatter, Write};
 use crate::ast::{GenericSyntax, Syntax};
 use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
@@ -45,7 +45,6 @@ pub type ExprSyntax = GenericSyntax<Expr>;
 impl Debug for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
 
-
         match self {
             Expr::Identifier(ident) => {
                 write!(f, "{:?}", ident)?;
@@ -54,6 +53,7 @@ impl Debug for Expr {
                 write!(f, "{:?}", int)?;
             }
             Expr::Tuple(tuple) => {
+                f.write_str("(")?;
                 let mut first = true;
                 for expr in tuple {
 
@@ -64,9 +64,10 @@ impl Debug for Expr {
 
                     write!(f, "{:?}", expr)?;
                 }
+                f.write_str(")")?;
             }
             Expr::BinaryOp(bop) => {
-                write!(f, "{:?} {} {:?}", bop.lhs, bop.op.tk, bop.rhs)?;
+                write!(f, "({:?} {} {:?})", bop.lhs, bop.op.tk, bop.rhs)?;
             }
             Expr::UnaryOp(uop) => {
                 write!(f, "{}{:?}", uop.op.tk, uop.operand)?;
@@ -88,6 +89,7 @@ impl Debug for Expr {
                 f.write_str(")")?;
             }
         }
+
 
         Ok(())
     }

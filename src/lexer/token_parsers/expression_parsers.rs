@@ -1,18 +1,14 @@
 use std::ops::Deref;
 use lazy_static::lazy_static;
 use crate::common::operator::Operator;
-use crate::lexer::literal::IntegerLiteral;
-use crate::lexer::token::{ExpressionToken, TokenType};
-use crate::lexer::token_parsers::Parser;
-
 lazy_static!{
     pub static ref OPERATORS: Vec<Operator> = {
         let mut res = vec![
+            Operator::ASSIGN,
             Operator::ADD,
             Operator::SUB,
             Operator::MUL,
             Operator::DIV,
-
         ];
 
         res.sort_by(|f, s| s.tk.len().cmp(&f.tk.len()));
@@ -20,6 +16,10 @@ lazy_static!{
         res
     };
 }
+use crate::lexer::literal::IntegerLiteral;
+use crate::lexer::token::{ExpressionToken, TokenType};
+
+use crate::lexer::token_parsers::Parser;
 
 pub struct OperatorParser;
 pub struct IdentifierParser;
@@ -27,11 +27,11 @@ pub struct IntLiteralParser;
 
 impl IdentifierParser {
     pub fn is_identifier_character(c: char) -> bool {
-        c.is_numeric() || c.is_alphabetic() || c == '_' || c == ':'
+        c.is_numeric() || c.is_alphabetic() || c == '_'
     }
 
     pub fn can_start_with(c: char) -> bool {
-        c.is_alphabetic() || c == '_' || c == ':'
+        c.is_alphabetic() || c == '_'
     }
 
     pub fn is_valid_identifier(s: &str) -> bool {
@@ -67,15 +67,17 @@ impl Parser for IdentifierParser {
         //identifiers must start with either a _ or an alphabetical character,
         // after that, any letter, number, or '_' is valid
 
-        let mut chars = s.chars();
+        let mut chars = s.char_indices();
 
-        let Some(first) = chars.next() else { return None; };
+        let Some((_, first)) = chars.next() else { return None; };
 
         if Self::can_start_with(first) {
             let mut len = first.len_utf8();
-            while let Some(c) = chars.next() {
+            while let Some((i, c)) = chars.next() {
                 if Self::is_identifier_character(c) {
                     len += c.len_utf8();
+                } else if s[i..].starts_with("::") {
+                    len += "::".len();
                 } else {
                     break;
                 }
