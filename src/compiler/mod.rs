@@ -5,8 +5,11 @@ use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::lexer::token::{StatementToken, Token, TokenType};
 use crate::lexer::tokenizer::Tokens;
+pub use compile_message::CompileMessage;
 
 pub mod modules;
+mod compile_message;
+
 use modules::*;
 
 pub enum CompileMessageType {
@@ -15,51 +18,7 @@ pub enum CompileMessageType {
     Info,
 }
 
-pub struct CompileMessage {
-    ty: CompileMessageType,
-    source: SourceMap,
-    message: String,
-    notes: Vec<CompileMessage>,
-}
 
-impl Debug for CompileMessage {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Compile message at {:?}:\n", self.source)?;
-        write!(f, "{}\n", self.message)?;
-
-        for note in &self.notes {
-            write!(f, "note: {:?}\n", note)?;
-        }
-
-        Ok(())
-    }
-}
-
-impl CompileMessage {
-    pub fn new(src: SourceMap, msg: String, ty: CompileMessageType) -> Self {
-        Self{
-            source: src,
-            message: msg,
-            notes: Vec::new(),
-            ty
-        }
-    }
-
-    pub fn note(src: SourceMap, msg: String) -> Self {
-        Self{
-            source: src,
-            message: msg,
-            notes: Vec::new(),
-            ty: CompileMessageType::Info
-        }
-    }
-    
-    pub fn add_note(mut self, msg: CompileMessage) -> Self {
-        self.notes.push(msg);
-        
-        self
-    }
-}
 
 
 

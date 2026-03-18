@@ -11,6 +11,7 @@ lazy_static!{
     pub static ref keywords: Vec<(&'static str, TokenType)> = {
         let mut res = vec![
             ("struct", TokenType::Statement(StatementToken::StructKW)),
+            ("fn", TokenType::Statement(StatementToken::FnKW)),
         ];
 
         res.sort_by(|(s1, _), (s2, _)| s2.len().cmp(&s1.len()));

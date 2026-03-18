@@ -1,5 +1,5 @@
 use std::fmt::{Debug, Formatter};
-use crate::common::source_owner::SourceOwner;
+use crate::common::source_owner::{SourceDescriptor, SourceOwner};
 
 #[derive(Clone)]
 pub struct SourceMap {
@@ -8,6 +8,18 @@ pub struct SourceMap {
     pub line: usize,
     pub char: usize,
     pub len: usize,
+}
+
+impl Default for SourceMap {
+    fn default() -> Self {
+        Self{
+            owner: SourceOwner::new(SourceDescriptor::RustString, "default".to_string()),
+            offset: 0,
+            line: 0,
+            char: 0,
+            len: 0
+        }
+    }
 }
 
 impl Debug for SourceMap {

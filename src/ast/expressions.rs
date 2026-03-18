@@ -170,10 +170,9 @@ impl ExprSyntax {
                 smap.extend(emap);
                 break;
             } else if let Some(Token{ typ: TokenType::Feature(FeatureToken::Comma), smap: _emap }) = tokens.get(0) {
-                let Some((ExpressionToken::CloseParentheses, emap)) = tokens.next_expression() else { panic!("Shouldn't happen") };
+                let Some(Token{ typ: TokenType::Feature(FeatureToken::Comma), smap: emap }) = tokens.pop_front() else { panic!("Shouldn't happen") };
 
                 smap.extend(emap);
-                break;
             } else if let Some(tk) = tokens.pop_front() {
                 return Outcome::Err(
                     CompileMessage::new(tk.smap, format!("Expected ')', got token: {:?}", tk.typ), CompileMessageType::Error)

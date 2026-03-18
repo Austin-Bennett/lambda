@@ -54,8 +54,8 @@ pub struct Operator {
 
 impl Operator {
     pub const MIN_BINARY_BP: BindingPower = BindingPower::Binary(0, 1);
-    pub const ADDITIVE_BP: BindingPower = BindingPower::Binary(1, 2);
-    pub const MULTIPLICATIVE_BP: BindingPower = BindingPower::Binary(3, 4);
+    pub const ADDITIVE_BP: BindingPower = BindingPower::Binary(2, 1);
+    pub const MULTIPLICATIVE_BP: BindingPower = BindingPower::Binary(4, 3);
 
 
 

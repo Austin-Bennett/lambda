@@ -78,6 +78,7 @@ impl Parser for IdentifierParser {
                     len += c.len_utf8();
                 } else if s[i..].starts_with("::") {
                     len += "::".len();
+                    chars.next();
                 } else {
                     break;
                 }

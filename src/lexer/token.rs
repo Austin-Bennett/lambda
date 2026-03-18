@@ -38,6 +38,7 @@ impl ExpressionToken {
 pub enum StatementToken {
     UseKW(String), //containing the module path
     StructKW,
+    FnKW,
 }
 
 #[derive(Clone, Debug)]

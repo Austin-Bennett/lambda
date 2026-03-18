@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
+use std::fmt::{Debug, Formatter};
 use std::process::abort;
 use crate::ast::{GenericSyntax, Syntax};
+use crate::ast::common::{VarDecl, VarDeclSyntax};
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::common::utils::outcome::Outcome;
@@ -8,16 +10,22 @@ use crate::compiler::{CompileMessage, CompileMessageType};
 use crate::lexer::token::{ExpressionToken, FeatureToken, StatementToken, Token, TokenType};
 use crate::unpack_opt_tk;
 
-pub struct StructMember {
-    name: ModulePath,
-    ty: ModulePath,
-}
 
 pub struct Structure {
     name: ModulePath,
-    members: Vec<StructMember>
+    members: Vec<VarDecl>
 
     //todo: methods?
+}
+
+impl Debug for Structure {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "struct {} {{\n", self.name)?;
+        for m in &self.members {
+            write!(f, "\t{:?},\n", m)?;
+        }
+        write!(f, "}}")
+    }
 }
 
 pub type StructureSyntax = GenericSyntax<Structure>;
@@ -36,28 +44,14 @@ impl Syntax for StructureSyntax {
         let next = tokens.pop_front();
         let unpack_opt_tk!( TokenType::Expression(ExpressionToken::Identifier(s)), imap )
             = next else {
-            return match next {
-                Some(tk) => Outcome::Err(
-                    CompileMessage::new(
-                        tk.smap,
-                        format!("expected identifier after struct keyword, got token: {:?}", tk.typ),
-                        CompileMessageType::Error
-                    )
-                        .add_note(
-                            CompileMessage::note(
-                                smap,
-                                "struct keyword here".to_string()
-                            )
-                        )
-                ),
-                None => Outcome::Err(
-                    CompileMessage::new(
-                        smap,
-                        "expected identifier after struct keyword".to_string(),
-                        CompileMessageType::Error
-                    )
-                ),
-            }
+            return Outcome::Err(
+                CompileMessage::expected_token_error(
+                    smap,
+                    "identifier",
+                    "'struct' keyword",
+                    next
+                )
+            )
         };
         smap.extend(imap);
         
@@ -72,35 +66,42 @@ impl Syntax for StructureSyntax {
         //check for the '{'
         
         let next = tokens.pop_front();
-        let unpack_opt_tk!( TokenType::Feature(FeatureToken::OpenBrace), mut smap ) = next else {
-            return match next {
-                Some(tk) => Outcome::Err(
-                    CompileMessage::new(
-                        tk.smap,
-                        format!("expected '{{' after struct, got token: {:?}", tk.typ),
-                        CompileMessageType::Error
-                    )
-                        .add_note(
-                            CompileMessage::note(
-                                res.smap,
-                                format!("Expected after declaration of struct: {}", res.data.name)
-                            )
-                        )
-                ),
-                None => Outcome::Err(
-                    CompileMessage::new(
-                        res.smap,
-                        "expected '{' after struct declaration".to_string(),
-                        CompileMessageType::Error
-                    )
-                ),
-            }
+        let unpack_opt_tk!( TokenType::Feature(FeatureToken::OpenBrace), smap ) = next else {
+            return Outcome::Err(CompileMessage::expected_token_error(
+                res.smap,
+                "{",
+                format!("struct \'{}\' declaration", res.data.name),
+                next
+            ))
         };
+
+        res.smap.extend(smap);
         
         //time to parse members
+        while let Some(vdecl) = VarDeclSyntax::parse(tokens)? {
+            //parse away any commas, expect at least 1
+            let mut count = 0;
+            while let unpack_opt_tk!(TokenType::Feature(FeatureToken::Comma), _) = tokens.get(0) { tokens.pop_front(); count += 1; }
+            if count == 0 {
+                let next = tokens.pop_front();
+                return Outcome::Err(
+                    CompileMessage::expected_token_error(
+                        vdecl.smap,
+                        ",",
+                        format!("struct member declaration {}: {:?}", vdecl.data.name, vdecl.data.ty),
+                        next
+                    )
+                );
+            }
+
+            //add this member
+            res.smap.extend(vdecl.smap);
+            res.data.members.push(
+                vdecl.data
+            )
+        }
         
-        
-        todo!()
+        Outcome::Ok(res)
     }
 
     fn get_sourcemap(&self) -> &SourceMap {

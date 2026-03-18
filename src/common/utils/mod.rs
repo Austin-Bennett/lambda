@@ -1,7 +1,8 @@
 
 pub mod hashtable;
 pub mod modulepath;
-pub(crate) mod outcome;
+pub mod outcome;
+pub mod progress;
 
 
 
