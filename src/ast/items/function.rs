@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter, Write};
 use std::process::abort;
 use crate::ast::block::{Block, BlockSyntax};
-use crate::ast::common::{VarDecl, VarDeclSyntax};
+use crate::ast::statements::vardecl::{VarDecl, VarDeclSyntax};
 use crate::ast::{GenericSyntax, Syntax};
 use crate::ast::ty::{Type, TypeSyntax};
 use crate::common::operator::Operator;
@@ -41,7 +41,13 @@ impl Debug for Function {
             write!(f, " = {:?}", ty)?;
         }
 
-        write!(f, " {{ {} statement{} }}", self.body.len(), if self.body.len() == 1 { "" } else { "s" })?;
+        write!(f, " {{{}", if self.body.is_empty() { "" } else { "\n" })?;
+
+        for s in &self.body {
+            write!(f, "\t{:?}\n", s)?;
+        }
+
+        write!(f, "}}")?;
 
         Ok(())
     }

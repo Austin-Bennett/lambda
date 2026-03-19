@@ -272,13 +272,8 @@ impl ExprSyntax {
                 }
             }
 
-            //todo: parse brackets []
-            _ => return Outcome::Err(CompileMessage::new(
-                smap,
-                format!("didnt expect token {:?} here", expr),
-
-                CompileMessageType::Error
-            ))
+            //todo: parse array expressions [...]
+            _ => return Outcome::None,
         };
         
         loop {
@@ -359,11 +354,7 @@ impl ExprSyntax {
                 ExpressionToken::CloseParentheses => {
                     break;
                 }
-                _ => return Outcome::Err(CompileMessage::new(
-                    emap.clone(),
-                    format!("didnt expect token {:?} here", rhs),
-                    CompileMessageType::Error
-                ))
+                _ => break
             }
 
 

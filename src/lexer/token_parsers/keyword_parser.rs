@@ -12,6 +12,7 @@ lazy_static!{
         let mut res = vec![
             ("struct", TokenType::Statement(StatementToken::StructKW)),
             ("fn", TokenType::Statement(StatementToken::FnKW)),
+            ("return", TokenType::Statement(StatementToken::ReturnKW)),
         ];
 
         res.sort_by(|(s1, _), (s2, _)| s2.len().cmp(&s1.len()));

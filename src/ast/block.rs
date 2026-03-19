@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter, Pointer, Write};
 use std::process::abort;
-use crate::ast::statement::{Statement, StatementSyntax};
+use crate::ast::statements::{Statement, StatementSyntax};
 use crate::ast::{GenericSyntax, Syntax};
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::outcome::Outcome;

@@ -14,9 +14,7 @@ pub mod common;
 pub mod compiler;
 pub mod ast;
 pub mod tests;
-
-
-
+pub mod partial_typed_ast;
 
 #[derive(Parser)]
 pub struct Arguments {
@@ -51,8 +49,8 @@ fn main() -> Result<()> {
     }
 
 
-    compiler.raise_compile_warnings();
-    if compiler.raise_compile_errors() {
+    compiler.raise_compile_warnings(true);
+    if compiler.raise_compile_errors(true) {
         abort();
     }
     

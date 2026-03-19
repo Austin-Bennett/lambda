@@ -1,20 +1,21 @@
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
-use std::process::abort;
+use std::ops::Deref;
 use crate::ast::{GenericSyntax, Syntax};
-use crate::ast::expressions::{Expr, ExprSyntax};
-use crate::common::operator::Operator;
+use crate::ast::statements::vardecl::*;
+use crate::ast::statements::expressions::*;
+use crate::ast::statements::ret::{Return, ReturnSyntax};
 use crate::common::sourcemap::SourceMap;
-use crate::common::utils::modulepath::ModulePath;
-use crate::common::utils::outcome::Outcome;
-use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
-use crate::lexer::token::{ExpressionToken, FeatureToken, StatementToken, Token, TokenType};
-use crate::{token_match, unpack_opt_tk, unpack_tk};
-use crate::ast::common::{VarDecl, VarDeclSyntax};
+use crate::compiler::Compiler;
+use crate::lexer::token::Token;
+pub mod vardecl;
+pub mod expressions;
+pub mod ret;
 
 pub enum Statement {
     VariableDeclaration(VarDecl),
     Expression(Expr),
+    Return(Return)
 }
 
 impl Debug for Statement {
@@ -25,6 +26,9 @@ impl Debug for Statement {
             }
             Statement::Expression(e) => {
                 write!(f, "{:?}", e)?;
+            }
+            Statement::Return(r) => {
+                write!(f, "return {:?}", r.deref())?;
             }
         }
         Ok(())
@@ -40,10 +44,17 @@ impl Syntax for StatementSyntax {
         Self: Sized
     {
         if let Some(vardecl) = VarDeclSyntax::parse(tokens, compiler) {
-           Some(
+            Some(
                 StatementSyntax::new(
                     Statement::VariableDeclaration(vardecl.data),
                     vardecl.smap
+                )
+            )
+        } else if let Some(ret) = ReturnSyntax::parse(tokens, compiler) {
+            Some(
+                StatementSyntax::new(
+                    Statement::Return(ret.data),
+                    ret.smap
                 )
             )
         } else {

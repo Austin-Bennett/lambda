@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::process::abort;
 use crate::ast::{GenericSyntax, Syntax};
-use crate::ast::expressions::{Expr, ExprSyntax};
+use crate::ast::statements::expressions::{Expr, ExprSyntax};
 use crate::ast::ty::{Type, TypeSyntax};
 use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;

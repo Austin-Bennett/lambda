@@ -72,11 +72,29 @@ impl Compiler {
         }
     }
 
-    fn raise_messages(&self, messages: &Vec<CompileMessage>, ty: &str) -> bool {
+    fn print_message_no_source(&self, msg: &CompileMessage, ty: &str) {
+
+        //first print the source
+        println!("Compiler {} at {:?} {} at line {} character {}:",
+                 ty,
+                 msg.source.owner.descriptor,
+                 msg.source.owner.name,
+                 msg.source.line + 1,
+                 msg.source.char + 1,
+        );
+        let end = msg.source.offset + msg.source.len;
+        println!("{}\n", msg.message);
+        for i in &msg.notes {
+            self.print_message(&i, "note")
+        }
+    }
+
+    fn raise_messages(&self, messages: &Vec<CompileMessage>, ty: &str, with_source: bool) -> bool {
         if !messages.is_empty() {
 
             for e in messages {
-                self.print_message(e, ty)
+                if with_source { self.print_message(e, ty) }
+                else { self.print_message_no_source(e, ty) }
             }
 
             true
@@ -86,13 +104,17 @@ impl Compiler {
     }
 
 
+
+
+
+
     //returns true if there were compile errors after printing them
-    pub fn raise_compile_errors(&self) -> bool {
-        self.raise_messages(&self.errors, "error")
+    pub fn raise_compile_errors(&self, with_source: bool) -> bool {
+        self.raise_messages(&self.errors, "error", with_source)
     }
 
-    pub fn raise_compile_warnings(&self) -> bool {
-        self.raise_messages(&self.warnings, "warning")
+    pub fn raise_compile_warnings(&self, with_source: bool) -> bool {
+        self.raise_messages(&self.warnings, "warning", with_source)
     }
 }
 

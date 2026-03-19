@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::process::abort;
 use crate::ast::{GenericSyntax, Syntax};
-use crate::ast::common::{VarDecl, VarDeclSyntax};
+use crate::ast::statements::vardecl::{VarDecl, VarDeclSyntax};
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::common::utils::outcome::Outcome;

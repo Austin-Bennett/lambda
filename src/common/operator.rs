@@ -54,8 +54,11 @@ pub struct Operator {
 
 impl Operator {
     pub const MIN_BINARY_BP: BindingPower = BindingPower::Binary(0, 1);
-    pub const ADDITIVE_BP: BindingPower = BindingPower::Binary(2, 1);
-    pub const MULTIPLICATIVE_BP: BindingPower = BindingPower::Binary(4, 3);
+    pub const ADDITIVE_BP: BindingPower = BindingPower::Binary(4, 3);
+    pub const MULTIPLICATIVE_BP: BindingPower = BindingPower::Binary(6, 5);
+    pub const BITWISE_AND_BP: BindingPower = BindingPower::Binary(2, 1);
+
+
 
 
 
@@ -63,6 +66,8 @@ impl Operator {
 
     pub const ADD: Self = Operator{ tk: "+", bp: Operator::ADDITIVE_BP };
     pub const SUB: Self = Operator{ tk: "-", bp: Self::ADDITIVE_BP.to_binary_or_unary() };
-    pub const MUL: Self = Operator{ tk: "*", bp: Operator::MULTIPLICATIVE_BP };
+    pub const MUL: Self = Operator{ tk: "*", bp: Operator::MULTIPLICATIVE_BP.to_binary_or_unary() };
     pub const DIV: Self = Operator{ tk: "/", bp: Operator::MULTIPLICATIVE_BP };
+
+    pub const BITWISE_AND: Self = Operator{ tk: "&", bp: Operator::BITWISE_AND_BP.to_binary_or_unary() };
 }

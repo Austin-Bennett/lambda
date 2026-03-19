@@ -9,6 +9,7 @@ lazy_static!{
             Operator::SUB,
             Operator::MUL,
             Operator::DIV,
+            Operator::BITWISE_AND,
         ];
 
         res.sort_by(|f, s| s.tk.len().cmp(&f.tk.len()));

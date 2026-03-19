@@ -1,19 +1,22 @@
-use std::collections::VecDeque;
-use crate::ast::block::BlockSyntax;
+use crate::ast::Syntax;
 #[cfg(test)]
 
-use crate::ast::expressions::ExprSyntax;
-use crate::ast::items::function::FunctionSyntax;
-use crate::ast::items::ItemSyntax;
-use crate::ast::items::structure::StructureSyntax;
-use crate::ast::statement::StatementSyntax;
-use crate::ast::Syntax;
+use crate::ast::ty::TypeSyntax;
 use crate::common::primitives::decimal128::LDecimal128;
 use crate::common::primitives::decimal64::LDecimal64;
 use crate::common::source_owner::{SourceDescriptor, SourceOwner};
-use crate::common::utils::outcome::Outcome;
-use crate::lexer::token::{Token, TokenType};
+use crate::compiler::Compiler;
 use crate::lexer::tokenizer::Tokens;
+
+pub fn make_tokens(s: &str) -> Tokens {
+    Tokens::tokenize_string(
+        SourceOwner::new(
+            SourceDescriptor::RustString,
+            "test_string".to_string(),
+        ),
+        s.to_string()
+    )
+}
 
 #[test]
 pub fn test_decimalf64() {
@@ -67,5 +70,26 @@ pub fn test_decimal128() {
 }
 
 
+#[test]
+pub fn test_type_parse() {
+    let mut compiler = Compiler::new();
+
+    let mut tokens = make_tokens("T&*[][N]").collect();
+
+    let Some(ty) = TypeSyntax::parse(
+        &mut tokens,
+        &mut compiler,
+    ) else {
+        compiler.raise_compile_warnings(false);
+        compiler.raise_compile_errors(false);
+        panic!()
+    };
 
 
+    compiler.raise_compile_warnings(false);
+    if compiler.raise_compile_errors(false) {
+       panic!()
+    }
+
+    println!("{:?}", ty.data)
+}

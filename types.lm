@@ -1,0 +1,22 @@
+T = ident
+* = operator MUL
+& = operator AND / address of
+
+standard value:
+T
+
+pointer:
+T*
+
+reference:
+T&
+
+slice:
+T[]
+
+array:
+T[N]
+
+
+an array of length N of slices of pointers to references of type T
+T&*[][N]

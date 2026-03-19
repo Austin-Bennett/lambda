@@ -39,6 +39,7 @@ pub enum StatementToken {
     UseKW(String), //containing the module path
     StructKW,
     FnKW,
+    ReturnKW,
 }
 
 #[derive(Clone, Debug)]
