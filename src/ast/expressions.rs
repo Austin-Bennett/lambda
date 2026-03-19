@@ -8,7 +8,7 @@ use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::common::utils::outcome::Outcome;
-use crate::compiler::{CompileMessage, CompileMessageType};
+use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::literal::IntegerLiteral;
 use crate::lexer::token::{ExpressionToken, FeatureToken, Token, TokenType};
 
@@ -192,7 +192,7 @@ impl ExprSyntax {
         Outcome::Ok((res, smap))
     }
     
-    fn make_expression(tokens: &mut VecDeque<Token>, minbp: u8) -> Outcome<Self, CompileMessage> {
+    pub fn make_expression(tokens: &mut VecDeque<Token>, minbp: u8) -> Outcome<Self, CompileMessage> {
         //get the first expression token
         let Some((expr, mut smap)) = tokens.next_expression() else {
             return Outcome::None;
@@ -374,11 +374,18 @@ impl ExprSyntax {
 }
 
 impl Syntax for ExprSyntax {
-    fn parse<'a>(tokens: &mut VecDeque<Token>) -> Outcome<Self, CompileMessage>
+    fn parse<'a>(tokens: &mut VecDeque<Token>, compiler: &mut Compiler) -> Option<Self>
     where
         Self: Sized
     {
-        Self::make_expression(tokens, 0)
+        match Self::make_expression(tokens, 0) {
+            Outcome::Ok(v) => { Some(v) }
+            Outcome::None => { None }
+            Outcome::Err(e) => { 
+                compiler.emit_compile_message(e);
+                None
+            }
+        }
     }
 
     fn get_sourcemap(&self) -> &SourceMap {

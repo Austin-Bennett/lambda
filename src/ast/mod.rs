@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::outcome::Outcome;
-use crate::compiler::CompileMessage;
+use crate::compiler::{CompileMessage, Compiler};
 use crate::lexer::token::Token;
 
 
@@ -16,7 +16,7 @@ pub mod ty;
 pub use {items::*, block::*, statement::*, items::*, common::*, ty::*};
 
 pub trait Syntax {
-    fn parse(tokens: &mut VecDeque<Token>) -> Outcome<Self, CompileMessage> where Self: Sized;
+    fn parse(tokens: &mut VecDeque<Token>, context: &mut Compiler) -> Option<Self> where Self: Sized;
 
     fn get_sourcemap(&self) -> &SourceMap;
 }

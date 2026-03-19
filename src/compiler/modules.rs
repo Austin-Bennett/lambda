@@ -1,11 +1,12 @@
 use std::collections::VecDeque;
 use crate::ast;
+use crate::ast::Syntax;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::common::utils::outcome::Outcome;
 use crate::common::utils::progress::Progress;
 use crate::common::utils::Todo;
-use crate::compiler::CompileMessage;
+use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::Token;
 
 pub struct LModule {
@@ -16,18 +17,35 @@ pub struct LModule {
 
 
 impl LModule {
-    
-}
+    pub fn parse_untyped(mut tokens: VecDeque<Token>, smap: SourceMap, dependencies: Vec<ModulePath>, compiler: &mut Compiler) -> Self {
+        let mut items = Vec::new();
 
-impl ast::Syntax for LModule {
-    fn parse(tokens: &mut VecDeque<Token>) -> Outcome<Self, CompileMessage>
-    where
-        Self: Sized
-    {
-        todo!()
-    }
+        while !tokens.is_empty() {
 
-    fn get_sourcemap(&self) -> &SourceMap {
-        &self.smap
+            let Some(item) = ast::ItemSyntax::parse(&mut tokens, compiler) else {
+                if let Some(next) = tokens.pop_front() {
+                    compiler.emit_compile_message(
+                        CompileMessage::new(
+                            next.smap,
+                            format!("Unexpected token {:?}", next.typ),
+                            CompileMessageType::Error,
+                        )
+                    );
+                    continue;
+                } else {
+                    break;
+                }
+            };
+            items.push(item.data);
+        }
+
+
+
+        Self{
+            smap,
+            dependencies,
+            ast: Progress::Todo(items)
+        }
+
     }
 }

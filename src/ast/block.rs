@@ -5,7 +5,7 @@ use crate::ast::statement::{Statement, StatementSyntax};
 use crate::ast::{GenericSyntax, Syntax};
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::outcome::Outcome;
-use crate::compiler::{CompileMessage, CompileMessageType};
+use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{FeatureToken, Token, TokenType};
 use crate::{token_match, unpack_opt_tk};
 
@@ -26,7 +26,7 @@ impl Debug for BlockSyntax {
 }
 
 impl Syntax for BlockSyntax {
-    fn parse(tokens: &mut VecDeque<Token>) -> Outcome<Self, CompileMessage>
+    fn parse(tokens: &mut VecDeque<Token>, compiler: &mut Compiler) -> Option<Self>
     where
         Self: Sized
     {
@@ -42,29 +42,32 @@ impl Syntax for BlockSyntax {
                 }else if token_match!(tokens, TokenType::Feature(FeatureToken::StatementEnd)) {
                     tokens.pop_front();
                 } else {
-                    let stmt = match StatementSyntax::parse(tokens)? {
+                    let stmt = match StatementSyntax::parse(tokens, compiler) {
                         Some(v) => v,
                         None => {
                             //one of two things has gone wrong, 1. a bad token, 2. a EOF
 
                             match tokens.pop_front() {
-                                Some(tk) => return Outcome::Err(
-                                    CompileMessage::new(
-                                        tk.smap.clone(),
-                                        format!("didnt expect token: {:?}", tk.typ),
-                                        CompileMessageType::Error
-                                    )
-                                        .add_note(CompileMessage::note(tk.smap, "expected statement".to_string()))
-                                ),
-                                None => return Outcome::Err(
+                                Some(tk) => {
+                                    compiler.emit_compile_message(
+                                        CompileMessage::new(
+                                            tk.smap.clone(),
+                                            format!("didnt expect token: {:?}", tk.typ),
+                                            CompileMessageType::Error,
+                                        )
+                                            .add_note(CompileMessage::note(tk.smap, "expected statement".to_string()))
+                                    );
+                                },
+                                None => compiler.emit_compile_message(
                                     //todo: replace with error at the end of the block
                                     CompileMessage::new(
-                                        og_smap,
+                                        og_smap.clone(),
                                         "unclosed '}'".to_string(),
                                         CompileMessageType::Error
                                     )
                                 )
                             }
+                            continue;
                         }
                     };
 
@@ -74,9 +77,9 @@ impl Syntax for BlockSyntax {
                 }
             }
 
-            Outcome::Ok(result)
+            Some(result)
         } else {
-            Outcome::None
+            None
         }
     }
 

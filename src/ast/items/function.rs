@@ -9,9 +9,9 @@ use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::common::utils::outcome::Outcome;
-use crate::compiler::CompileMessage;
+use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{ExpressionToken, FeatureToken, StatementToken, Token, TokenType};
-use crate::unpack_opt_tk;
+use crate::{compiler, unpack_opt_tk};
 
 
 //todo: return value
@@ -50,11 +50,11 @@ impl Debug for Function {
 pub type FunctionSyntax = GenericSyntax<Function>;
 
 impl Syntax for FunctionSyntax {
-    fn parse(tokens: &mut VecDeque<Token>) -> Outcome<Self, CompileMessage>
+    fn parse(tokens: &mut VecDeque<Token>, compiler: &mut Compiler) -> Option<Self>
     where
         Self: Sized
     {
-        let unpack_opt_tk!( TokenType::Statement(StatementToken::FnKW), smap ) = tokens.get(0) else { return Outcome::None };
+        let unpack_opt_tk!( TokenType::Statement(StatementToken::FnKW), smap ) = tokens.get(0) else { return None };
         let unpack_opt_tk!( TokenType::Statement(StatementToken::FnKW), mut smap ) = tokens.pop_front() else { abort(); };
 
         //get the name next
@@ -63,14 +63,15 @@ impl Syntax for FunctionSyntax {
             smap.extend(imap);
             ModulePath::from_module_path(s)
         } else {
-            return Outcome::Err(
+            compiler.emit_compile_message(
                 CompileMessage::expected_token_error(
                     smap,
                     "identifier",
                     "'fn' keyword",
                     next
                 )
-            )
+            );
+            return None;
         };
 
         //expect an open parentheses
@@ -80,14 +81,15 @@ impl Syntax for FunctionSyntax {
             imap
         }
         else {
-            return Outcome::Err(
+            compiler.emit_compile_message(
                 CompileMessage::expected_token_error(
                     smap,
                     "'('",
                     format!("function declaration: {}", name),
                     next
                 )
-            )
+            );
+            return None;
         };
 
         let mut args = Vec::new();
@@ -95,7 +97,16 @@ impl Syntax for FunctionSyntax {
 
         //parse in arguments
         let mut ended = false;
-        while let Some(var_decl) = VarDeclSyntax::parse(tokens)? {
+        while let Some(var_decl) = VarDeclSyntax::parse(tokens, compiler) {
+            
+            if var_decl.data.value.is_some() {
+                compiler.emit_compile_message(CompileMessage::new(
+                    var_decl.smap.clone(),
+                    "default values for function arguments are not allowed!".to_string(),
+                    CompileMessageType::Error
+                ));
+            }
+            
             last_smap = var_decl.smap.clone();
             args.push(var_decl.data);
             smap.extend(var_decl.smap);
@@ -110,8 +121,8 @@ impl Syntax for FunctionSyntax {
 
                 break;
             } else {
-                return Outcome::Err(CompileMessage::expected_token_error(
-                    last_smap,
+                compiler.emit_compile_message(CompileMessage::expected_token_error(
+                    last_smap.clone(),
                     "')'",
                     "function parameter",
                     next
@@ -126,21 +137,22 @@ impl Syntax for FunctionSyntax {
                 ended = true;
                 last_smap = imap;
             } else {
-                return Outcome::Err(
+                compiler.emit_compile_message(
                     CompileMessage::expected_token_error(
                         last_smap,
                         "')'",
                         "'('",
                         next
                     )
-                )
+                );
+                return None;
             }
         }
 
         //check for a return type
         let ty = if let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Operator( Operator{ tk: "=", .. } )), _) = tokens.get(0) {
             tokens.pop_front();
-            match TypeSyntax::parse(tokens)? {
+            match TypeSyntax::parse(tokens, compiler) {
                 Some(t) => {
                     smap.extend(t.smap);
                     Some(t.data)
@@ -152,23 +164,25 @@ impl Syntax for FunctionSyntax {
         };
 
         //get the block
-        let block = match BlockSyntax::parse(tokens)? {
+        let block = match BlockSyntax::parse(tokens, compiler) {
             Some(b) => b,
-            None =>
-                return Outcome::Err(
+            None => {
+                compiler.emit_compile_message(
                     CompileMessage::expected_token_error(
                         last_smap,
                         "function body",
                         "')'",
-                        tokens.pop_front()
+                        tokens.pop_front(),
                     )
-                )
+                );
+                return None;
+            }
         };
 
         smap.extend(block.smap);
 
 
-        Outcome::Ok(Self{
+        Some(Self{
             smap,
             data: Function{
                 name,

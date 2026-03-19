@@ -5,7 +5,7 @@ use crate::ast::items::function::{Function, FunctionSyntax};
 use crate::ast::items::structure::{Structure, StructureSyntax};
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::outcome::Outcome;
-use crate::compiler::CompileMessage;
+use crate::compiler::{CompileMessage, Compiler};
 use crate::lexer::token::Token;
 
 pub mod structure;
@@ -21,27 +21,27 @@ pub enum Item {
 pub type ItemSyntax = GenericSyntax<Item>;
 
 impl Syntax for ItemSyntax {
-    fn parse(tokens: &mut VecDeque<Token>) -> Outcome<Self, CompileMessage>
+    fn parse(tokens: &mut VecDeque<Token>, compiler: &mut Compiler) -> Option<Self>
     where
         Self: Sized
     {
 
-        if let Some(func) = FunctionSyntax::parse(tokens)? {
-            Outcome::Ok(
+        if let Some(func) = FunctionSyntax::parse(tokens, compiler) {
+            Some(
                 Self{
                     data: Item::Func(func.data),
                     smap: func.smap,
                 }
             )
-        } else if let Some(structure) = StructureSyntax::parse(tokens)? {
-            Outcome::Ok(
+        } else if let Some(structure) = StructureSyntax::parse(tokens, compiler) {
+            Some(
                 Self{
                     data: Item::Struct(structure.data),
                     smap: structure.smap,
                 }
             )
         } else {
-            Outcome::None
+            None
         }
 
 

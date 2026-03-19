@@ -5,7 +5,7 @@ use crate::ast::{GenericSyntax, Syntax};
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::common::utils::outcome::Outcome;
-use crate::compiler::CompileMessage;
+use crate::compiler::{CompileMessage, Compiler};
 use crate::lexer::token::{ExpressionToken, Token, TokenType};
 use crate::unpack_opt_tk;
 
@@ -26,7 +26,7 @@ pub type TypeSyntax = GenericSyntax<Type>;
 
 
 impl Syntax for TypeSyntax {
-    fn parse(tokens: &mut VecDeque<Token>) -> Outcome<Self, CompileMessage>
+    fn parse(tokens: &mut VecDeque<Token>, compiler: &mut Compiler) -> Option<Self>
     where
         Self: Sized
     {
@@ -35,14 +35,14 @@ impl Syntax for TypeSyntax {
             let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Identifier(id)), smap) = tokens.pop_front()
             else { abort() };
 
-            Outcome::Ok(
+            Some(
                 Self{
                     data: Type::Typename(ModulePath::from_module_path(id)),
                     smap
                 }
             )
         } else {
-            Outcome::None
+            None
         }
     }
 

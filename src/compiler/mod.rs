@@ -1,6 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::{Debug, Formatter};
-use crate::common::source_owner::SourceOwner;
+use crate::common::source_owner::{SourceDescriptor, SourceOwner};
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::lexer::token::{StatementToken, Token, TokenType};
@@ -11,6 +11,7 @@ pub mod modules;
 mod compile_message;
 
 use modules::*;
+use crate::common::utils::outcome::Outcome;
 
 pub enum CompileMessageType {
     Error,
@@ -30,6 +31,8 @@ pub struct Compiler {
     source_map: HashMap<SourceOwner, String>,
     modules: HashMap<ModulePath, LModule>,
 }
+
+
 
 
 impl Compiler {
@@ -101,13 +104,21 @@ impl Compiler {
             return;
         }
 
+        let mut module_smap = SourceMap{
+            owner: tokens.get_owner().clone(),
+            offset: 0,
+            line: 0,
+            char: 0,
+            len: 0
+        };
+
         added.insert(modp.clone());
 
-        let mut tks: Vec<Token> = Vec::new();
+        let mut tks: VecDeque<Token> = VecDeque::new();
         let mut dependencies = Vec::new();
         //iterate through the tokens and find module dependencies
         for tk in tokens {
-
+            module_smap.extend(&tk.smap);
 
             match &tk.typ {
                 TokenType::Statement(StatementToken::UseKW(s)) => {
@@ -149,17 +160,18 @@ impl Compiler {
                 }
 
 
-                _ => tks.push(tk)
+                _ => tks.push_back(tk)
             }
 
 
 
         }
 
-        self.modules.insert(modp, LModule {
-            tokens: tks,
-            dependencies
-        });
+        let module = LModule::parse_untyped(tks, module_smap, dependencies, self);
+        self.modules.insert(
+            modp,
+            module
+        );
     }
 
     pub fn add_module(&mut self, owner: SourceOwner, source: String) {

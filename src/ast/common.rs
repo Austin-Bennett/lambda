@@ -8,7 +8,7 @@ use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::common::utils::outcome::Outcome;
-use crate::compiler::{CompileMessage, CompileMessageType};
+use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{ExpressionToken, FeatureToken, Token, TokenType};
 use crate::token_match;
 use crate::unpack_opt_tk;
@@ -34,7 +34,7 @@ impl Debug for VarDecl {
 pub type VarDeclSyntax = GenericSyntax<VarDecl>;
 
 impl Syntax for VarDeclSyntax {
-    fn parse(tokens: &mut VecDeque<Token>) -> Outcome<Self, CompileMessage>
+    fn parse(tokens: &mut VecDeque<Token>, compiler: &mut Compiler) -> Option<Self>
     where
         Self: Sized
     {
@@ -46,15 +46,16 @@ impl Syntax for VarDeclSyntax {
         ) {
             let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Identifier(name)), mut smap) = tokens.pop_front() else { abort() };
             tokens.pop_front();
-            let ty = if let Some(ty) = TypeSyntax::parse(tokens)? {
+            let ty = if let Some(ty) = TypeSyntax::parse(tokens, compiler) {
                 smap.extend(ty.smap);
                 ty.data
             } else {
-                return Outcome::Err(CompileMessage::new(
+                compiler.emit_compile_message(CompileMessage::new(
                     smap,
                     format!("expected type after variable declaration: {:?}", name),
                     CompileMessageType::Error
                 ));
+                return None;
             };
 
 
@@ -65,15 +66,16 @@ impl Syntax for VarDeclSyntax {
                 let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Operator(Operator{ tk: "=", .. })), opmap) = tokens.pop_front() else { abort() };
 
 
-                let expr = match ExprSyntax::parse(tokens)? {
+                let expr = match ExprSyntax::parse(tokens, compiler) {
                     Some(v) => v,
                     None => {
                         smap.extend(opmap);
-                        return Outcome::Err(CompileMessage::new(
+                        compiler.emit_compile_message(CompileMessage::new(
                             smap,
                             "expected expression after '='".to_string(),
                             CompileMessageType::Error
                         ));
+                        return None;
                     }
                 };
                 smap.extend(expr.smap);
@@ -83,7 +85,7 @@ impl Syntax for VarDeclSyntax {
             };
 
 
-            Outcome::Ok(
+            Some(
                 VarDeclSyntax{
                     smap,
                     data: VarDecl{
@@ -94,7 +96,7 @@ impl Syntax for VarDeclSyntax {
                 }
             )
         } else {
-            Outcome::None
+            None
         }
     }
 

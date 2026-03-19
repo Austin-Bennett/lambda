@@ -61,16 +61,10 @@ fn main() -> Result<()> {
     for (modp, m) in compiler.as_ref() {
         println!("{}", modp);
         
-        for tk in &m.tokens {
-            if let TokenType::Feature(FeatureToken::StatementEnd) = tk.typ {
-                println!()
-            } else if let TokenType::User(_) = tk.typ {
-                continue;
-            } else {
-                print!("{:?} ", tk.typ)
-            }
+        for i in m.ast.unwrap_unfinished_ref() {
+            println!("{:?}", i);
         }
-        println!()
+        println!();
     }
     
     Ok(())

@@ -7,7 +7,7 @@ use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::common::utils::outcome::Outcome;
-use crate::compiler::{CompileMessage, CompileMessageType};
+use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{ExpressionToken, FeatureToken, StatementToken, Token, TokenType};
 use crate::{token_match, unpack_opt_tk, unpack_tk};
 use crate::ast::common::{VarDecl, VarDeclSyntax};
@@ -35,33 +35,28 @@ pub type StatementSyntax = GenericSyntax<Statement>;
 
 
 impl Syntax for StatementSyntax {
-    fn parse(tokens: &mut VecDeque<Token>) -> Outcome<Self, CompileMessage>
+    fn parse(tokens: &mut VecDeque<Token>, compiler: &mut Compiler) -> Option<Self>
     where
         Self: Sized
     {
-        if let Some(vardecl) = VarDeclSyntax::parse(tokens)? {
-
-            Outcome::Ok(
+        if let Some(vardecl) = VarDeclSyntax::parse(tokens, compiler) {
+           Some(
                 StatementSyntax::new(
                     Statement::VariableDeclaration(vardecl.data),
                     vardecl.smap
                 )
             )
-
-
         } else {
-
-
-            match ExprSyntax::parse(tokens)? {
+            match ExprSyntax::parse(tokens, compiler) {
                 Some(v) => {
-                    Outcome::Ok(
+                    Some(
                         StatementSyntax::new(
                             Statement::Expression(v.data),
                             v.smap
                         )
                     )
                 }
-                None => Outcome::None
+                None => None
             }
 
         }
