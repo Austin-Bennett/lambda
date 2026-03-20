@@ -12,8 +12,8 @@ use crate::unpack_opt_tk;
 
 
 pub struct Structure {
-    name: ModulePath,
-    members: Vec<VarDecl>
+    pub name: ModulePath,
+    pub members: Vec<VarDecl>
 
     //todo: methods?
 }

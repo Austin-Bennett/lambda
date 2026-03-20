@@ -10,6 +10,10 @@ pub struct ModulePath {
 
 impl ModulePath {
 
+    pub fn add_namespace(&mut self, namespace: &ModulePath) {
+        self.path = namespace.path.clone() + &self.path;
+    }
+
     pub fn components(&'_ self) -> Split<'_, &str> {
         self.path.split("::")
     }

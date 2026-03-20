@@ -12,7 +12,7 @@ use crate::compiler::{CompileMessage, Compiler};
 use crate::lexer::token::{ExpressionToken, Token, TokenType};
 use crate::{unpack_opt_tk, unpack_tk};
 
-//currently all we have are typename's, but soon we might have pointers, references, etc
+
 pub enum Type {
     Typename(ModulePath),
     Reference(Box<Type>),

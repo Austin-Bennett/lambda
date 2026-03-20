@@ -16,10 +16,10 @@ use crate::{compiler, unpack_opt_tk};
 
 //todo: return value
 pub struct Function {
-    name: ModulePath,
-    parameters: Vec<VarDecl>,
-    body: Block,
-    ty: Option<Type>, //None for void
+    pub name: ModulePath,
+    pub parameters: Vec<VarDecl>,
+    pub body: Block,
+    pub ty: Option<Type>, //None for void
 }
 
 impl Debug for Function {
@@ -44,7 +44,7 @@ impl Debug for Function {
         write!(f, " {{{}", if self.body.is_empty() { "" } else { "\n" })?;
 
         for s in &self.body {
-            write!(f, "\t{:?}\n", s)?;
+            write!(f, "\t{:?}\n", s.data)?;
         }
 
         write!(f, "}}")?;

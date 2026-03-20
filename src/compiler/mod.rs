@@ -11,7 +11,10 @@ pub mod modules;
 mod compile_message;
 
 use modules::*;
+use crate::ast::ty::Type;
+use crate::common::type_context::{TypeContext, TypeName};
 use crate::common::utils::outcome::Outcome;
+use crate::common::utils::progress::Progress;
 
 pub enum CompileMessageType {
     Error,
@@ -30,6 +33,7 @@ pub struct Compiler {
     //maps paths to their sources
     source_map: HashMap<SourceOwner, String>,
     modules: HashMap<ModulePath, LModule>,
+    type_context: TypeContext,
 }
 
 
@@ -42,7 +46,39 @@ impl Compiler {
             warnings: Vec::new(),
             source_map: HashMap::new(),
             modules: HashMap::new(),
+            type_context: TypeContext::new(),
         }
+    }
+    
+    pub fn resolve_types(&mut self) {
+        
+    }
+    
+    pub fn resolve_typename(&mut self, type_name: ModulePath) -> Option<&TypeName> {
+        match self.type_context.get_type_by_name(&type_name) {
+            None => {}
+            Some(t) => {
+                return Some(t);
+            }
+        }
+        
+        
+        //otherwise, search for the structure name in any file, if not found,
+        //return None
+        for (_, m) in &self.modules {
+            match &m.ast { 
+                //anything besides Todo should already by in the contex
+                Progress::Todo(p) => {
+                    for i in p {
+                        
+                    }
+                }
+                _ => {}
+            }
+        }
+        
+        
+        None
     }
 
     pub fn emit_compile_message(&mut self, msg: CompileMessage) {
@@ -102,9 +138,6 @@ impl Compiler {
             false
         }
     }
-
-
-
 
 
 
@@ -189,7 +222,7 @@ impl Compiler {
 
         }
 
-        let module = LModule::parse_untyped(tks, module_smap, dependencies, self);
+        let module = LModule::parse_untyped(modp.clone(), tks, module_smap, dependencies, self);
         self.modules.insert(
             modp,
             module

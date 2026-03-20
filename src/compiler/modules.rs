@@ -17,12 +17,12 @@ pub struct LModule {
 
 
 impl LModule {
-    pub fn parse_untyped(mut tokens: VecDeque<Token>, smap: SourceMap, dependencies: Vec<ModulePath>, compiler: &mut Compiler) -> Self {
+    pub fn parse_untyped(path: ModulePath, mut tokens: VecDeque<Token>, smap: SourceMap, dependencies: Vec<ModulePath>, compiler: &mut Compiler) -> Self {
         let mut items = Vec::new();
 
         while !tokens.is_empty() {
 
-            let Some(item) = ast::ItemSyntax::parse(&mut tokens, compiler) else {
+            let Some(mut item) = ast::ItemSyntax::parse(&mut tokens, compiler) else {
                 if let Some(next) = tokens.pop_front() {
                     compiler.emit_compile_message(
                         CompileMessage::new(
@@ -36,9 +36,11 @@ impl LModule {
                     break;
                 }
             };
+            item.append_namespace(&path);
             items.push(item.data);
         }
 
+        
 
 
         Self{

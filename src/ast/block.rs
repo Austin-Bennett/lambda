@@ -9,7 +9,7 @@ use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{FeatureToken, Token, TokenType};
 use crate::{token_match, unpack_opt_tk};
 
-pub type Block = Vec<Statement>;
+pub type Block = Vec<StatementSyntax>;
 
 pub type BlockSyntax = GenericSyntax<Block>;
 
@@ -17,7 +17,7 @@ impl Debug for BlockSyntax {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str("{\n")?;
         for s in &self.data {
-            write!(f, "\t{:?}\n", s)?;
+            write!(f, "\t{:?}\n", s.data)?;
         }
 
 
@@ -72,8 +72,8 @@ impl Syntax for BlockSyntax {
                     };
 
 
-                    result.smap.extend(stmt.smap);
-                    result.data.push(stmt.data);
+                    result.smap.extend(stmt.smap.clone());
+                    result.data.push(stmt);
                 }
             }
 
