@@ -14,7 +14,6 @@ pub mod common;
 pub mod compiler;
 pub mod ast;
 pub mod tests;
-pub mod partial_typed_ast;
 
 #[derive(Parser)]
 pub struct Arguments {
@@ -27,7 +26,6 @@ pub struct Arguments {
 fn main() -> Result<()> {
     #[allow(unused_mut)]
     let mut args = Arguments::parse();
-
 
 
 
@@ -59,8 +57,8 @@ fn main() -> Result<()> {
     for (modp, m) in compiler.as_ref() {
         println!("{}", modp);
         
-        for i in m.ast.unwrap_unfinished_ref() {
-            println!("{:?}", i);
+        for i in &m.ast {
+            println!("{:?}", i.as_ref().unwrap_err());
         }
         println!();
     }

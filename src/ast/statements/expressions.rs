@@ -37,7 +37,6 @@ pub enum Expr {
     BinaryOp(Box<BinaryOperation>),
     UnaryOp(Box<UnaryOperation>),
     CallOp(Box<CallOperation>),
-
 }
 
 pub type ExprSyntax = GenericSyntax<Expr>;

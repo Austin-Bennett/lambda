@@ -11,7 +11,7 @@ pub struct ModulePath {
 impl ModulePath {
 
     pub fn add_namespace(&mut self, namespace: &ModulePath) {
-        self.path = namespace.path.clone() + &self.path;
+        self.path = namespace.path.clone() + "::" + &self.path;
     }
 
     pub fn components(&'_ self) -> Split<'_, &str> {
@@ -20,10 +20,14 @@ impl ModulePath {
 
     pub fn from_path(path: impl AsRef<Path>) -> Self {
         let path = path.as_ref();
+
+
         Self{
             path: path.components()
                 .map(|c| c.as_os_str().to_string_lossy().to_string() + "::")
-                .collect()
+                .collect::<String>()
+                .strip_suffix(".lm::")
+                .unwrap().to_string()
         }
     }
 

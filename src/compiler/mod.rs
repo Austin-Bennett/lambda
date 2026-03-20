@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::fmt::{Debug, Formatter};
-use crate::common::source_owner::{SourceDescriptor, SourceOwner};
+use std::fmt::Debug;
+use crate::common::source_owner::SourceOwner;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::lexer::token::{StatementToken, Token, TokenType};
@@ -8,12 +8,12 @@ use crate::lexer::tokenizer::Tokens;
 pub use compile_message::CompileMessage;
 
 pub mod modules;
-mod compile_message;
+pub mod compile_message;
 
 use modules::*;
-use crate::ast::ty::Type;
-use crate::common::type_context::{TypeContext, TypeName};
-use crate::common::utils::outcome::Outcome;
+use crate::ast::Item;
+use crate::ast::statements::vardecl::VarDecl;
+use crate::ast::structure::Structure;
 use crate::common::utils::progress::Progress;
 
 pub enum CompileMessageType {
@@ -33,7 +33,6 @@ pub struct Compiler {
     //maps paths to their sources
     source_map: HashMap<SourceOwner, String>,
     modules: HashMap<ModulePath, LModule>,
-    type_context: TypeContext,
 }
 
 
@@ -46,40 +45,20 @@ impl Compiler {
             warnings: Vec::new(),
             source_map: HashMap::new(),
             modules: HashMap::new(),
-            type_context: TypeContext::new(),
         }
+    }
+    
+    
+    //adds primitive types to the type context
+    pub fn add_primitive_types(&mut self) {
+        
+        
     }
     
     pub fn resolve_types(&mut self) {
-        
     }
     
-    pub fn resolve_typename(&mut self, type_name: ModulePath) -> Option<&TypeName> {
-        match self.type_context.get_type_by_name(&type_name) {
-            None => {}
-            Some(t) => {
-                return Some(t);
-            }
-        }
-        
-        
-        //otherwise, search for the structure name in any file, if not found,
-        //return None
-        for (_, m) in &self.modules {
-            match &m.ast { 
-                //anything besides Todo should already by in the contex
-                Progress::Todo(p) => {
-                    for i in p {
-                        
-                    }
-                }
-                _ => {}
-            }
-        }
-        
-        
-        None
-    }
+    
 
     pub fn emit_compile_message(&mut self, msg: CompileMessage) {
         match msg.ty {

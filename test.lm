@@ -4,10 +4,12 @@ use test_import
 
 
 //2D integer vector
-struct ivec2 {
-    x: int64,
-    y: int64,
-}
+//structures arent actually supported yet,
+//but the infrastructure is there
+//struct ivec2 {
+//    x: int64,
+//    y: int64,
+//}
 
 //functions that return values use the = type syntax
 fn sub(a: i64, b: i64) = i64 {
