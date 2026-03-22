@@ -11,7 +11,7 @@ use crate::lexer::token::Token;
 
 pub struct LModule {
     pub smap: SourceMap,
-    pub ast: Vec<Result<Todo, ast::Item>>,
+    pub ast: Vec<ast::Item>,
     pub dependencies: Vec<ModulePath>, //module dependencies
 }
 
@@ -37,7 +37,7 @@ impl LModule {
                 }
             };
             item.append_namespace(&path);
-            items.push(Err(item.data));
+            items.push(item.data);
         }
 
         

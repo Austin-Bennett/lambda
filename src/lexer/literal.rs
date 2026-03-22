@@ -49,10 +49,14 @@ impl IntegerLiteral {
     }
 
     //fails if negative or too large
-    pub fn as_u8(&self) -> Option<u8> {
-        if self.negative { None }
-        else if self.value & 0xFF != self.value { None }
-        else { Some(self.value as u8) }
+    pub fn as_u8(&self) -> anyhow::Result<u8> {
+        if self.negative { 
+            Err(anyhow::Error::msg("negative values are not allowed for unsigned integers!"))
+        }
+        else if self.value & 0xFF != self.value { 
+            Err(anyhow::Error::msg(format!("{} is too big to fit inside a 8-bit unsigned integer!", self.value)))
+        }
+        else { Ok(self.value as u8) }
     }
 
     //converts to u16, ignoring extra bits and combining the sign into the first significant bit
@@ -61,10 +65,14 @@ impl IntegerLiteral {
     }
 
     //fails if negative or too large
-    pub fn as_u16(&self) -> Option<u16> {
-        if self.negative { None }
-        else if self.value & 0xFFFF != self.value { None }
-        else { Some(self.value as u16) }
+    pub fn as_u16(&self) -> anyhow::Result<u16> {
+        if self.negative {
+            Err(anyhow::Error::msg("negative values are not allowed for unsigned integers!"))
+        }
+        else if self.value & 0xFF_FF != self.value {
+            Err(anyhow::Error::msg(format!("{} is too big to fit inside a 16-bit unsigned integer!", self.value)))
+        }
+        else { Ok(self.value as u16) }
     }
 
     //converts to u32, ignoring extra bits and combining the sign into the first significant bit
@@ -73,10 +81,14 @@ impl IntegerLiteral {
     }
 
     //fails if negative or too large
-    pub fn as_u32(&self) -> Option<u32> {
-        if self.negative { None }
-        else if self.value & 0xFFFFFF != self.value { None }
-        else { Some(self.value as u32) }
+    pub fn as_u32(&self) -> anyhow::Result<u32> {
+        if self.negative {
+            Err(anyhow::Error::msg("negative values are not allowed for unsigned integers!"))
+        }
+        else if self.value & 0xFF_FF_FF_FF != self.value {
+            Err(anyhow::Error::msg(format!("{} is too big to fit inside a 32-bit unsigned integer!", self.value)))
+        }
+        else { Ok(self.value as u32) }
     }
 
     //converts to u64 ignoring extra bits and combining the sign into the first significant bit
@@ -86,10 +98,14 @@ impl IntegerLiteral {
     }
 
     //fails if negative or too big
-    pub fn as_u64(&self) -> Option<u64> {
-        if self.negative { None }
-        else if self.value & 0xFFFFFFFF_FFFFFFFF != self.value { None }
-        else { Some(self.value as u64) }
+    pub fn as_u64(&self) -> anyhow::Result<u64> {
+        if self.negative {
+            Err(anyhow::Error::msg("negative values are not allowed for unsigned integers!"))
+        }
+        else if self.value & 0xFF_FF != self.value {
+            Err(anyhow::Error::msg(format!("{} is too big to fit inside a 64-bit unsigned integer!", self.value)))
+        }
+        else { Ok(self.value as u64) }
     }
 
     //converts to u128 combining the sign into the first significant bit
@@ -99,9 +115,9 @@ impl IntegerLiteral {
     }
 
     //fails if negative
-    pub fn as_u128(&self) -> Option<u128> {
-        if self.negative { None }
-        else { Some(self.value as u128) }
+    pub fn as_u128(&self) -> anyhow::Result<u128> {
+        if self.negative { Err(anyhow::Error::msg("negative values are not allowed for unsigned integers!")) }
+        else { Ok(self.value) }
     }
 
 
@@ -116,11 +132,13 @@ impl IntegerLiteral {
     }
 
     //fails if too large
-    pub fn as_i8(&self) -> Option<i8> {
-        if self.value & 0x7F != self.value { None }
+    pub fn as_i8(&self) -> anyhow::Result<i8> {
+        if self.value & 0x7F != self.value { 
+            Err(anyhow::Error::msg(format!("value of magnitude: {} cannot fit in signed 8-bit integer", self.value)))
+        }
         else {
             let v = self.value as i8;
-            Some(if self.negative {
+            Ok(if self.negative {
                 -v
             } else {
                 v
@@ -139,11 +157,13 @@ impl IntegerLiteral {
     }
 
     //fails if too large
-    pub fn as_i16(&self) -> Option<i16> {
-        if self.value & 0x7F_FF != self.value { None }
+    pub fn as_i16(&self) -> anyhow::Result<i16> {
+        if self.value & 0x7F_FF != self.value {
+            Err(anyhow::Error::msg(format!("value of magnitude: {} cannot fit in signed 16-bit integer", self.value)))
+        }
         else {
             let v = self.value as i16;
-            Some(if self.negative {
+            Ok(if self.negative {
                 -v
             } else {
                 v
@@ -162,11 +182,13 @@ impl IntegerLiteral {
     }
 
     //fails if too large
-    pub fn as_i32(&self) -> Option<i32> {
-        if self.value & 0x7F_FF_FF_FF != self.value { None }
+    pub fn as_i32(&self) -> anyhow::Result<i32> {
+        if self.value & 0x7F_FF_FF_FF != self.value {
+            Err(anyhow::Error::msg(format!("value of magnitude: {} cannot fit in signed 32-bit integer", self.value)))
+        }
         else {
             let v = self.value as i32;
-            Some(if self.negative {
+            Ok(if self.negative {
                 -v
             } else {
                 v
@@ -185,11 +207,13 @@ impl IntegerLiteral {
     }
 
     //fails if too large
-    pub fn as_i64(&self) -> Option<i64> {
-        if self.value & 0x7F_FF_FF_FF_FF_FF_FF_FF != self.value { None }
+    pub fn as_i64(&self) -> anyhow::Result<i64> {
+        if self.value & 0x7F_FF_FF_FF_FF_FF_FF_FF != self.value {
+            Err(anyhow::Error::msg(format!("value of magnitude: {} cannot fit in signed 64-bit integer", self.value)))
+        }
         else {
             let v = self.value as i64;
-            Some(if self.negative {
+            Ok(if self.negative {
                 -v
             } else {
                 v
@@ -208,11 +232,13 @@ impl IntegerLiteral {
     }
 
     //fails if too large
-    pub fn as_i128(&self) -> Option<i128> {
-        if self.value & 0x7F_FF_FF_FF_FF_FF_FF_FF_FF_FF_FF_FF_FF_FF_FF_FF != self.value { None }
+    pub fn as_i128(&self) -> anyhow::Result<i128> {
+        if self.value & 0x7F_FF_FF_FF_FF_FF_FF_FF_FF_FF_FF_FF_FF_FF_FF_FF != self.value {
+            Err(anyhow::Error::msg(format!("value of magnitude: {} cannot fit in signed 128-bit integer", self.value)))
+        }
         else {
             let v = self.value as i128;
-            Some(if self.negative {
+            Ok(if self.negative {
                 -v
             } else {
                 v

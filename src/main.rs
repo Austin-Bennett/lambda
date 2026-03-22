@@ -14,6 +14,8 @@ pub mod common;
 pub mod compiler;
 pub mod ast;
 pub mod tests;
+pub mod typed_ast;
+pub mod consteval;
 
 #[derive(Parser)]
 pub struct Arguments {
@@ -58,7 +60,7 @@ fn main() -> Result<()> {
         println!("{}", modp);
         
         for i in &m.ast {
-            println!("{:?}", i.as_ref().unwrap_err());
+            println!("{:?}", i);
         }
         println!();
     }
