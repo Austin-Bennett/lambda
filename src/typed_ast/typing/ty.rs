@@ -32,7 +32,7 @@ pub enum TypeKind {
     Pointer(TypeId),
     Reference(TypeId),
     Slice(TypeId),
-    Array{ ty: TypeId, size: u64 }, //size is const-evaluated
+    Array{ ty: TypeId, size: usize }, //size is const-evaluated
     Function { params: Vec<TypeId>, ret: TypeId }
 }
 
