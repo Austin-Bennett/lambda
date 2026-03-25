@@ -12,22 +12,26 @@ use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::literal::IntegerLiteral;
 use crate::lexer::token::{ExpressionToken, FeatureToken, Token, TokenType};
 
+#[derive(Hash, Clone)]
 pub struct BinaryOperation {
     pub op: Operator,
     pub lhs: Expr,
     pub rhs: Expr,
 }
 
+#[derive(Hash, Clone)]
 pub struct UnaryOperation {
     pub op: Operator,
     pub operand: Expr,
 }
 
+#[derive(Hash, Clone)]
 pub struct CallOperation {
     pub caller: Expr,
     pub arguments: Vec<Expr>,
 }
 
+#[derive(Hash, Clone)]
 pub enum Expr {
     Identifier(ModulePath),
     IntLiteral(IntegerLiteral),

@@ -1,5 +1,5 @@
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Hash)]
 #[derive(Debug)]
 pub enum BindingPower {
     Binary(u8, u8),
@@ -46,7 +46,7 @@ impl BindingPower {
         BindingPower::BinaryOrUnary(self.effective_lbp(), self.effective_rbp())
     }
 }
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Hash)]
 pub struct Operator {
     pub bp: BindingPower,
     pub tk: &'static str,

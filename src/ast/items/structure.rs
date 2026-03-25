@@ -10,15 +10,19 @@ use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{ExpressionToken, FeatureToken, StatementToken, Token, TokenType};
 use crate::unpack_opt_tk;
 
+pub mod lstruct {
+    use super::*;
+    
+    #[derive(Clone, Hash)]
+    pub struct Structure {
+        pub name: ModulePath,
+        pub members: Vec<VarDecl>
 
-pub struct Structure {
-    pub name: ModulePath,
-    pub members: Vec<VarDecl>
-
-    //todo: methods?
+        //todo: methods?
+    }
 }
 
-impl Debug for Structure {
+impl Debug for lstruct::Structure {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "struct {} {{\n", self.name)?;
         for m in &self.members {
@@ -28,7 +32,7 @@ impl Debug for Structure {
     }
 }
 
-pub type StructureSyntax = GenericSyntax<Structure>;
+pub type StructureSyntax = GenericSyntax<lstruct::Structure>;
 
 impl Syntax for StructureSyntax {
     fn parse(tokens: &mut VecDeque<Token>, compiler: &mut Compiler) -> Option<Self>
@@ -57,7 +61,7 @@ impl Syntax for StructureSyntax {
         smap.extend(imap);
         
         let mut res = StructureSyntax{
-            data: Structure{
+            data: lstruct::Structure{
                 name: ModulePath::from_module_path(s),
                 members: Vec::new()
             },

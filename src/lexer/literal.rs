@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Formatter};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Hash)]
 pub struct IntegerLiteral {
     pub negative: bool,
     pub value: u128,

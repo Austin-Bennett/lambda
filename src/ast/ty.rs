@@ -11,14 +11,40 @@ use crate::common::utils::outcome::Outcome;
 use crate::compiler::{CompileMessage, Compiler};
 use crate::lexer::token::{ExpressionToken, Token, TokenType};
 use crate::{unpack_opt_tk, unpack_tk};
+use crate::consteval::eval_array_len_expr_uint;
+use crate::typed_ast::typing::tcontext::TypeContext;
 
-
+#[derive(PartialEq, Eq, Hash, Clone)]
 pub enum Type {
     Typename(ModulePath),
     Reference(Box<Type>),
     Pointer(Box<Type>),
     Slice(Box<Type>),
-    Array{ty: Box<Type>, size: Expr},
+    Array{ty: Box<Type>, size: usize},
+}
+
+impl Type {
+    //some types have a known size at compile time without
+    //having to resolve their typenames
+    pub fn try_get_size(&self) -> Option<usize> {
+        match self {
+            Type::Typename(_) => None,
+            Type::Reference(_) => Some(TypeContext::SIZE_POINTER),
+            Type::Pointer(_) => Some(TypeContext::SIZE_POINTER),
+            Type::Slice(_) => Some(TypeContext::SIZE_POINTER * 2),
+            Type::Array { .. } => None
+        }
+    }
+    
+    pub fn try_get_align(&self) -> Option<usize> {
+        match self {
+            Type::Typename(_) => None,
+            Type::Reference(_) => Some(TypeContext::SIZE_POINTER),
+            Type::Pointer(_) => Some(TypeContext::SIZE_POINTER),
+            Type::Slice(_) => Some(TypeContext::SIZE_POINTER),
+            Type::Array { .. } => None
+        }
+    }
 }
 
 
@@ -105,11 +131,14 @@ impl TypeSyntax {
                     }
                 } else {
                     if let Some(expr) = ExprSyntax::parse(tokens, compiler) {
-                        self.smap.extend(expr.smap);
+                        self.smap.extend(expr.smap.clone());
                         unsafe {
                             ptr::write(&raw mut self.data, Type::Array {
                                 ty: Box::new(ptr::read(&raw mut self.data) ),
-                                size: expr.data
+                                size: match eval_array_len_expr_uint(&expr.data, &expr.smap, compiler) {
+                                    Some(v) => v,
+                                    None => return false,
+                                } as usize
                             })
                         }
                     }

@@ -3,7 +3,7 @@ use std::fmt::{Debug, Formatter};
 use std::iter::Fuse;
 use crate::ast::{GenericSyntax, Syntax};
 use crate::ast::items::function::{Function, FunctionSyntax};
-use crate::ast::items::structure::{Structure, StructureSyntax};
+use crate::ast::items::structure::{lstruct::Structure, StructureSyntax};
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::common::utils::outcome::Outcome;

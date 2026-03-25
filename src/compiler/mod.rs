@@ -13,8 +13,12 @@ pub mod compile_message;
 use modules::*;
 use crate::ast::Item;
 use crate::ast::statements::vardecl::VarDecl;
-use crate::ast::structure::Structure;
+use crate::ast::structure::lstruct;
+use crate::ast::structure::lstruct::Structure;
+use crate::ast::ty::Type;
 use crate::common::utils::progress::Progress;
+use crate::typed_ast::typing::tcontext::TypeContext;
+use crate::typed_ast::typing::ty::{StructId, StructInfo, StructMember, TypeId, TypeInfo, TypeKind};
 
 pub enum CompileMessageType {
     Error,
@@ -33,6 +37,10 @@ pub struct Compiler {
     //maps paths to their sources
     source_map: HashMap<SourceOwner, String>,
     modules: HashMap<ModulePath, LModule>,
+
+    _findset: HashSet<ModulePath>,
+
+    pub type_context: TypeContext,
 }
 
 
@@ -41,23 +49,188 @@ pub struct Compiler {
 impl Compiler {
     pub fn new() -> Self {
         Self{
-            errors: Vec::new(),
-            warnings: Vec::new(),
-            source_map: HashMap::new(),
-            modules: HashMap::new(),
+            errors:       Vec::new(),
+            warnings:     Vec::new(),
+            source_map:   HashMap::new(),
+            modules:      HashMap::new(),
+            type_context: TypeContext::new(),
+            _findset: HashSet::new(),
         }
     }
     
     
     //adds primitive types to the type context
-    pub fn add_primitive_types(&mut self) {
-        
+    pub fn create_typed_ast(&mut self) {
         
     }
     
-    pub fn resolve_types(&mut self) {
+    fn get_structure(&mut self, name: &ModulePath) -> Option<(&mut StructInfo, StructId)> {
+        if let Some(s) = unsafe { &mut * (&raw mut self.type_context) }.get_struct(name) {
+            Some(s)
+        } else if self._findset.contains(name) {
+            None
+        } else {
+            self._findset.insert(name.clone());
+            let this = self as *mut Self;
+
+            'outer: for (_, m) in &self.modules {
+                for item in &m.ast {
+                    if let Item::Struct(s) = item {
+
+                        let Some(sinfo) = unsafe{ &mut *this }.create_structure_from_ast(&s.data, &s.smap) else {
+                            return None;
+                        };
+
+
+                    }
+                }
+            }
+
+            todo!()
+        }
     }
-    
+
+    pub fn create_structure_from_ast(&mut self, ast: &lstruct::Structure, smap: &SourceMap) -> Option<StructInfo> {
+
+        let mut align = 1;
+        let mut raw_offset = 0;
+        let mut members = Vec::new();
+        let mut raw_size = 0;
+
+        for VarDecl{ name, ty, value: _ } in &ast.members {
+            //get the type
+            let Some((info, id)) = self.resolve_type(ty) else {
+                self.emit_compile_message(
+                    CompileMessage::new(
+                        smap.clone(),
+                        format!("Unknown type: {:?}", ty),
+                        CompileMessageType::Error,
+                    )
+                );
+                return None;
+            };
+
+            raw_size += info.size;
+
+            align = align.max(info.align);
+            members.push(
+                StructMember{
+                    name: name.clone(),
+                    size: info.size,
+                    ty: id,
+                    offset: raw_offset,
+                }
+            );
+
+            raw_offset += info.size;
+        }
+
+
+        let mut accum_offset = 0;
+        let mut size = 0;
+
+        //align members
+        for m in &mut members {
+            if (m.offset + accum_offset) % align != 0 {
+                //we need to increase this members offset
+                accum_offset += align - ((m.offset + accum_offset) % align);
+            }
+            m.offset += accum_offset;
+            size = m.offset + m.size;
+        }
+
+        Some(StructInfo{
+            name: ast.name.clone(),
+            members,
+            size,
+            padding: size - raw_size,
+            align
+        })
+    }
+
+    pub fn resolve_typename(&mut self, path: &ModulePath) -> Option<(&mut TypeInfo, TypeId)> {
+        if let Some(res) = unsafe { &mut *(&raw mut self.type_context) }.resolve_type(&Type::Typename(path.clone())) {
+            Some(res)
+        } else {
+            //look for a structure in any of the modules
+            self._findset.clear();
+            if let Some(sinfo) = self.get_structure(path) {
+                todo!()
+            }
+            todo!()
+        }
+    }
+
+    pub fn resolve_type(&mut self, ty: &Type) -> Option<(&mut TypeInfo, TypeId)> {
+        if let Some(res) = unsafe{ (&mut *( &raw mut self.type_context )) .resolve_type(ty) } {
+            Some(res)
+        } else {
+            match ty {
+                Type::Typename(name) => {
+                    if let Some(res) = self.resolve_typename(name) {
+                        Some(res)
+                    } else {
+                        None
+                    }
+                }
+                Type::Reference(t) => {
+                    if let Some((ti, id)) = self.resolve_type(t) {
+                        Some(self.type_context.add(
+                            Type::Reference(t.clone()),
+                            TypeInfo::new(
+                                TypeKind::Reference(id),
+                                TypeContext::SIZE_POINTER, TypeContext::SIZE_POINTER
+                            )
+                        ))
+                    } else {
+                        None
+                    }
+                }
+                Type::Pointer(t) => {
+                    if let Some((ti, id)) = self.resolve_type(t) {
+                        Some(self.type_context.add(
+                            Type::Pointer(t.clone()),
+                            TypeInfo::new(
+                                TypeKind::Pointer(id),
+                                TypeContext::SIZE_POINTER, TypeContext::SIZE_POINTER
+                            )
+                        ))
+                    } else {
+                        None
+                    }
+                }
+                Type::Slice(t) => {
+                    if let Some((ti, id)) = self.resolve_type(t) {
+                        Some(self.type_context.add(
+                            Type::Slice(t.clone()),
+                            TypeInfo::new(
+                                TypeKind::Slice(id),
+                                TypeContext::SIZE_POINTER * 2, TypeContext::SIZE_POINTER
+                            )
+                        ))
+                    } else {
+                        None
+                    }
+                }
+                Type::Array { ty: t, size } => {
+                    if let Some((ti, id)) = self.resolve_type(t) {
+                        let r = ty;
+                        let ray_size = ti.size * size;
+                        let align = ti.align;
+
+                        let res = self.type_context.add(r.clone(), TypeInfo::new(
+                            TypeKind::Array { ty: id, size: *size },
+                            ray_size, align
+                        ));
+
+                        Some(res)
+                    } else {
+                        None
+                    }
+                }
+            }
+        }
+    }
     
 
     pub fn emit_compile_message(&mut self, msg: CompileMessage) {

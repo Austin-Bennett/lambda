@@ -13,6 +13,7 @@ use crate::lexer::token::{ExpressionToken, FeatureToken, Token, TokenType};
 use crate::token_match;
 use crate::unpack_opt_tk;
 
+#[derive(Hash, Clone)]
 pub struct VarDecl {
     pub name: ModulePath,
     pub ty: Type,
