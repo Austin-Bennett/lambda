@@ -3,13 +3,11 @@
 use test_import
 
 
-//2D integer vector
-//structures arent actually supported yet,
-//but the infrastructure is there
-//struct ivec2 {
-//    x: int64,
-//    y: int64,
-//}
+//2d integer vector
+struct ivec2 {
+    x: int64,
+    y: int64,
+}
 
 //functions that return values use the = type syntax
 fn sub(a: i64, b: i64) = i64 {
@@ -19,5 +17,5 @@ fn sub(a: i64, b: i64) = i64 {
 //main function- this is where code starts executing
 fn main() {
     b: int64 = 3;
-    a: int64 = test_import::add(2, 2b);
+    a: int64 = add(2, 2b);
 }

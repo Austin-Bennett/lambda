@@ -15,33 +15,34 @@ use crate::lexer::token::{ExpressionToken, FeatureToken, Token, TokenType};
 #[derive(Hash, Clone)]
 pub struct BinaryOperation {
     pub op: Operator,
-    pub lhs: Expr,
-    pub rhs: Expr,
+    pub lhs: ExprSyntax,
+    pub rhs: ExprSyntax,
 }
 
 #[derive(Hash, Clone)]
 pub struct UnaryOperation {
     pub op: Operator,
-    pub operand: Expr,
+    pub operand: ExprSyntax,
 }
 
 #[derive(Hash, Clone)]
 pub struct CallOperation {
-    pub caller: Expr,
-    pub arguments: Vec<Expr>,
+    pub caller: ExprSyntax,
+    pub arguments: Vec<ExprSyntax>,
 }
 
 #[derive(Hash, Clone)]
 pub enum Expr {
-    Identifier(ModulePath),
+    Identifier(String),
     IntLiteral(IntegerLiteral),
 
-    Tuple(Vec<Expr>),
+    Tuple(Vec<ExprSyntax>),
 
     BinaryOp(Box<BinaryOperation>),
     UnaryOp(Box<UnaryOperation>),
     CallOp(Box<CallOperation>),
 }
+
 
 pub type ExprSyntax = GenericSyntax<Expr>;
 
@@ -50,7 +51,7 @@ impl Debug for Expr {
 
         match self {
             Expr::Identifier(ident) => {
-                write!(f, "{:?}", ident)?;
+                write!(f, "{}", ident)?;
             }
             Expr::IntLiteral(int) => {
                 write!(f, "{:?}", int)?;
@@ -65,19 +66,19 @@ impl Debug for Expr {
                     }
                     first = false;
 
-                    write!(f, "{:?}", expr)?;
+                    write!(f, "{:?}", expr.data)?;
                 }
                 f.write_str(")")?;
             }
             Expr::BinaryOp(bop) => {
-                write!(f, "({:?} {} {:?})", bop.lhs, bop.op.tk, bop.rhs)?;
+                write!(f, "({:?} {} {:?})", bop.lhs.data, bop.op.tk, bop.rhs.data)?;
             }
             Expr::UnaryOp(uop) => {
-                write!(f, "{}{:?}", uop.op.tk, uop.operand)?;
+                write!(f, "{}{:?}", uop.op.tk, uop.operand.data)?;
             }
             Expr::CallOp(call) => {
 
-                write!(f, "{:?}(", call.caller)?;
+                write!(f, "{:?}(", call.caller.data)?;
 
                 let mut first = true;
                 for expr in &call.arguments {
@@ -87,7 +88,7 @@ impl Debug for Expr {
                     }
                     first = false;
 
-                    write!(f, "{:?}", expr)?;
+                    write!(f, "{:?}", expr.data)?;
                 }
                 f.write_str(")")?;
             }
@@ -102,45 +103,39 @@ impl ExprSyntax {
 
 
 
-    pub fn make_binary_op(&mut self, op: Operator, other: Expr) {
+    pub fn make_binary_op(&mut self, op: Operator, other: ExprSyntax) {
 
-        unsafe{
-            //SAFETY this is used to move out the old expression and turn it into this
-            //this is safe, because if self were just a regular old mut value, then
-            //i wouldnt even need the pointer semantics
-            let expr = ptr::read(&raw mut self.data);
-            ptr::write(&raw mut self.data, Expr::BinaryOp(
-                Box::new(
-                    BinaryOperation{
-                        op,
-                        lhs: expr,
-                        rhs: other
-                    }
-                )
-            ));
-        }
+        
+        
+        let expr = self.clone();
+        self.data = Expr::BinaryOp(
+            Box::new(
+                BinaryOperation{
+                    op,
+                    lhs: expr,
+                    rhs: other
+                }
+            )
+        );
+        
 
     }
 
-    pub fn make_call_expression(&mut self, args: Vec<Expr>) {
-
-        unsafe{
-            //SAFETY this is used to move out the old expression and turn it into this
-            //this is safe, because if self were just a regular old mut value, then
-            //i wouldnt even need the pointer semantics
-            let expr = ptr::read(&raw mut self.data);
-            ptr::write(&raw mut self.data, Expr::CallOp(
-                Box::new(
-                    CallOperation{
-                        caller: expr,
-                        arguments: args
-                    }
-                )
-            ));
-        }
+    pub fn make_call_expression(&mut self, args: Vec<ExprSyntax>) {
+        
+        let expr = self.clone();
+        self.data = Expr::CallOp(
+            Box::new(
+                CallOperation{
+                    caller: expr,
+                    arguments: args
+                }
+            )
+        );
+    
     }
     
-    pub fn parse_parentheses(tokens: &mut VecDeque<Token>) -> Outcome<(Vec<Expr>, SourceMap), CompileMessage> {
+    pub fn parse_parentheses(tokens: &mut VecDeque<Token>) -> Outcome<(Vec<ExprSyntax>, SourceMap), CompileMessage> {
         let mut smap = if let Some((e, smap)) = tokens.peek_expression() {
 
             if let ExpressionToken::OpenParentheses = e {
@@ -163,9 +158,9 @@ impl ExprSyntax {
                 Outcome::None => break,
                 Outcome::Err(v) => return Outcome::Err(v),
             };
-            smap.extend(expr.smap);
+            smap.extend(&expr.smap);
             
-            res.push(expr.data);
+            res.push(expr);
 
             if let Some((ExpressionToken::CloseParentheses, _emap)) = tokens.peek_expression() {
                 let Some((ExpressionToken::CloseParentheses, emap)) = tokens.next_expression() else { panic!("Shouldn't happen") };
@@ -205,7 +200,7 @@ impl ExprSyntax {
             //identifiers or literals
             ExpressionToken::Identifier(ident) => {
                 ExprSyntax{
-                    data: Expr::Identifier(ModulePath::from_module_path(ident)),
+                    data: Expr::Identifier(ident),
                     smap
                 }
             }
@@ -235,7 +230,7 @@ impl ExprSyntax {
 
 
 
-                smap.extend(rhs.smap);
+                smap.extend(&rhs.smap);
 
 
                 
@@ -244,7 +239,7 @@ impl ExprSyntax {
                         Box::new(
                             UnaryOperation{
                                 op,
-                                operand: rhs.data,
+                                operand: rhs,
                             }
                         )
                     ),
@@ -263,10 +258,8 @@ impl ExprSyntax {
                 smap.extend(emap);
 
                 if tuple.len() == 1 {
-                    ExprSyntax{
-                        smap,
-                        data: tuple.remove(0)
-                    }
+                    tuple.remove(0)
+                    
                 } else {
                     ExprSyntax{
                         smap,
@@ -295,8 +288,8 @@ impl ExprSyntax {
                     //there is guaranteed to at least be a identifier or integer
                     let rhs = unsafe { Self::make_expression(tokens, Operator::MUL.bp.effective_rbp())?.unwrap_unchecked() };
 
-                    lhs.smap.extend(rhs.smap);
-                    lhs.make_binary_op(Operator::MUL, rhs.data);
+                    lhs.smap.extend(&rhs.smap);
+                    lhs.make_binary_op(Operator::MUL, rhs);
                 }
                 ExpressionToken::Operator(op) => {
 
@@ -333,10 +326,10 @@ impl ExprSyntax {
                         ))
                     };
                     lhs.smap.extend(emap);
-                    lhs.smap.extend(rhs.smap);
+                    lhs.smap.extend(&rhs.smap);
 
 
-                    lhs.make_binary_op(op, rhs.data);
+                    lhs.make_binary_op(op, rhs);
                 }
                 ExpressionToken::OpenParentheses => {
                     //a call expression

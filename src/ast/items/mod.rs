@@ -32,16 +32,7 @@ impl Debug for Item {
 pub type ItemSyntax = GenericSyntax<Item>;
 
 impl ItemSyntax {
-    pub fn append_namespace(&mut self, ns: &ModulePath) {
-        match &mut self.data {
-            Item::Func(f) => {
-                f.data.name.add_namespace(ns)
-            }
-            Item::Struct(s) => {
-                s.data.name.add_namespace(ns)
-            }
-        }
-    }
+    
 }
 
 impl Syntax for ItemSyntax {

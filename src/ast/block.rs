@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter, Pointer, Write};
 use std::process::abort;
-use crate::ast::statements::{Statement, StatementSyntax};
+use crate::ast::statements::{Statement};
 use crate::ast::{GenericSyntax, Syntax};
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::outcome::Outcome;
@@ -9,7 +9,7 @@ use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{FeatureToken, Token, TokenType};
 use crate::{token_match, unpack_opt_tk};
 
-pub type Block = Vec<StatementSyntax>;
+pub type Block = Vec<Statement>;
 
 pub type BlockSyntax = GenericSyntax<Block>;
 
@@ -17,7 +17,7 @@ impl Debug for BlockSyntax {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str("{\n")?;
         for s in &self.data {
-            write!(f, "\t{:?}\n", s.data)?;
+            write!(f, "\t{:?}\n", s)?;
         }
 
 
@@ -42,7 +42,7 @@ impl Syntax for BlockSyntax {
                 }else if token_match!(tokens, TokenType::Feature(FeatureToken::StatementEnd)) {
                     tokens.pop_front();
                 } else {
-                    let stmt = match StatementSyntax::parse(tokens, compiler) {
+                    let stmt = match Statement::parse(tokens, compiler) {
                         Some(v) => v,
                         None => {
                             //one of two things has gone wrong, 1. a bad token, 2. a EOF
@@ -72,7 +72,7 @@ impl Syntax for BlockSyntax {
                     };
 
 
-                    result.smap.extend(stmt.smap.clone());
+                    result.smap.extend(stmt.get_sourcemap().clone());
                     result.data.push(stmt);
                 }
             }

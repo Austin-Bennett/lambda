@@ -16,7 +16,7 @@ use crate::typed_ast::typing::tcontext::TypeContext;
 
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub enum Type {
-    Typename(ModulePath),
+    Typename(String),
     Reference(Box<Type>),
     Pointer(Box<Type>),
     Slice(Box<Type>),
@@ -135,7 +135,7 @@ impl TypeSyntax {
                         unsafe {
                             ptr::write(&raw mut self.data, Type::Array {
                                 ty: Box::new(ptr::read(&raw mut self.data) ),
-                                size: match eval_array_len_expr_uint(&expr.data, &expr.smap, compiler) {
+                                size: match eval_array_len_expr_uint(&expr, compiler) {
                                     Some(v) => v,
                                     None => return false,
                                 } as usize
@@ -190,7 +190,7 @@ impl Syntax for TypeSyntax {
         else { return None; };
 
         let mut res = TypeSyntax::new(
-            Type::Typename(ModulePath::from_module_path(s)),
+            Type::Typename(s),
             smap
         );
 

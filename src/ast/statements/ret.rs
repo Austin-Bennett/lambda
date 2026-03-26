@@ -8,10 +8,10 @@ use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{StatementToken, Token, TokenType};
 use crate::unpack_opt_tk;
 
-pub struct Return(Expr);
+pub struct Return(pub ExprSyntax);
 
 impl Deref for Return {
-    type Target = Expr;
+    type Target = ExprSyntax;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -26,11 +26,10 @@ impl DerefMut for Return {
 
 unsafe impl DerefPure for Return {}
 
-pub type ReturnSyntax = GenericSyntax<Return>;
 
 
 
-impl Syntax for ReturnSyntax {
+impl Syntax for Return {
     fn parse(tokens: &mut VecDeque<Token>, context: &mut Compiler) -> Option<Self>
     where
         Self: Sized
@@ -55,15 +54,14 @@ impl Syntax for ReturnSyntax {
             }
         };
 
-        smap.extend(expr.smap);
+        smap.extend(&expr.smap);
 
-        Some(ReturnSyntax{
-            data: Return(expr.data),
-            smap
-        })
+        Some(Return(
+            expr
+        ))
     }
 
     fn get_sourcemap(&self) -> &SourceMap {
-        todo!()
+        &self.smap
     }
 }

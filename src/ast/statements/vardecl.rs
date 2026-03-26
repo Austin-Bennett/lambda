@@ -15,9 +15,9 @@ use crate::unpack_opt_tk;
 
 #[derive(Hash, Clone)]
 pub struct VarDecl {
-    pub name: ModulePath,
+    pub name: String,
     pub ty: Type,
-    pub value: Option<Expr>
+    pub value: Option<ExprSyntax>
 }
 
 impl Debug for VarDecl {
@@ -25,7 +25,7 @@ impl Debug for VarDecl {
         write!(f, "{} : {:?}", self.name, self.ty)?;
         
         if let Some(e) = &self.value {
-            write!(f, " = {:?}", e)?;
+            write!(f, " = {:?}", e.data)?;
         }
         
         Ok(())
@@ -79,8 +79,8 @@ impl Syntax for VarDeclSyntax {
                         return None;
                     }
                 };
-                smap.extend(expr.smap);
-                Some(expr.data)
+                smap.extend(&expr.smap);
+                Some(expr)
             } else {
                 None
             };
@@ -90,7 +90,7 @@ impl Syntax for VarDeclSyntax {
                 VarDeclSyntax{
                     smap,
                     data: VarDecl{
-                        name: ModulePath::from_module_path(name),
+                        name,
                         ty,
                         value: expr
                     }

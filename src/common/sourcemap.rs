@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Formatter};
 use crate::common::source_owner::{SourceDescriptor, SourceOwner};
 
-#[derive(Clone)]
+#[derive(Clone, Hash)]
 pub struct SourceMap {
     pub owner: SourceOwner,
     pub offset: usize,

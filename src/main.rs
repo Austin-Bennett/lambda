@@ -5,6 +5,7 @@ use std::fs;
 use std::process::abort;
 use anyhow::Result;
 use clap::Parser;
+use crate::ast::ty::Type;
 use crate::common::source_owner::{SourceDescriptor, SourceOwner};
 use crate::compiler::Compiler;
 use crate::lexer::token::{FeatureToken, TokenType};
@@ -55,15 +56,33 @@ fn main() -> Result<()> {
     }
     
     
-
-    for (modp, m) in compiler.as_ref() {
-        println!("{}", modp);
+    println!("untyped AST:");
+    for (modp, m) in compiler.get_untyped_modules() {
+        println!("MODULE: [{}]:", modp);
         
         for i in &m.ast {
             println!("{:?}", i);
         }
         println!();
     }
+
+    compiler.create_typed_ast();
     
+    compiler.raise_compile_warnings(true);
+    if compiler.raise_compile_errors(true) {
+        abort();
+    }
+    
+    println!("\n\n");
+    println!("typed AST:");
+    for (modp, m) in compiler.get_typed_modules() {
+        println!("MODULE: [{}]:", modp);
+
+        for (sig, f) in &m.functions {
+            println!("{:?}{:?}", sig, f);
+        }
+        println!();
+    }
+
     Ok(())
 }

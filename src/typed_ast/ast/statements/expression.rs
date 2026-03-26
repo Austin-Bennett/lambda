@@ -1,5 +1,5 @@
 use crate::ast::GenericSyntax;
-use crate::ast::statements::expressions::Expr;
+use crate::ast::statements::expressions::{Expr, ExprSyntax};
 use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
@@ -37,7 +37,7 @@ pub struct TypedCallOperation {
 
 pub enum TypedExprNode {
     IntLiteral(IntegerLiteral),
-    Identifier(ModulePath),
+    Identifier(String),
 
     Tuple(Vec<TypedExprNode>),
 
@@ -47,21 +47,22 @@ pub enum TypedExprNode {
 }
 
 pub struct TypedExpr {
-    value: TypedExprNode,
-    ty: TypeId,
+    pub value: TypedExprNode,
+    pub ty: TypeId,
+    pub smap: SourceMap
 }
 
 
 
 impl TypedExpr {
     
-    pub fn from_node(expr: &Expr, smap: &SourceMap, compiler: &mut Compiler, context: &AvailableContext) -> Option<(TypedExprNode, TypeId)> {
-        match expr {
+    pub fn from_node(expr: &ExprSyntax, compiler: &mut Compiler, context: &AvailableContext) -> Option<(TypedExprNode, TypeId)> {
+        match &expr.data {
             Expr::Identifier(ident) => {
                 let Some(ty) = context.get_identifier_type(ident) else {
                     compiler.emit_compile_message(
                         CompileMessage::new(
-                            smap.clone(),
+                            expr.smap.clone(),
                             format!("unknown identifier: {:?}", ident),
                             CompileMessageType::Error
                         )
@@ -76,8 +77,8 @@ impl TypedExpr {
             }
             Expr::Tuple((args)) => { todo!() }
             Expr::BinaryOp(bin) => {
-                let (lhs, lhs_ty) = TypedExpr::from_node(&bin.lhs, smap, compiler, context)?;
-                let (rhs, rhs_ty) = TypedExpr::from_node(&bin.rhs, smap, compiler, context)?;
+                let (lhs, lhs_ty) = TypedExpr::from_node(&bin.lhs, compiler, context)?;
+                let (rhs, rhs_ty) = TypedExpr::from_node(&bin.rhs, compiler, context)?;
                 //lhs must have an operator overload that accepts rhs
 
                 let lhs_inf = compiler.type_context.get_by_id(lhs_ty).unwrap();
@@ -88,7 +89,7 @@ impl TypedExpr {
                         let Some(add) = lhs_inf.ops.add.get(&rhs_ty) else {
                             compiler.emit_compile_message(
                                 CompileMessage::new(
-                                    smap.clone(),
+                                    expr.smap.clone(),
                                     format!("Cannot add {} to {}",
                                         compiler.type_context.name_of(rhs_ty).unwrap(),
                                         compiler.type_context.name_of(lhs_ty).unwrap(),
@@ -115,7 +116,7 @@ impl TypedExpr {
                         let Some(sub) = lhs_inf.ops.sub.get(&rhs_ty) else {
                             compiler.emit_compile_message(
                                 CompileMessage::new(
-                                    smap.clone(),
+                                    expr.smap.clone(),
                                     format!("Cannot subtract {} from {}",
                                             compiler.type_context.name_of(rhs_ty).unwrap(),
                                             compiler.type_context.name_of(lhs_ty).unwrap(),
@@ -142,7 +143,7 @@ impl TypedExpr {
                         let Some(mul) = lhs_inf.ops.mul.get(&rhs_ty) else {
                             compiler.emit_compile_message(
                                 CompileMessage::new(
-                                    smap.clone(),
+                                    expr.smap.clone(),
                                     format!("Cannot multiply {} by {}",
                                             compiler.type_context.name_of(lhs_ty).unwrap(),
                                             compiler.type_context.name_of(rhs_ty).unwrap(),
@@ -169,7 +170,7 @@ impl TypedExpr {
                         let Some(div) = lhs_inf.ops.div.get(&rhs_ty) else {
                             compiler.emit_compile_message(
                                 CompileMessage::new(
-                                    smap.clone(),
+                                    expr.smap.clone(),
                                     format!("Cannot divide {} by {}",
                                             compiler.type_context.name_of(lhs_ty).unwrap(),
                                             compiler.type_context.name_of(rhs_ty).unwrap(),
@@ -200,7 +201,7 @@ impl TypedExpr {
                 }
             }
             Expr::UnaryOp(op) => {
-                let (lhs, lhs_ty) = TypedExpr::from_node(&op.operand, smap, compiler, context)?;
+                let (lhs, lhs_ty) = TypedExpr::from_node(&op.operand, compiler, context)?;
                 //lhs must have a unary operator overload for the specified operator
 
                 let lhs_inf = compiler.type_context.get_by_id(lhs_ty).unwrap();
@@ -210,7 +211,7 @@ impl TypedExpr {
                         let Some(neg) = lhs_inf.ops.neg else {
                             compiler.emit_compile_message(
                                 CompileMessage::new(
-                                    smap.clone(),
+                                    expr.smap.clone(),
                                     format!("Cannot negate {}",
                                             compiler.type_context.name_of(lhs_ty).unwrap(),
                                     ),
@@ -240,7 +241,7 @@ impl TypedExpr {
                 }
             }
             Expr::CallOp(call) => {
-                let (caller, caller_ty) = TypedExpr::from_node(&call.caller, smap, compiler, context)?;
+                let (caller, caller_ty) = TypedExpr::from_node(&call.caller, compiler, context)?;
 
 
 
@@ -248,7 +249,7 @@ impl TypedExpr {
                 let mut param_types = Vec::new();
 
                 for p in &call.arguments {
-                    let (expr, ty) = TypedExpr::from_node(p, smap, compiler, context)?;
+                    let (expr, ty) = TypedExpr::from_node(p, compiler, context)?;
                     params.push(expr);
                     param_types.push(ty);
                 }
@@ -259,7 +260,7 @@ impl TypedExpr {
                 let Some(call) = caller_inf.ops.call.get(&param_types) else {
                     compiler.emit_compile_message(
                         CompileMessage::new(
-                            smap.clone(),
+                            expr.smap.clone(),
                             format!("Cannot call type {} with parameters: (", compiler.type_context.name_of(caller_ty).unwrap()) + &{
                                 let mut s = String::new();
                                 let mut first = true;
@@ -294,13 +295,14 @@ impl TypedExpr {
         }
     }
     
-    pub fn from_ast(expr: &Expr, smap: &SourceMap, compiler: &mut Compiler, context: &AvailableContext) -> Option<Self> {
-        let (value, ty) = TypedExpr::from_node(expr, smap, compiler, context)?;
+    pub fn from_ast(expr: &ExprSyntax, compiler: &mut Compiler, context: &AvailableContext) -> Option<Self> {
+        let (value, ty) = TypedExpr::from_node(expr, compiler, context)?;
 
         Some(
             Self{
                 value,
-                ty
+                ty,
+                smap: expr.smap.clone(),
             }
         )
     }

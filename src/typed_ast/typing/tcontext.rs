@@ -11,7 +11,7 @@ pub struct TypeContext {
     type_lookup: HashMap<Type, TypeId>,
 
     structs: Vec<StructInfo>,
-    struct_lookup: HashMap<ModulePath, StructId>,
+    struct_lookup: HashMap<String, StructId>,
 
 
     pub none: TypeId,
@@ -51,7 +51,7 @@ impl TypeContext {
 
 
 
-        let (_, id) =types.add(Type::Typename(ModulePath::from_module_path("none")),
+        let (_, id) =types.add(Type::Typename("none".into()),
             TypeInfo::new(
                 TypeKind::None,
                  0,
@@ -61,7 +61,7 @@ impl TypeContext {
         types.none = id;
 
 
-        let (_, id) = types.add(Type::Typename(ModulePath::from_module_path("int_literal")),
+        let (_, id) = types.add(Type::Typename("int_literal".into()),
                TypeInfo::new(
                    TypeKind::IntegerLiteral,
                    0,
@@ -71,7 +71,7 @@ impl TypeContext {
         types.int_literal = id;
 
 
-        let (info, id) = types.add(Type::Typename(ModulePath::from_module_path("int8")),
+        let (info, id) = types.add(Type::Typename("int8".into()),
               TypeInfo::new(
                   TypeKind::Int8,
                   1,
@@ -84,7 +84,7 @@ impl TypeContext {
         types.int8 = id;
 
 
-        let (info, id) = types.add(Type::Typename(ModulePath::from_module_path("int16")),
+        let (info, id) = types.add(Type::Typename("int16".into()),
               TypeInfo::new(
                   TypeKind::Int16,
                   2,
@@ -97,7 +97,7 @@ impl TypeContext {
         types.int16 = id;
 
 
-        let (info, id) = types.add(Type::Typename(ModulePath::from_module_path("int32")),
+        let (info, id) = types.add(Type::Typename("int32".into()),
               TypeInfo::new(
                   TypeKind::Int32,
                   4,
@@ -110,7 +110,7 @@ impl TypeContext {
         types.int32 = id;
 
 
-        let (info, id) = types.add(Type::Typename(ModulePath::from_module_path("int64")),
+        let (info, id) = types.add(Type::Typename("int64".into()),
               TypeInfo::new(
                   TypeKind::Int64,
                   8,
@@ -124,7 +124,7 @@ impl TypeContext {
         types.int64 = id;
 
 
-        let (_, id) = types.add(Type::Typename(ModulePath::from_module_path("bool")),
+        let (_, id) = types.add(Type::Typename("bool".into()),
               TypeInfo::new(
                   TypeKind::Boolean,
                   1,
@@ -135,7 +135,7 @@ impl TypeContext {
         types.bool = id;
 
 
-        let (info, id) = types.add(Type::Typename(ModulePath::from_module_path("uint8")),
+        let (info, id) = types.add(Type::Typename("uint8".into()),
               TypeInfo::new(
                   TypeKind::UInt8,
                   1,
@@ -147,7 +147,7 @@ impl TypeContext {
         types.uint8 = id;
 
 
-        let (info, id) = types.add(Type::Typename(ModulePath::from_module_path("uint16")),
+        let (info, id) = types.add(Type::Typename("uint16".into()),
             TypeInfo::new(
                 TypeKind::UInt16,
                 2,
@@ -159,7 +159,7 @@ impl TypeContext {
         types.uint16 = id;
 
 
-        let (info, id) = types.add(Type::Typename(ModulePath::from_module_path("uint32")),
+        let (info, id) = types.add(Type::Typename("uint32".into()),
             TypeInfo::new(
                 TypeKind::UInt32,
                 4,
@@ -171,7 +171,7 @@ impl TypeContext {
         types.uint32 = id;
 
 
-        let (info, id) = types.add(Type::Typename(ModulePath::from_module_path("uint64")),
+        let (info, id) = types.add(Type::Typename("uint64".into()),
               TypeInfo::new(
                   TypeKind::UInt64,
                   8,
@@ -183,7 +183,7 @@ impl TypeContext {
         types.uint64 = id;
 
 
-        let (info, id) = types.add(Type::Typename(ModulePath::from_module_path("float32")),
+        let (info, id) = types.add(Type::Typename("float32".into()),
               TypeInfo::new(
                   TypeKind::Float32,
                   4,
@@ -196,7 +196,7 @@ impl TypeContext {
         types.float32 = id;
 
 
-        let (info, id) = types.add(Type::Typename(ModulePath::from_module_path("float64")),
+        let (info, id) = types.add(Type::Typename("float64".into()),
               TypeInfo::new(
                   TypeKind::Float64,
                   8,
@@ -215,54 +215,15 @@ impl TypeContext {
     }
 
 
-    pub fn get_by_id(&self, id: TypeId) -> Option<&TypeInfo> {
+    pub fn get_by_id(&self, id: TypeId) -> Option<&TypeInfo>
+    {
         self.types.get(id as usize)
     }
-
+    
     pub fn get_by_id_mut(&mut self, id: TypeId) -> Option<&mut TypeInfo> {
         self.types.get_mut(id as usize)
     }
 
-    pub fn get_by_type(&mut self, ty: &Type) -> Option<&TypeInfo> {
-        if let Some(ind) = self.type_lookup.get(ty).copied() {
-
-            self.types.get(ind as usize)
-        } else {
-
-            if let Some((res, _)) = self.resolve_type(ty) {
-                Some(res)
-            } else {
-                None
-            }
-        }
-    }
-
-    pub fn get_by_type_mut(&mut self, ty: &Type) -> Option<&mut TypeInfo> {
-        if let Some(ind) = self.type_lookup.get(ty).copied() {
-
-            self.types.get_mut(ind as usize)
-        } else {
-
-            if let Some((res, _)) = self.resolve_type(ty) {
-                Some(res)
-            } else {
-                None
-            }
-        }
-    }
-
-    pub fn get_type_id(&mut self, ty: &Type) -> Option<TypeId> {
-        if let Some(t) = self.type_lookup.get(ty) {
-            Some(*t)
-        } else {
-            //try to resolve it
-            if let Some((_, id)) = self.resolve_type(ty) {
-                Some(id)
-            } else {
-                None
-            }
-        }
-    }
 
     //if a type is compound type such as a pointer, or reference
     //then we can resolve it and add it to the context
@@ -344,8 +305,8 @@ impl TypeContext {
 
     pub fn add(&mut self, ty: Type, info: TypeInfo) -> (&mut TypeInfo, TypeId) {
 
-        if let Some(id) = self.get_type_id(&ty) {
-            return (self.get_by_id_mut(id).unwrap(), id);
+        if let Some((info, id)) = unsafe{ &mut * (&raw mut *self) }.resolve_type(&ty) {
+            return (info, id);
         }
 
         let id = self.types.len() as TypeId;
@@ -353,7 +314,7 @@ impl TypeContext {
         (self.types.push_mut(info), id)
     }
 
-    pub fn get_struct(&mut self, name: &ModulePath) -> Option<(&mut StructInfo, StructId)> {
+    pub fn get_struct(&mut self, name: &String) -> Option<(&mut StructInfo, StructId)> {
         if let Some(id) = self.struct_lookup.get(name) {
             Some((&mut self.structs[*id as usize], *id))
         }  else {
@@ -361,7 +322,7 @@ impl TypeContext {
         }
     }
 
-    pub fn add_struct(&mut self, name: ModulePath, info: StructInfo) -> (&mut StructInfo, StructId) {
+    pub fn add_struct(&mut self, name: String, info: StructInfo) -> (&mut StructInfo, StructId) {
 
         //screw you rust
         if let Some(s) = unsafe { &mut *(self as *mut Self) }.get_struct(&name) {
@@ -369,16 +330,29 @@ impl TypeContext {
         }
 
 
-        let id = self.structs.len() as TypeId;
+        let id = self.structs.len() as StructId;
+        
+        
+        let info = self.structs.push_mut(info);
+        let size = info.size;
+        let align = info.align;
+        
+        
+        let (_, tid) = self.add(Type::Typename(name), TypeInfo::new(
+            TypeKind::Struct(id),
+            size, align
+        ));
+        
+        let info = self.structs.get_mut(id as usize).unwrap();
+        info.type_id = tid;
 
-
-        (self.structs.push_mut(info), id)
+        (info, id)
     }
 
     pub fn name_of(&self, id: TypeId) -> Option<String> {
-        let ty = self.get_by_id(id)?;
+        let kind = &self.get_by_id(id)?.kind;
 
-        Some(match &ty.kind {
+        Some(match kind {
             TypeKind::IntegerLiteral => "int_literal".to_string(),
             TypeKind::Int8 => "int8".to_string(),
             TypeKind::Int16 => "int16".to_string(),

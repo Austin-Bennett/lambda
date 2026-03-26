@@ -15,7 +15,7 @@ pub mod lstruct {
     
     #[derive(Clone, Hash)]
     pub struct Structure {
-        pub name: ModulePath,
+        pub name: String,
         pub members: Vec<VarDecl>
 
         //todo: methods?
@@ -62,7 +62,7 @@ impl Syntax for StructureSyntax {
         
         let mut res = StructureSyntax{
             data: lstruct::Structure{
-                name: ModulePath::from_module_path(s),
+                name: s,
                 members: Vec::new()
             },
             smap

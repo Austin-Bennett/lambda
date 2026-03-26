@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Debug;
+use std::mem;
 use crate::common::source_owner::SourceOwner;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
@@ -14,9 +15,7 @@ use modules::*;
 use crate::ast::Item;
 use crate::ast::statements::vardecl::VarDecl;
 use crate::ast::structure::lstruct;
-use crate::ast::structure::lstruct::Structure;
 use crate::ast::ty::Type;
-use crate::common::utils::progress::Progress;
 use crate::typed_ast::typing::tcontext::TypeContext;
 use crate::typed_ast::typing::ty::{StructId, StructInfo, StructMember, TypeId, TypeInfo, TypeKind};
 
@@ -36,9 +35,10 @@ pub struct Compiler {
     warnings: Vec<CompileMessage>,
     //maps paths to their sources
     source_map: HashMap<SourceOwner, String>,
-    modules: HashMap<ModulePath, LModule>,
+    untyped_modules: HashMap<ModulePath, LModule>,
+    typed_modules: HashMap<ModulePath, LTypedModule>,
 
-    _findset: HashSet<ModulePath>,
+    _findset: HashSet<String>,
 
     pub type_context: TypeContext,
 }
@@ -49,44 +49,64 @@ pub struct Compiler {
 impl Compiler {
     pub fn new() -> Self {
         Self{
-            errors:       Vec::new(),
-            warnings:     Vec::new(),
-            source_map:   HashMap::new(),
-            modules:      HashMap::new(),
-            type_context: TypeContext::new(),
-            _findset: HashSet::new(),
+            errors:          Vec::new(),
+            warnings:        Vec::new(),
+            source_map:      HashMap::new(),
+            untyped_modules: HashMap::new(),
+            typed_modules:   HashMap::new(),
+            type_context:    TypeContext::new(),
+            _findset:        HashSet::new(),
         }
     }
-    
+
+    pub fn get_untyped_modules(&self) -> &HashMap<ModulePath, LModule> {
+        &self.untyped_modules
+    }
+
+    pub fn get_typed_modules(&self) -> &HashMap<ModulePath, LTypedModule> { &self.typed_modules }
     
     //adds primitive types to the type context
     pub fn create_typed_ast(&mut self) {
-        
+        //take ownership of the modules
+        let modules = mem::take(&mut self.untyped_modules);
+
+        for (p, m) in &modules {
+
+            let m = LTypedModule::from_ast(m, self);
+            self.typed_modules.insert(p.clone(), m);
+        }
+
+        //return ownership
+        self.untyped_modules = modules;
     }
     
-    fn get_structure(&mut self, name: &ModulePath) -> Option<(&mut StructInfo, StructId)> {
+    pub fn get_structure(&mut self, name: &String) -> Option<(&mut StructInfo, StructId)> {
         if let Some(s) = unsafe { &mut * (&raw mut self.type_context) }.get_struct(name) {
             Some(s)
         } else if self._findset.contains(name) {
             None
         } else {
             self._findset.insert(name.clone());
-            let this = self as *mut Self;
-
-            'outer: for (_, m) in &self.modules {
-                for item in &m.ast {
-                    if let Item::Struct(s) = item {
-
-                        let Some(sinfo) = unsafe{ &mut *this }.create_structure_from_ast(&s.data, &s.smap) else {
-                            return None;
-                        };
-
-
+            //let this = self as *mut Self;
+            let mut res = None;
+            {
+                'outer: for (_, m) in &self.untyped_modules {
+                    for item in &m.ast {
+                        if let Item::Struct(s) = item && s.data.name == *name {
+                            res = Some(s);
+                            break 'outer;
+                        }
                     }
                 }
             }
 
-            todo!()
+            //we have to clone to obey the borrow checker
+            let Some(structure) = res.cloned() else { return None; };
+
+            let Some(structure) = self.create_structure_from_ast(&structure.data, &structure.smap) else { return None; };
+
+
+            Some(self.type_context.add_struct(structure.name.clone(), structure))
         }
     }
 
@@ -144,20 +164,24 @@ impl Compiler {
             members,
             size,
             padding: size - raw_size,
-            align
+            align,
+            type_id: 0, //to be set
         })
     }
 
-    pub fn resolve_typename(&mut self, path: &ModulePath) -> Option<(&mut TypeInfo, TypeId)> {
+    pub fn resolve_typename(&mut self, path: &String) -> Option<(&mut TypeInfo, TypeId)> {
         if let Some(res) = unsafe { &mut *(&raw mut self.type_context) }.resolve_type(&Type::Typename(path.clone())) {
             Some(res)
         } else {
             //look for a structure in any of the modules
             self._findset.clear();
-            if let Some(sinfo) = self.get_structure(path) {
-                todo!()
+            if let Some((info, id)) = self.get_structure(path) {
+                let tid = info.type_id;
+
+                Some((self.type_context.get_by_id_mut(tid)?, tid))
+            } else {
+                None
             }
-            todo!()
         }
     }
 
@@ -307,7 +331,7 @@ impl Compiler {
     fn add_module_impl(&mut self, tokens: Tokens, added: &mut HashSet<ModulePath>) {
         let modp = ModulePath::from_path(&tokens.get_owner().name);
 
-        if self.modules.contains_key(&modp) || added.contains(&modp) {
+        if self.untyped_modules.contains_key(&modp) || added.contains(&modp) {
             return;
         }
 
@@ -330,7 +354,7 @@ impl Compiler {
             match &tk.typ {
                 TokenType::Statement(StatementToken::UseKW(s)) => {
                     let mod_path = ModulePath::from_module_path(s);
-                    if !self.modules.contains_key(&mod_path) && !added.contains(&mod_path) {
+                    if !self.untyped_modules.contains_key(&mod_path) && !added.contains(&mod_path) {
                         let path = mod_path.to_path();
                         match Tokens::tokenize(&path) {
                             Ok(tks) => {
@@ -375,7 +399,7 @@ impl Compiler {
         }
 
         let module = LModule::parse_untyped(modp.clone(), tks, module_smap, dependencies, self);
-        self.modules.insert(
+        self.untyped_modules.insert(
             modp,
             module
         );
@@ -392,16 +416,3 @@ impl Compiler {
     }
 }
 
-impl AsRef<HashMap<ModulePath, LModule>> for Compiler {
-
-    fn as_ref(&self) -> &HashMap<ModulePath, LModule>  {
-        &self.modules
-    }
-}
-
-impl AsMut<HashMap<ModulePath, LModule>> for Compiler {
-
-    fn as_mut(&mut self) -> &mut HashMap<ModulePath, LModule> {
-        &mut self.modules
-    }
-}

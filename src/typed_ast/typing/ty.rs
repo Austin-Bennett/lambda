@@ -9,7 +9,7 @@ pub type StructId = u32;
 
 #[derive(Clone)]
 pub struct StructMember {
-    pub name: ModulePath,
+    pub name: String,
     pub ty: TypeId,
     pub size: usize, //for quick lookup
     pub offset: usize,
@@ -17,7 +17,8 @@ pub struct StructMember {
 
 #[derive(Clone)]
 pub struct StructInfo {
-    pub name: ModulePath,
+    pub name: String,
+    pub type_id: TypeId,
     pub members: Vec<StructMember>,
     pub size: usize,
     pub padding: usize,
@@ -58,6 +59,8 @@ impl TypeInfo {
     }
 }
 
+
+#[derive(Clone)]
 pub enum TypeKind {
     IntegerLiteral, // a special type that the compiler uses for inferring integer results
     Int8,

@@ -4,7 +4,7 @@ use std::ops::Deref;
 use crate::ast::{GenericSyntax, Syntax};
 use crate::ast::statements::vardecl::*;
 use crate::ast::statements::expressions::*;
-use crate::ast::statements::ret::{Return, ReturnSyntax};
+use crate::ast::statements::ret::{Return};
 use crate::common::sourcemap::SourceMap;
 use crate::compiler::Compiler;
 use crate::lexer::token::Token;
@@ -13,8 +13,8 @@ pub mod expressions;
 pub mod ret;
 
 pub enum Statement {
-    VariableDeclaration(VarDecl),
-    Expression(Expr),
+    VariableDeclaration(VarDeclSyntax),
+    Expression(ExprSyntax),
     Return(Return)
 }
 
@@ -22,49 +22,41 @@ impl Debug for Statement {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Statement::VariableDeclaration(vd) => {
-                write!(f, "{:?}", vd)?;
+                write!(f, "{:?}", vd.data)?;
             }
             Statement::Expression(e) => {
-                write!(f, "{:?}", e)?;
+                write!(f, "{:?}", e.data)?;
             }
             Statement::Return(r) => {
-                write!(f, "return {:?}", r.deref())?;
+                write!(f, "return {:?}", r.deref().data)?;
             }
         }
         Ok(())
     }
 }
 
-pub type StatementSyntax = GenericSyntax<Statement>;
 
 
-impl Syntax for StatementSyntax {
+impl Syntax for Statement {
     fn parse(tokens: &mut VecDeque<Token>, compiler: &mut Compiler) -> Option<Self>
     where
         Self: Sized
     {
         if let Some(vardecl) = VarDeclSyntax::parse(tokens, compiler) {
             Some(
-                StatementSyntax::new(
-                    Statement::VariableDeclaration(vardecl.data),
-                    vardecl.smap
+                Statement::VariableDeclaration(
+                    vardecl,
                 )
             )
-        } else if let Some(ret) = ReturnSyntax::parse(tokens, compiler) {
+        } else if let Some(ret) = Return::parse(tokens, compiler) {
             Some(
-                StatementSyntax::new(
-                    Statement::Return(ret.data),
-                    ret.smap
-                )
+                    Statement::Return(ret),
             )
         } else {
             match ExprSyntax::parse(tokens, compiler) {
                 Some(v) => {
                     Some(
-                        StatementSyntax::new(
-                            Statement::Expression(v.data),
-                            v.smap
-                        )
+                        Statement::Expression(v),
                     )
                 }
                 None => None
@@ -74,6 +66,11 @@ impl Syntax for StatementSyntax {
     }
 
     fn get_sourcemap(&self) -> &SourceMap {
-        &self.smap
+        
+        match self {
+            Statement::VariableDeclaration(vd) => { vd.get_sourcemap() }
+            Statement::Expression(e) => { e.get_sourcemap() }
+            Statement::Return(r) => { r.get_sourcemap() }
+        }
     }
 }

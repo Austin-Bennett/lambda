@@ -16,9 +16,9 @@ use crate::{compiler, unpack_opt_tk};
 
 //todo: return value
 pub struct Function {
-    pub name: ModulePath,
-    pub parameters: Vec<VarDecl>,
-    pub body: Block,
+    pub name: String,
+    pub parameters: Vec<VarDeclSyntax>,
+    pub body: BlockSyntax,
     pub ty: Option<Type>, //None for void
 }
 
@@ -32,7 +32,7 @@ impl Debug for Function {
                 f.write_str(", ")?;
             }
             first = false;
-            write!(f, "{:?}", p)?;
+            write!(f, "{:?}", p.data)?;
         }
 
         f.write_str(")")?;
@@ -41,10 +41,10 @@ impl Debug for Function {
             write!(f, " = {:?}", ty)?;
         }
 
-        write!(f, " {{{}", if self.body.is_empty() { "" } else { "\n" })?;
+        write!(f, " {{{}", if self.body.data.is_empty() { "" } else { "\n" })?;
 
-        for s in &self.body {
-            write!(f, "\t{:?}\n", s.data)?;
+        for s in &self.body.data {
+            write!(f, "\t{:?}\n", s)?;
         }
 
         write!(f, "}}")?;
@@ -67,7 +67,7 @@ impl Syntax for FunctionSyntax {
         let next = tokens.pop_front();
         let name = if let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Identifier(s)), imap) = next {
             smap.extend(imap);
-            ModulePath::from_module_path(s)
+            s
         } else {
             compiler.emit_compile_message(
                 CompileMessage::expected_token_error(
@@ -114,8 +114,8 @@ impl Syntax for FunctionSyntax {
             }
             
             last_smap = var_decl.smap.clone();
-            args.push(var_decl.data);
-            smap.extend(var_decl.smap);
+            smap.extend(&var_decl.smap);
+            args.push(var_decl);
 
             let next = tokens.pop_front();
             if let unpack_opt_tk!(TokenType::Feature(FeatureToken::Comma), imap) = next {
@@ -185,7 +185,7 @@ impl Syntax for FunctionSyntax {
             }
         };
 
-        smap.extend(block.smap);
+        smap.extend(&block.smap);
 
 
         Some(Self{
@@ -193,7 +193,7 @@ impl Syntax for FunctionSyntax {
             data: Function{
                 name,
                 parameters: args,
-                body: block.data,
+                body: block,
                 ty
             }
         })
