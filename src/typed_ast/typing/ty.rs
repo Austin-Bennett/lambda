@@ -57,12 +57,30 @@ impl TypeInfo {
         //for arithmetic types, the call operator is the same as multiplication
         self.ops.call.insert(vec![self_id], self_id);
     }
+
+    pub fn enable_arithmetic_operators_with_other(&mut self, self_id: TypeId, other_id: TypeId) {
+        self.ops.add.insert(other_id, self_id);
+        self.ops.sub.insert(other_id, self_id);
+        self.ops.mul.insert(other_id, self_id);
+        self.ops.div.insert(other_id, self_id);
+
+        //for arithmetic types, the call operator is the same as multiplication
+        self.ops.call.insert(vec![other_id], self_id);
+    }
 }
 
+#[macro_export]
+macro_rules! enable_operators_with {
+    ($info: expr, $id: expr, $($others: expr),*) => {
+        $(
+            $info.enable_arithmetic_operators_with_other($id, $others);
+        )*
+    };
+}
 
 #[derive(Clone)]
 pub enum TypeKind {
-    IntegerLiteral, // a special type that the compiler uses for inferring integer results
+    Infer, //used for integer literals and such
     Int8,
     Int16,
     Int32,
@@ -92,7 +110,7 @@ pub enum TypeKind {
 impl Debug for TypeKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            TypeKind::IntegerLiteral => f.write_str("int_literal"),
+            TypeKind::Infer => f.write_str("unknown"),
             TypeKind::Int8 => f.write_str("int8"),
             TypeKind::Int16 => f.write_str("int16"),
             TypeKind::Int32 => f.write_str("int32"),

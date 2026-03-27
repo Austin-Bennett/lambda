@@ -15,8 +15,9 @@ pub struct TypeContext {
 
 
     pub none: TypeId,
+    
+    pub infer: TypeId,
 
-    pub int_literal: TypeId,
     pub int8: TypeId,
     pub int16: TypeId,
     pub int32: TypeId,
@@ -63,12 +64,12 @@ impl TypeContext {
 
         let (_, id) = types.add(Type::Typename("int_literal".into()),
                TypeInfo::new(
-                   TypeKind::IntegerLiteral,
+                   TypeKind::Infer,
                    0,
                    0
                )
         );
-        types.int_literal = id;
+        types.infer = id;
 
 
         let (info, id) = types.add(Type::Typename("int8".into()),
@@ -82,6 +83,8 @@ impl TypeContext {
         info.enable_neg_operator(id);
 
         types.int8 = id;
+        
+        
 
 
         let (info, id) = types.add(Type::Typename("int16".into()),
@@ -209,8 +212,16 @@ impl TypeContext {
 
         types.float64 = id;
 
-
-
+        let i8 = types.int8;
+        let i16 = types.int16;
+        let i32 = types.int32;
+        let i64 = types.int64;
+        
+        let u8 = types. uint8;
+        let u16 = types.uint16;
+        let u32 = types.uint32;
+        let u64 = types.uint64;
+        
         types
     }
 
@@ -353,7 +364,7 @@ impl TypeContext {
         let kind = &self.get_by_id(id)?.kind;
 
         Some(match kind {
-            TypeKind::IntegerLiteral => "int_literal".to_string(),
+            TypeKind::Infer => "unknown".to_string(),
             TypeKind::Int8 => "int8".to_string(),
             TypeKind::Int16 => "int16".to_string(),
             TypeKind::Int32 => "int32".to_string(),

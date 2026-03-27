@@ -79,7 +79,7 @@ fn main() -> Result<()> {
         println!("MODULE: [{}]:", modp);
 
         for (sig, f) in &m.functions {
-            println!("{:?}{:?}", sig, f);
+            println!("{} {}", sig.to_string(&compiler.type_context), f.to_string(&compiler.type_context));
         }
         println!();
     }

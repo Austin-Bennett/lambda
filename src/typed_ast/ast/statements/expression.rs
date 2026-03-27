@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter, Pointer, Write};
 use crate::ast::GenericSyntax;
 use crate::ast::statements::expressions::{Expr, ExprSyntax};
 use crate::common::operator::Operator;
@@ -6,6 +7,7 @@ use crate::common::utils::modulepath::ModulePath;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::literal::IntegerLiteral;
 use crate::typed_ast::typing::scope::AvailableContext;
+use crate::typed_ast::typing::tcontext::TypeContext;
 use crate::typed_ast::typing::ty::TypeId;
 
 pub enum BinaryOperator {
@@ -13,6 +15,17 @@ pub enum BinaryOperator {
     Sub,
     Mul,
     Div,
+}
+
+impl Debug for BinaryOperator {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BinaryOperator::Add => f.write_str("+"),
+            BinaryOperator::Sub => f.write_str("-"),
+            BinaryOperator::Mul => f.write_str("*"),
+            BinaryOperator::Div => f.write_str("/")
+        }
+    }
 }
 
 pub struct TypedBinaryOperation {
@@ -23,6 +36,14 @@ pub struct TypedBinaryOperation {
 
 pub enum UnaryOperator {
     Neg,
+}
+
+impl Debug for UnaryOperator {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self { 
+            UnaryOperator::Neg => f.write_str("-"),
+        }
+    }
 }
 
 pub struct TypedUnaryOperation {
@@ -52,9 +73,28 @@ pub struct TypedExpr {
     pub smap: SourceMap
 }
 
-
-
+impl Debug for TypedExprNode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TypedExprNode::IntLiteral(i) => { i.fmt(f) }
+            TypedExprNode::Identifier(ident) => { write!(f, "{}", ident) }
+            TypedExprNode::Tuple(_) => { todo!() }
+            TypedExprNode::BinaryOp(op) => {
+                write!(f, "({:?} {:?} {:?})", op.lhs, op.op, op.rhs)
+            }
+            TypedExprNode::UnaryOp(op) => {
+                write!(f, "{:?}{:?}", op.op, op.operand)}
+            TypedExprNode::CallOp(call) => {
+                write!(f, "{:?}({:?})", call.caller, call.arguments)
+            }
+        }
+    }
+}
 impl TypedExpr {
+
+    pub fn is_inferred(&self, context: &TypeContext) -> bool {
+        self.ty == context.infer
+    }
     
     pub fn from_node(expr: &ExprSyntax, compiler: &mut Compiler, context: &AvailableContext) -> Option<(TypedExprNode, TypeId)> {
         match &expr.data {
@@ -73,12 +113,14 @@ impl TypedExpr {
                 Some((TypedExprNode::Identifier(ident.clone()), ty))
             }
             Expr::IntLiteral(il) => {
-                Some((TypedExprNode::IntLiteral(*il), compiler.type_context.int_literal))
+                Some((TypedExprNode::IntLiteral(*il), compiler.type_context.infer))
             }
             Expr::Tuple((args)) => { todo!() }
             Expr::BinaryOp(bin) => {
                 let (lhs, lhs_ty) = TypedExpr::from_node(&bin.lhs, compiler, context)?;
                 let (rhs, rhs_ty) = TypedExpr::from_node(&bin.rhs, compiler, context)?;
+
+                //todo: inferring types, we need to design a system for that
                 //lhs must have an operator overload that accepts rhs
 
                 let lhs_inf = compiler.type_context.get_by_id(lhs_ty).unwrap();
@@ -86,6 +128,7 @@ impl TypedExpr {
 
                 match bin.op.tk {
                     "+" => {
+
                         let Some(add) = lhs_inf.ops.add.get(&rhs_ty) else {
                             compiler.emit_compile_message(
                                 CompileMessage::new(

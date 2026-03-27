@@ -20,6 +20,9 @@ pub struct OperatorOverloads {
     pub div: HashMap<TypeId, TypeId>,
 
     pub call: HashMap<Vec<TypeId>, TypeId>,
+
+    //types this type can implicitly convert to
+    pub implicit_conversion: HashSet<TypeId>,
 }
 
 impl OperatorOverloads {
@@ -33,6 +36,8 @@ impl OperatorOverloads {
             div: HashMap::new(),
             
             call: HashMap::new(),
+
+            implicit_conversion: HashSet::new(),
         }
     }
     

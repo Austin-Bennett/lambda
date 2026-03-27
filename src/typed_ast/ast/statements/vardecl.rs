@@ -34,7 +34,9 @@ impl TypedVarDecl {
             Some(e) => {
                 let e = TypedExpr::from_ast(e, compiler, context)?;
 
-                if e.ty != ty {
+                let info = compiler.type_context.get_by_id(e.ty).unwrap();
+
+                if e.ty != ty && !info.ops.implicit_conversion.contains(&ty) {
                     compiler.emit_compile_message(
                         CompileMessage::new(
                             e.smap.clone(),

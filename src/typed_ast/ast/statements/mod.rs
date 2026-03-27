@@ -6,6 +6,7 @@ use crate::typed_ast::ast::statements::expression::TypedExpr;
 use crate::typed_ast::ast::statements::ret::{TypedReturn};
 use crate::typed_ast::ast::statements::vardecl::TypedVarDecl;
 use crate::typed_ast::typing::scope::AvailableContext;
+use crate::typed_ast::typing::tcontext::TypeContext;
 
 pub mod expression;
 pub mod vardecl;
@@ -17,7 +18,21 @@ pub enum TypedStatement {
     Expr(TypedExpr),
 }
 
-
+impl TypedStatement {
+    pub fn to_string(&self, context: &TypeContext) -> String {
+        match self {
+            TypedStatement::VarDecl(vd) => { format!("{}: {} = {}", vd.name, context.name_of(vd.ty).unwrap(),
+                    if let Some(e) = &vd.val {
+                        format!("{:?}", e.value)
+                    } else {
+                        "".to_string()
+                    }
+            ) }
+            TypedStatement::Return(ret) => { format!("return {:?}", ret.0.value) }
+            TypedStatement::Expr(expr) => { format!("{:?}", expr.value) }
+        }
+    }
+}
 
 impl TypedStatement {
     pub fn from_ast(statement: &Statement, compiler: &mut Compiler, context: &mut AvailableContext) -> Option<Self> {

@@ -1,15 +1,29 @@
+use std::fmt::{Debug, Formatter};
+use std::ops::{Add, AddAssign};
 use crate::ast::function::FunctionSyntax;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::typed_ast::ast::block::{TypedBlockSyntax};
 use crate::typed_ast::ast::statements::vardecl::TypedVarDecl;
 use crate::typed_ast::typing::scope::AvailableContext;
+use crate::typed_ast::typing::tcontext::TypeContext;
 use crate::typed_ast::typing::ty::TypeId;
 
 #[derive(PartialEq, Eq, Clone, Hash)]
 pub struct FunctionSignature {
-    name: String,
-    ret: TypeId,
-    params: Vec<TypeId>,
+    pub(crate) name: String,
+    pub(crate) ret: TypeId,
+    pub(crate) params: Vec<TypeId>,
+}
+
+impl FunctionSignature {
+    pub fn to_string(&self, context: &TypeContext) -> String {
+        format!("{}({:?})", self.name, self.params
+            .iter()
+            .map(|id| context.name_of(*id).unwrap())
+            .collect::<Vec<String>>()
+            .join(", ")
+        )
+    }
 }
 
 pub struct Function {
@@ -17,6 +31,27 @@ pub struct Function {
     //sig: FunctionSignature,
     pub code: TypedBlockSyntax,
 }
+
+impl Function {
+    pub fn to_string(&self, context: &TypeContext) -> String {
+        let mut f = String::new();
+
+        f.add_assign("{");
+        if !self.code.data.is_empty() {
+            f.add_assign("\n");
+        }
+
+        for s in &self.code.data {
+            f.add_assign(s.to_string(context).as_str())
+        }
+
+        f.add_assign("}");
+
+        f
+    }
+}
+
+
 
 impl Function {
     pub fn from_ast(func: &FunctionSyntax, compiler: &mut Compiler, context: &mut AvailableContext) -> Option<(FunctionSignature, Self)> {
@@ -57,14 +92,18 @@ impl Function {
         };
 
         
-        context.pop_last_scope();
-        Some(
+
+        let res = Some(
             (
                 sig,
                 Self{
                     code: TypedBlockSyntax::from_ast(&func.data.body, compiler, context)?
                 }
             )
-        )
+        );
+
+        context.pop_last_scope();
+
+        res
     }
 }

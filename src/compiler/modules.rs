@@ -60,15 +60,15 @@ pub struct LTypedModule {
 }
 
 impl LTypedModule {
-    pub fn from_ast(module: &LModule, compiler: &mut Compiler) -> Self {
-        let mut context = AvailableContext::new();
+    pub fn from_ast(module: &LModule, compiler: &mut Compiler, context: &mut AvailableContext) -> Self {
+
 
         let mut functions = HashMap::new();
 
         //structures get managed by the compiler as we need them, so we only care about functions
         for item in &module.ast {
             if let ast::Item::Func(function) = item {
-                let Some((sig, func)) = Function::from_ast(function, compiler, &mut context) else { continue; };
+                let Some((sig, func)) = Function::from_ast(function, compiler, context) else { continue; };
                 functions.insert(sig, func);
             }
         }

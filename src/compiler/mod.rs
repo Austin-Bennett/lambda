@@ -16,6 +16,9 @@ use crate::ast::Item;
 use crate::ast::statements::vardecl::VarDecl;
 use crate::ast::structure::lstruct;
 use crate::ast::ty::Type;
+use crate::typed_ast::ast::items::function::FunctionSignature;
+use crate::typed_ast::ast::statements::vardecl::TypedVarDecl;
+use crate::typed_ast::typing::scope::AvailableContext;
 use crate::typed_ast::typing::tcontext::TypeContext;
 use crate::typed_ast::typing::ty::{StructId, StructInfo, StructMember, TypeId, TypeInfo, TypeKind};
 
@@ -70,9 +73,77 @@ impl Compiler {
         //take ownership of the modules
         let modules = mem::take(&mut self.untyped_modules);
 
+        let mut context = AvailableContext::new();
+        context.push_new_scope();
+
+        //loop through all functions, create their identifiers ahead of time
+        //add to the global scope
+        for (p, m) in &modules {
+            for item in &m.ast {
+                if let Item::Func(func) = item {
+                    //create its signature
+                    let ret = match &func.data.ty {
+                        Some(ty) => {
+                            let Some((_, id)) = self.resolve_type(ty) else {
+
+                                self.emit_compile_message(
+                                    CompileMessage::new(
+                                        func.smap.clone(),
+                                        format!("Could not resolve type {:?}", ty),
+                                        CompileMessageType::Error,
+                                    )
+                                );
+
+                                continue;
+                            };
+
+                            id
+                        },
+                        None => self.type_context.none
+                    };
+
+                    let mut params = Vec::new();
+
+                    for p in &func.data.parameters {
+                        let (_, id) = match self.resolve_type(&p.data.ty) {
+                            Some(v ) => v,
+                            None => {
+                                self.emit_compile_message(
+                                    CompileMessage::new(
+                                        p.smap.clone(),
+                                        format!("Could not resolve type: {:?}", p.data.ty),
+                                        CompileMessageType::Error,
+                                    )
+                                );
+
+                                continue;
+                            }
+                        };
+
+                        params.push(id);
+                    }
+
+                    //register this type
+                    //this is similar to what rust does as well, they did it to help
+                    //the optimization process, I did it because im lazy
+                    let (info, id) = self.type_context.add(
+                        Type::Typename(func.data.to_typename()),
+                        TypeInfo::new(
+                            TypeKind::Function { ret, params: params.clone() },
+                            TypeContext::SIZE_POINTER, TypeContext::SIZE_POINTER //size of a pointer because it is a pointer...?
+                        )
+                    );
+                    
+                    info.ops.call.insert(params, ret);
+                    
+                    context.declare_identifier_in_scope(func.data.name.clone(), id);
+                }
+            }
+        }
+
         for (p, m) in &modules {
 
-            let m = LTypedModule::from_ast(m, self);
+            let m = LTypedModule::from_ast(m, self, &mut context);
             self.typed_modules.insert(p.clone(), m);
         }
 
