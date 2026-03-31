@@ -17,6 +17,7 @@ pub mod ast;
 pub mod tests;
 pub mod typed_ast;
 pub mod consteval;
+pub mod codegen;
 
 #[derive(Parser)]
 pub struct Arguments {

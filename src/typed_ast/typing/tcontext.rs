@@ -13,7 +13,6 @@ pub struct TypeContext {
     structs: Vec<StructInfo>,
     struct_lookup: HashMap<String, StructId>,
 
-
     pub none: TypeId,
     
     pub infer: TypeId,
@@ -62,13 +61,17 @@ impl TypeContext {
         types.none = id;
 
 
-        let (_, id) = types.add(Type::Typename("int_literal".into()),
+
+        let (info, id) = types.add(Type::Typename("#infer".into()),
                TypeInfo::new(
                    TypeKind::Infer,
                    0,
                    0
                )
         );
+        info.enable_arithmetic_operators(id);
+        info.enable_neg_operator(id);
+        
         types.infer = id;
 
 
@@ -223,6 +226,18 @@ impl TypeContext {
         let u64 = types.uint64;
         
         types
+    }
+
+    pub fn is_int(&self, id: TypeId) -> bool {
+        id == self.uint8 ||
+        id == self.uint16 ||
+        id == self.uint32 ||
+        id == self.uint64 ||
+
+        id == self.int8 ||
+        id == self.int16 ||
+        id == self.int32 ||
+        id == self.int64
     }
 
 

@@ -3,9 +3,19 @@ name = "lambda"
 version = "0.1.0"
 edition = "2024"
 
+
 [dependencies]
 anyhow = "1.0.102"
 lazy_static = "1.5.0"
+
+
+[dependencies.inkwell]
+version = "0.8.0"
+features = ["llvm21-1"]
+
+[dependencies.lme]
+path = "src/lme"
+version = "0.1.0"
 
 [dependencies.clap]
 version = "4.5.47"

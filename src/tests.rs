@@ -1,8 +1,12 @@
+use std::fs;
+use lme::desc::LME;
 use crate::ast::structure::StructureSyntax;
 #[cfg(test)]
 
 use crate::ast::ty::TypeSyntax;
 use crate::ast::Syntax;
+use crate::codegen::exec_builder::ExecBuilder;
+use crate::codegen::instructions::{Data, Instruction, Type};
 use crate::common::source_owner::{SourceDescriptor, SourceOwner};
 use crate::compiler::Compiler;
 use crate::lexer::token::TokenType;
@@ -78,4 +82,39 @@ pub fn test_struct_make() {
     for m in s.members {
         println!("{} offset {}", m.name, m.offset);
     }
+}
+
+#[test]
+pub fn test_write_lme_format() {
+    let mut builder = ExecBuilder::new();
+
+    builder
+        .decl_func("main".to_string())
+        .emit(Instruction::MvRet(Data::Value(2u64)))
+        .emit(Instruction::MvAux(Data::Value(2u64)))
+        .emit(Instruction::Add(Type::U64))
+    ;
+
+    let lme = builder.build();
+    let bytes = lme.to_bytes().unwrap();
+
+    fs::write("test.lme", bytes).unwrap();
+}
+
+#[test]
+pub fn test_read_lme_format() {
+
+    let bytes = fs::read("test.lme").unwrap();
+
+    let mut lme = LME::from_memory(bytes).unwrap();
+
+    println!("{}", lme.code_entry);
+    for func in &lme.functions {
+        println!("{}: {}", func.name, func.loc);
+    }
+
+    println!("{:?}", lme.code);
+
+    assert_eq!(lme.code_entry, 0);
+    assert_eq!(lme.functions.len(), 1);
 }

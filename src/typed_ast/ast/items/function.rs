@@ -17,7 +17,7 @@ pub struct FunctionSignature {
 
 impl FunctionSignature {
     pub fn to_string(&self, context: &TypeContext) -> String {
-        format!("{}({:?})", self.name, self.params
+        format!("{}({})", self.name, self.params
             .iter()
             .map(|id| context.name_of(*id).unwrap())
             .collect::<Vec<String>>()
@@ -42,7 +42,9 @@ impl Function {
         }
 
         for s in &self.code.data {
-            f.add_assign(s.to_string(context).as_str())
+            f.add_assign("\t");
+            f.add_assign(s.to_string(context).as_str());
+            f.add_assign("\n");
         }
 
         f.add_assign("}");
@@ -80,7 +82,7 @@ impl Function {
         let mut params = Vec::new();
 
         for p in &func.data.parameters {
-            //this will also declare the variables in the scope
+            //this will also declare the parameters in the scope
             params.push(TypedVarDecl::from_ast(p, compiler, context)?)
         }
 

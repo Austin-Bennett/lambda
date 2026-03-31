@@ -3,6 +3,7 @@ use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::typed_ast::ast::statements::expression::TypedExpr;
+use crate::typed_ast::ast::type_inference::TypeInferencer;
 use crate::typed_ast::typing::scope::AvailableContext;
 use crate::typed_ast::typing::ty::TypeId;
 
@@ -32,9 +33,11 @@ impl TypedVarDecl {
 
         let expr = match &vd.data.value {
             Some(e) => {
-                let e = TypedExpr::from_ast(e, compiler, context)?;
+                let mut e = TypedExpr::from_ast(e, compiler, context)?;
 
                 let info = compiler.type_context.get_by_id(e.ty).unwrap();
+
+                TypeInferencer::infer_unknown(&compiler.type_context, &mut e, ty);
 
                 if e.ty != ty && !info.ops.implicit_conversion.contains(&ty) {
                     compiler.emit_compile_message(
