@@ -6,7 +6,7 @@ use crate::ast::structure::StructureSyntax;
 use crate::ast::ty::TypeSyntax;
 use crate::ast::Syntax;
 use crate::codegen::exec_builder::ExecBuilder;
-use crate::codegen::instructions::{Data, Instruction, Type};
+use crate::codegen::instructions::{Data, Instruction, EffectiveType, Register, Size};
 use crate::common::source_owner::{SourceDescriptor, SourceOwner};
 use crate::compiler::Compiler;
 use crate::lexer::token::TokenType;
@@ -89,13 +89,24 @@ pub fn test_write_lme_format() {
     let mut builder = ExecBuilder::new();
 
     builder
-        .decl_func("main".to_string())
-        .emit(Instruction::MvRet(Data::Value(2u64)))
-        .emit(Instruction::MvAux(Data::Value(2u64)))
-        .emit(Instruction::Add(Type::U64))
+        .decl_label("add".to_string())
+        .emit(Instruction::Push(Data::Register(Register::Bottom)))
+        .emit(Instruction::Move(Data::Register(Register::Stack), Register::Bottom))
+        .emit(Instruction::Leab(Data::Value((-24i64) as u64), Size::QWord))
+        .emit(Instruction::MvAux(Data::Register(Register::Ret)))
+        .emit(Instruction::Leab(Data::Value(-32i64 as u64), Size::QWord))
+        .emit(Instruction::Add(EffectiveType::Unsigned))
+        .emit(Instruction::Pop(Register::Bottom))
+        .emit(Instruction::Return)
+        .decl_label("main".to_string())
+        .decl_entry()
+        .emit(Instruction::Push(Data::Value(2)))
+        .emit(Instruction::Push(Data::Value(2)))
+        .call("add")
+        .emit(Instruction::Return)
     ;
 
-    let lme = builder.build();
+    let lme = builder.build().unwrap();
     let bytes = lme.to_bytes().unwrap();
 
     fs::write("test.lme", bytes).unwrap();
@@ -116,5 +127,5 @@ pub fn test_read_lme_format() {
     println!("{:?}", lme.code);
 
     assert_eq!(lme.code_entry, 0);
-    assert_eq!(lme.functions.len(), 1);
+    assert_eq!(lme.functions.len(), 2);
 }
