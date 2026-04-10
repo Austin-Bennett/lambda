@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Write};
-use crate::codegen::compilation_primitives::{BinaryMethodCompiler, MethodCompiler};
 use crate::common::utils::modulepath::ModulePath;
 use crate::typed_ast::typing::operator::OperatorOverloads;
 
@@ -44,26 +43,18 @@ impl TypeInfo {
         }
     }
 
-    pub fn enable_neg_operator(&mut self, self_id: TypeId, method: MethodCompiler) {
-        self.ops.neg = Some((self_id, method))
+    pub fn enable_neg_operator(&mut self, self_id: TypeId) {
+        self.ops.neg = Some(self_id)
     }
 
-    pub fn enable_reg_move_copy(&mut self) {
-        self.ops.copy = Some((Box::new(|_, builder, this, reg| {
-            builder.move_reg(this, reg);
-        }), false))
-    }
 
-    pub fn enable_arithmetic_operators(&mut self, self_id: TypeId,
-                                       add: BinaryMethodCompiler,
-                                       sub: BinaryMethodCompiler,
-                                       mul: BinaryMethodCompiler,
-                                       div: BinaryMethodCompiler,
+
+    pub fn enable_arithmetic_operators(&mut self, self_id: TypeId
     ) {
-        self.ops.add.insert(self_id, (self_id, add));
-        self.ops.sub.insert(self_id, (self_id, sub));
-        self.ops.mul.insert(self_id, (self_id, mul));
-        self.ops.div.insert(self_id, (self_id, div));
+        self.ops.add.insert(self_id, self_id);
+        self.ops.sub.insert(self_id, self_id);
+        self.ops.mul.insert(self_id, self_id);
+        self.ops.div.insert(self_id, self_id);
 
         //for arithmetic types, the call operator is the same as multiplication
         self.ops.call.insert(vec![self_id], self_id);

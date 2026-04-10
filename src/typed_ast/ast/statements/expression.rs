@@ -188,7 +188,7 @@ impl TypedExpr {
                                     rhs,
                                 }
                             )
-                        ), add_res.0))
+                        ), *add_res))
                     },
                     "-" => {
                         //ensure we can add rhs to lhs
@@ -215,7 +215,7 @@ impl TypedExpr {
                                     rhs,
                                 }
                             )
-                        ), sub_res.0))
+                        ), *sub_res))
                     },
                     "*" => {
                         //ensure we can add rhs to lhs
@@ -242,7 +242,7 @@ impl TypedExpr {
                                     rhs,
                                 }
                             )
-                        ), mul_res.0))
+                        ), *mul_res))
                     },
                     "/" => {
                         //ensure we can add rhs to lhs
@@ -269,7 +269,7 @@ impl TypedExpr {
                                     rhs,
                                 }
                             )
-                        ), div_res.0))
+                        ), *div_res))
                     }
 
                     _ => {
@@ -309,7 +309,7 @@ impl TypedExpr {
                                     }
                                 ),
                             ),
-                                neg.0
+                                *neg
                             )
                         )
                     }

@@ -164,7 +164,6 @@ dependencies = [
  "clap",
  "inkwell",
  "lazy_static",
- "lme",
 ]
 
 [[package]]
@@ -191,14 +190,6 @@ dependencies = [
  "libc",
  "regex-lite",
  "semver",
-]
-
-[[package]]
-name = "lme"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "libc",
 ]
 
 [[package]]

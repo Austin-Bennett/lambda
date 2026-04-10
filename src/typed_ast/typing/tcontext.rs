@@ -82,13 +82,8 @@ impl TypeContext {
                   1
               )
         );
-        info.enable_arithmetic_operators(id,
-             PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Add).make_compiler(),
-             PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Sub).make_compiler(),
-             PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Mul).make_compiler(),
-             PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Div).make_compiler(),
-        );
-        info.enable_neg_operator(id, PrimitiveNegationCompiler::new(EffectiveType::Signed).make_compiler());
+        info.enable_arithmetic_operators(id);
+        info.enable_neg_operator(id, );
         info.enable_reg_move_copy();
 
         types.int8 = id;
