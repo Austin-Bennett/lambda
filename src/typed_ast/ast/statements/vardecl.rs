@@ -39,7 +39,7 @@ impl TypedVarDecl {
 
                 TypeInferencer::infer_unknown(&compiler.type_context, &mut e, ty);
 
-                if e.ty != ty && !info.ops.implicit_conversion.contains(&ty) {
+                if e.ty != ty && !info.ops.implicit_conversion.contains_key(&ty) {
                     compiler.emit_compile_message(
                         CompileMessage::new(
                             e.smap.clone(),

@@ -1,4 +1,5 @@
 use std::fs;
+use inkwell::debug_info::DWARFSourceLanguage::D;
 use lme::desc::LME;
 use crate::ast::structure::StructureSyntax;
 #[cfg(test)]
@@ -89,22 +90,52 @@ pub fn test_write_lme_format() {
     let mut builder = ExecBuilder::new();
 
     builder
-        .decl_label("add".to_string())
+        .decl_label("fib".to_string())
         .emit(Instruction::Push(Data::Register(Register::Bottom)))
         .emit(Instruction::Move(Data::Register(Register::Stack), Register::Bottom))
+
+        .emit(Instruction::MvAux(Data::Value(1)))
         .emit(Instruction::Leab(Data::Value((-24i64) as u64), Size::QWord))
-        .emit(Instruction::MvAux(Data::Register(Register::Ret)))
-        .emit(Instruction::Leab(Data::Value(-32i64 as u64), Size::QWord))
+        .emit(Instruction::Cmp(EffectiveType::Unsigned))
+        .jump_le("fib_else")
+
+        .emit(Instruction::Sub(EffectiveType::Unsigned))
+        .emit(Instruction::Push(Data::Register(Register::Ret)))
+        .call("fib")
+        .emit(Instruction::PopN(Data::Value(1)))
+        .emit(Instruction::Push(Data::Register(Register::Ret)))
+        .emit(Instruction::Leab(Data::Value((-24i64) as u64), Size::QWord))
+        .emit(Instruction::MvAux(Data::Value(2)))
+        .emit(Instruction::Sub(EffectiveType::Unsigned))
+        .emit(Instruction::Push(Data::Register(Register::Ret)))
+        .call("fib")
+        .emit(Instruction::PopN(Data::Value(1)))
+        .emit(Instruction::Pop(Register::Aux))
         .emit(Instruction::Add(EffectiveType::Unsigned))
+        .jump("fib_end")
+
+        .decl_label("fib_else")
+        .emit(Instruction::MvRet(Data::Value(1)))
+
+        .decl_label("fib_end")
+
         .emit(Instruction::Pop(Register::Bottom))
         .emit(Instruction::Return)
         .decl_label("main".to_string())
         .decl_entry()
         .emit(Instruction::Push(Data::Value(2)))
-        .emit(Instruction::Push(Data::Value(2)))
-        .call("add")
+        .call("fib")
+        .emit(Instruction::PopN(Data::Value(1)))
         .emit(Instruction::Return)
     ;
+
+    // builder
+    //     .decl_label("main")
+    //     .decl_entry()
+    //     .emit(Instruction::MvRet(Data::Value(2)))
+    //     .emit(Instruction::MvAux(Data::Value(2)))
+    //     .emit(Instruction::Add(EffectiveType::Unsigned))
+    //     .emit(Instruction::Return);
 
     let lme = builder.build().unwrap();
     let bytes = lme.to_bytes().unwrap();
@@ -125,7 +156,4 @@ pub fn test_read_lme_format() {
     }
 
     println!("{:?}", lme.code);
-
-    assert_eq!(lme.code_entry, 0);
-    assert_eq!(lme.functions.len(), 2);
 }

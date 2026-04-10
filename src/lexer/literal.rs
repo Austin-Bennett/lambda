@@ -93,7 +93,6 @@ impl IntegerLiteral {
 
     //converts to u64 ignoring extra bits and combining the sign into the first significant bit
     pub fn as_u64_lossy(&self) -> u64 {
-
         self.value as u64 | if self.negative { 1 << 63 } else { 0 }
     }
 

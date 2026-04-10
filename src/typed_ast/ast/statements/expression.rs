@@ -45,17 +45,17 @@ impl Debug for UnaryOperator {
 
 pub struct TypedBinaryOperation {
     pub op: BinaryOperator,
-    pub lhs: TypedExprNode,
-    pub rhs: TypedExprNode,
+    pub lhs: TypedExpr,
+    pub rhs: TypedExpr,
 }
 
 pub struct TypedUnaryOperation {
     pub op: UnaryOperator,
-    pub operand: TypedExprNode,
+    pub operand: TypedExpr,
 }
 
 pub struct TypedCallOperation {
-    pub caller: TypedExprNode,
+    pub caller: TypedExpr,
     pub arguments: Vec<TypedExpr>,
 }
 
@@ -63,7 +63,7 @@ pub enum TypedExprNode {
     IntLiteral(IntegerLiteral),
     Identifier(String),
 
-    Tuple(Vec<TypedExprNode>),
+    Tuple(Vec<TypedExpr>),
 
     BinaryOp(Box<TypedBinaryOperation>),
     UnaryOp(Box<TypedUnaryOperation>),
@@ -76,8 +76,8 @@ impl TypedExprNode {
             TypedExprNode::IntLiteral(_) => { true }
             TypedExprNode::Identifier(_) => { false }
             TypedExprNode::Tuple(_) => { false }
-            TypedExprNode::BinaryOp(bop) => { bop.lhs.is_int_literal_expr() && bop.rhs.is_int_literal_expr() }
-            TypedExprNode::UnaryOp(uop) => { uop.operand.is_int_literal_expr() }
+            TypedExprNode::BinaryOp(bop) => { bop.lhs.value.is_int_literal_expr() && bop.rhs.value.is_int_literal_expr() }
+            TypedExprNode::UnaryOp(uop) => { uop.operand.value.is_int_literal_expr() }
             TypedExprNode::CallOp(call) => { false }
         }
     }
@@ -184,11 +184,11 @@ impl TypedExpr {
                             Box::new(
                                 TypedBinaryOperation{
                                     op: BinaryOperator::Add,
-                                    lhs: lhs.value,
-                                    rhs: rhs.value,
+                                    lhs,
+                                    rhs,
                                 }
                             )
-                        ), *add_res))
+                        ), add_res.0))
                     },
                     "-" => {
                         //ensure we can add rhs to lhs
@@ -211,11 +211,11 @@ impl TypedExpr {
                             Box::new(
                                 TypedBinaryOperation{
                                     op: BinaryOperator::Sub,
-                                    lhs: lhs.value,
-                                    rhs: rhs.value,
+                                    lhs,
+                                    rhs,
                                 }
                             )
-                        ), *sub_res))
+                        ), sub_res.0))
                     },
                     "*" => {
                         //ensure we can add rhs to lhs
@@ -238,11 +238,11 @@ impl TypedExpr {
                             Box::new(
                                 TypedBinaryOperation{
                                     op: BinaryOperator::Add,
-                                    lhs: lhs.value,
-                                    rhs: rhs.value,
+                                    lhs,
+                                    rhs,
                                 }
                             )
-                        ), *mul_res))
+                        ), mul_res.0))
                     },
                     "/" => {
                         //ensure we can add rhs to lhs
@@ -265,11 +265,11 @@ impl TypedExpr {
                             Box::new(
                                 TypedBinaryOperation{
                                     op: BinaryOperator::Div,
-                                    lhs: lhs.value,
-                                    rhs: rhs.value,
+                                    lhs,
+                                    rhs,
                                 }
                             )
-                        ), *div_res))
+                        ), div_res.0))
                     }
 
                     _ => {
@@ -286,7 +286,7 @@ impl TypedExpr {
 
                 match op.op.tk {
                     "-" => {
-                        let Some(neg) = lhs_inf.ops.neg else {
+                        let Some(neg) = &lhs_inf.ops.neg else {
                             compiler.emit_compile_message(
                                 CompileMessage::new(
                                     expr.smap.clone(),
@@ -305,11 +305,11 @@ impl TypedExpr {
                                 Box::new(
                                     TypedUnaryOperation{
                                         op: UnaryOperator::Neg,
-                                        operand: lhs,
+                                        operand: TypedExpr{ value: lhs, ty: lhs_ty, smap: op.operand.smap.clone() },
                                     }
                                 ),
                             ),
-                                neg
+                                neg.0
                             )
                         )
                     }
@@ -320,7 +320,7 @@ impl TypedExpr {
             }
             Expr::CallOp(call) => {
                 let (caller, caller_ty) = TypedExpr::from_node(&call.caller, compiler, context)?;
-
+                let expr_call = call;
 
 
                 let mut params = Vec::new();
@@ -365,7 +365,7 @@ impl TypedExpr {
                     TypedExprNode::CallOp(
                         Box::new(
                             TypedCallOperation{
-                                caller,
+                                caller: TypedExpr{ value: caller, ty: caller_ty, smap: expr_call.caller.smap.clone() },
                                 arguments: params
                                     .into_iter()
                                     .zip(param_types)

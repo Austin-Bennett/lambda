@@ -10,9 +10,9 @@ use crate::typed_ast::typing::ty::TypeId;
 
 #[derive(PartialEq, Eq, Clone, Hash)]
 pub struct FunctionSignature {
-    pub(crate) name: String,
-    pub(crate) ret: TypeId,
-    pub(crate) params: Vec<TypeId>,
+    pub name: String,
+    pub ret: TypeId,
+    pub params: Vec<TypeId>,
 }
 
 impl FunctionSignature {
@@ -30,6 +30,7 @@ pub struct Function {
     //we might need it, not sure right now, and id like to avoid unnecessary clones
     //sig: FunctionSignature,
     pub code: TypedBlockSyntax,
+    pub params: Vec<String>,
 }
 
 impl Function {
@@ -90,7 +91,7 @@ impl Function {
         let sig = FunctionSignature {
             name: func.data.name.clone(),
             ret,
-            params: params.iter().map(|f| f.ty).collect()
+            params: params.iter().map(|v| v.ty).collect()
         };
 
         
@@ -99,7 +100,8 @@ impl Function {
             (
                 sig,
                 Self{
-                    code: TypedBlockSyntax::from_ast(&func.data.body, compiler, context)?
+                    code: TypedBlockSyntax::from_ast(&func.data.body, compiler, context)?,
+                    params: params.iter().map(|v| v.name.clone()).collect()
                 }
             )
         );

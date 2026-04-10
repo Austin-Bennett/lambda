@@ -6,7 +6,9 @@ use crate::typed_ast::typing::scope::AvailableContext;
 
 pub type TypedBlock = Vec<TypedStatement>;
 
+
 pub type TypedBlockSyntax = GenericSyntax<TypedBlock>;
+
 
 
 impl TypedBlockSyntax {

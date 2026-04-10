@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::ast::structure::lstruct;
 use crate::ast::ty::Type;
 use crate::common::utils::modulepath::ModulePath;
+use crate::typed_ast::ast::statements::expression::BinaryOperator;
 use crate::typed_ast::typing::ty::{StructId, StructInfo, TypeId, TypeInfo, TypeKind};
 
 #[derive(Default)]
@@ -69,8 +70,7 @@ impl TypeContext {
                    0
                )
         );
-        info.enable_arithmetic_operators(id);
-        info.enable_neg_operator(id);
+        info.enable_neg_operator(id, Box::new(|_, _, _, _| {}));
         
         types.infer = id;
 
@@ -82,8 +82,14 @@ impl TypeContext {
                   1
               )
         );
-        info.enable_arithmetic_operators(id);
-        info.enable_neg_operator(id);
+        info.enable_arithmetic_operators(id,
+             PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Add).make_compiler(),
+             PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Sub).make_compiler(),
+             PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Mul).make_compiler(),
+             PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Div).make_compiler(),
+        );
+        info.enable_neg_operator(id, PrimitiveNegationCompiler::new(EffectiveType::Signed).make_compiler());
+        info.enable_reg_move_copy();
 
         types.int8 = id;
         
@@ -97,8 +103,14 @@ impl TypeContext {
                   2
               )
         );
-        info.enable_arithmetic_operators(id);
-        info.enable_neg_operator(id);
+        info.enable_arithmetic_operators(id,
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Add).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Sub).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Mul).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Div).make_compiler(),
+        );
+        info.enable_neg_operator(id, PrimitiveNegationCompiler::new(EffectiveType::Signed).make_compiler());
+        info.enable_reg_move_copy();
 
         types.int16 = id;
 
@@ -110,8 +122,14 @@ impl TypeContext {
                   4
               )
         );
-        info.enable_arithmetic_operators(id);
-        info.enable_neg_operator(id);
+        info.enable_arithmetic_operators(id,
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Add).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Sub).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Mul).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Div).make_compiler(),
+        );
+        info.enable_neg_operator(id, PrimitiveNegationCompiler::new(EffectiveType::Signed).make_compiler());
+        info.enable_reg_move_copy();
 
         types.int32 = id;
 
@@ -123,20 +141,26 @@ impl TypeContext {
                   8
               )
         );
-
-        info.enable_arithmetic_operators(id);
-        info.enable_neg_operator(id);
+        info.enable_arithmetic_operators(id,
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Add).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Sub).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Mul).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Signed, BinaryOperator::Div).make_compiler(),
+        );
+        info.enable_neg_operator(id, PrimitiveNegationCompiler::new(EffectiveType::Signed).make_compiler());
+        info.enable_reg_move_copy();
 
         types.int64 = id;
 
 
-        let (_, id) = types.add(Type::Typename("bool".into()),
+        let (info, id) = types.add(Type::Typename("bool".into()),
               TypeInfo::new(
                   TypeKind::Boolean,
                   1,
                   1
               )
         );
+        info.enable_reg_move_copy();
 
         types.bool = id;
 
@@ -148,9 +172,14 @@ impl TypeContext {
                   1
               )
         );
-
-        info.enable_arithmetic_operators(id);
-        types.uint8 = id;
+        info.enable_arithmetic_operators(id,
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Unsigned, BinaryOperator::Add).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Unsigned, BinaryOperator::Sub).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Unsigned, BinaryOperator::Mul).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Unsigned, BinaryOperator::Div).make_compiler(),
+        );
+        info.enable_neg_operator(id, PrimitiveNegationCompiler::new(EffectiveType::Unsigned).make_compiler());
+        info.enable_reg_move_copy();
 
 
         let (info, id) = types.add(Type::Typename("uint16".into()),
@@ -160,9 +189,14 @@ impl TypeContext {
                 2
             )
         );
-
-        info.enable_arithmetic_operators(id);
-        types.uint16 = id;
+        info.enable_arithmetic_operators(id,
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Unsigned, BinaryOperator::Add).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Unsigned, BinaryOperator::Sub).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Unsigned, BinaryOperator::Mul).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Unsigned, BinaryOperator::Div).make_compiler(),
+        );
+        info.enable_neg_operator(id, PrimitiveNegationCompiler::new(EffectiveType::Unsigned).make_compiler());
+        info.enable_reg_move_copy();
 
 
         let (info, id) = types.add(Type::Typename("uint32".into()),
@@ -172,9 +206,14 @@ impl TypeContext {
                 4
             )
         );
-
-        info.enable_arithmetic_operators(id);
-        types.uint32 = id;
+        info.enable_arithmetic_operators(id,
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Unsigned, BinaryOperator::Add).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Unsigned, BinaryOperator::Sub).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Unsigned, BinaryOperator::Mul).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Unsigned, BinaryOperator::Div).make_compiler(),
+        );
+        info.enable_neg_operator(id, PrimitiveNegationCompiler::new(EffectiveType::Unsigned).make_compiler());
+        info.enable_reg_move_copy();
 
 
         let (info, id) = types.add(Type::Typename("uint64".into()),
@@ -184,9 +223,14 @@ impl TypeContext {
                   8
               )
         );
-
-        info.enable_arithmetic_operators(id);
-        types.uint64 = id;
+        info.enable_arithmetic_operators(id,
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Unsigned, BinaryOperator::Add).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Unsigned, BinaryOperator::Sub).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Unsigned, BinaryOperator::Mul).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::Unsigned, BinaryOperator::Div).make_compiler(),
+        );
+        info.enable_neg_operator(id, PrimitiveNegationCompiler::new(EffectiveType::Unsigned).make_compiler());
+        info.enable_reg_move_copy();
 
 
         let (info, id) = types.add(Type::Typename("float32".into()),
@@ -196,9 +240,15 @@ impl TypeContext {
                   4
               )
         );
+        info.enable_arithmetic_operators(id,
+                                         PrimitiveBinOpCompiler::new(EffectiveType::F32, BinaryOperator::Add).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::F32, BinaryOperator::Sub).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::F32, BinaryOperator::Mul).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::F32, BinaryOperator::Div).make_compiler(),
+        );
+        info.enable_neg_operator(id, PrimitiveNegationCompiler::new(EffectiveType::F32).make_compiler());
+        info.enable_reg_move_copy();
 
-        info.enable_arithmetic_operators(id);
-        info.enable_neg_operator(id);
         types.float32 = id;
 
 
@@ -209,21 +259,16 @@ impl TypeContext {
                   8
               )
         );
-
-        info.enable_arithmetic_operators(id);
-        info.enable_neg_operator(id);
+        info.enable_arithmetic_operators(id,
+                                         PrimitiveBinOpCompiler::new(EffectiveType::F64, BinaryOperator::Add).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::F64, BinaryOperator::Sub).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::F64, BinaryOperator::Mul).make_compiler(),
+                                         PrimitiveBinOpCompiler::new(EffectiveType::F64, BinaryOperator::Div).make_compiler(),
+        );
+        info.enable_neg_operator(id, PrimitiveNegationCompiler::new(EffectiveType::F64).make_compiler());
+        info.enable_reg_move_copy();
 
         types.float64 = id;
-
-        let i8 = types.int8;
-        let i16 = types.int16;
-        let i32 = types.int32;
-        let i64 = types.int64;
-        
-        let u8 = types. uint8;
-        let u16 = types.uint16;
-        let u32 = types.uint32;
-        let u64 = types.uint64;
         
         types
     }

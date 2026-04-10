@@ -1,21 +1,27 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Debug;
 use std::mem;
+use std::process::abort;
 use crate::common::source_owner::SourceOwner;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::lexer::token::{StatementToken, Token, TokenType};
 use crate::lexer::tokenizer::Tokens;
 pub use compile_message::CompileMessage;
+use lme::desc::LME;
 
 pub mod modules;
 pub mod compile_message;
+pub mod function_compiler;
+pub mod expression_compiler;
 
 use modules::*;
 use crate::ast::Item;
 use crate::ast::statements::vardecl::VarDecl;
 use crate::ast::structure::lstruct;
 use crate::ast::ty::Type;
+use crate::codegen::exec_builder::ExecBuilder;
+use crate::compiler::function_compiler::compile_function;
 use crate::typed_ast::ast::items::function::FunctionSignature;
 use crate::typed_ast::ast::statements::vardecl::TypedVarDecl;
 use crate::typed_ast::typing::scope::AvailableContext;
@@ -149,6 +155,26 @@ impl Compiler {
 
         //return ownership
         self.untyped_modules = modules;
+    }
+
+    pub fn compile(&mut self) -> anyhow::Result<LME> {
+        
+        let modules = mem::take(&mut self.typed_modules);
+        
+        let mut builder = ExecBuilder::new();
+
+        for (_, m) in modules {
+            for (sig, f) in &m.functions {
+                compile_function(self, &mut builder, &sig.clone(), f.clone())?;
+            }
+        }
+        
+        if self.raise_compile_errors(true) {
+            abort();
+        }
+
+
+        builder.build()
     }
     
     pub fn get_structure(&mut self, name: &String) -> Option<(&mut StructInfo, StructId)> {
