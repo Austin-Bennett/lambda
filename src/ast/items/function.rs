@@ -22,19 +22,7 @@ pub struct Function {
     pub ty: Option<Type>, //None for void
 }
 
-impl Function {
-    
-    //converts this function into its
-    //typename, basically its signature
-    pub fn to_typename(&self) -> String {
-        
-        format!("{}({})", self.name, self.parameters
-            .iter()
-            .map(|v| format!("{:?}", v.data.ty))
-            .collect::<Vec<String>>()
-            .join(", "))
-    }
-}
+
 
 impl Debug for Function {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {

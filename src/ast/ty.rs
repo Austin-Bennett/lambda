@@ -32,19 +32,11 @@ impl Type {
             Type::Reference(_) => Some(TypeContext::SIZE_POINTER),
             Type::Pointer(_) => Some(TypeContext::SIZE_POINTER),
             Type::Slice(_) => Some(TypeContext::SIZE_POINTER * 2),
-            Type::Array { .. } => None
+            Type::Array { .. } => None,
         }
     }
     
-    pub fn try_get_align(&self) -> Option<usize> {
-        match self {
-            Type::Typename(_) => None,
-            Type::Reference(_) => Some(TypeContext::SIZE_POINTER),
-            Type::Pointer(_) => Some(TypeContext::SIZE_POINTER),
-            Type::Slice(_) => Some(TypeContext::SIZE_POINTER),
-            Type::Array { .. } => None
-        }
-    }
+    
 }
 
 

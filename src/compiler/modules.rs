@@ -56,20 +56,20 @@ impl LModule {
 
 pub struct LTypedModule {
     pub smap: SourceMap,
-    pub functions: HashMap<FunctionSignature, Function>,
+    pub functions: Vec<Function>,
 }
 
 impl LTypedModule {
     pub fn from_ast(module: &LModule, compiler: &mut Compiler, context: &mut AvailableContext) -> Self {
 
 
-        let mut functions = HashMap::new();
+        let mut functions = Vec::new();
 
         //structures get managed by the compiler as we need them, so we only care about functions
         for item in &module.ast {
             if let ast::Item::Func(function) = item {
-                let Some((sig, func)) = Function::from_ast(function, compiler, context) else { continue; };
-                functions.insert(sig, func);
+                let Some(func) = Function::from_ast(function, compiler, context) else { continue; };
+                functions.push(func);
             }
         }
 

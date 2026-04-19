@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Write};
+use inkwell::types::{AnyType, AnyTypeEnum, BasicTypeEnum, StructType};
+use inkwell::values::BasicValueEnum;
 use crate::common::utils::modulepath::ModulePath;
+use crate::compiler::Compiler;
+use crate::lexer::literal::IntegerLiteral;
 use crate::typed_ast::typing::operator::OperatorOverloads;
 
 pub type TypeId = u32;
@@ -11,8 +15,6 @@ pub type StructId = u32;
 pub struct StructMember {
     pub name: String,
     pub ty: TypeId,
-    pub size: usize, //for quick lookup
-    pub offset: usize,
 }
 
 #[derive(Clone)]
@@ -20,37 +22,43 @@ pub struct StructInfo {
     pub name: String,
     pub type_id: TypeId,
     pub members: Vec<StructMember>,
-    pub size: usize,
-    pub padding: usize,
-    pub align: usize,
+    pub llvm_struct: StructType<'static>,
 }
 
 pub struct TypeInfo {
     pub kind: TypeKind,
     pub size: usize,
-    pub align: usize,
 
     pub ops: OperatorOverloads,
+
+    pub llvm_type: AnyTypeEnum<'static>
 }
 
 impl TypeInfo {
-    pub fn new(kind: TypeKind, size: usize, align: usize) -> Self {
+    pub fn new(kind: TypeKind, size: usize, llvm_type: AnyTypeEnum<'static>) -> Self {
         Self{
             kind,
             size,
-            align,
             ops: OperatorOverloads::new(),
+            llvm_type,
         }
+    }
+
+    pub fn enable_from_int_literal(&mut self, width: u32, signed: bool) {
+        self.ops.from_int_literal = Some(
+            Box::new(
+                move |compiler: &Compiler, info: &TypeInfo, literal: IntegerLiteral| -> BasicValueEnum {
+                    compiler.llvm_context.custom_width_int_type(width).const_int(literal.as_u64_lossy(), signed).into()
+                }
+            )
+        )
     }
 
     pub fn enable_neg_operator(&mut self, self_id: TypeId) {
         self.ops.neg = Some(self_id)
     }
 
-
-
-    pub fn enable_arithmetic_operators(&mut self, self_id: TypeId
-    ) {
+    pub fn enable_arithmetic_operators(&mut self, self_id: TypeId) {
         self.ops.add.insert(self_id, self_id);
         self.ops.sub.insert(self_id, self_id);
         self.ops.mul.insert(self_id, self_id);
@@ -75,18 +83,10 @@ macro_rules! enable_operators_with {
 #[derive(Clone)]
 pub enum TypeKind {
     Infer, //used for integer literals and such
-    Int8,
-    Int16,
-    Int32,
-    Int64,
+    Int(u32),
+    UInt(u32),
 
-    UInt8,
-    UInt16,
-    UInt32,
-    UInt64,
-
-    Float32,
-    Float64,
+    Float(u32),
 
     Boolean,
 
@@ -105,16 +105,9 @@ impl Debug for TypeKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             TypeKind::Infer => f.write_str("unknown"),
-            TypeKind::Int8 => f.write_str("int8"),
-            TypeKind::Int16 => f.write_str("int16"),
-            TypeKind::Int32 => f.write_str("int32"),
-            TypeKind::Int64 => f.write_str("int64"),
-            TypeKind::UInt8 => f.write_str("uint8"),
-            TypeKind::UInt16 => f.write_str("uint16"),
-            TypeKind::UInt32 => f.write_str("uint32"),
-            TypeKind::UInt64 => f.write_str("uint64"),
-            TypeKind::Float32 => f.write_str("float32"),
-            TypeKind::Float64 => f.write_str("float64"),
+            TypeKind::Int(w) => write!(f, "int{}", w),
+            TypeKind::UInt(w) => write!(f, "uint{}", w),
+            TypeKind::Float(w) => write!(f, "float{}", w),
             TypeKind::Boolean => f.write_str("bool"),
             TypeKind::None => f.write_str("none"),
 

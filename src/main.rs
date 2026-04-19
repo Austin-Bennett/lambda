@@ -7,6 +7,7 @@ use anyhow::Result;
 use clap::Parser;
 use crate::ast::ty::Type;
 use crate::common::source_owner::{SourceDescriptor, SourceOwner};
+use crate::common::utils::runtime_static::RuntimeStatic;
 use crate::compiler::Compiler;
 use crate::lexer::token::{FeatureToken, TokenType};
 
@@ -17,7 +18,6 @@ pub mod ast;
 pub mod tests;
 pub mod typed_ast;
 pub mod consteval;
-pub mod codegen;
 
 #[derive(Parser)]
 pub struct Arguments {
@@ -27,13 +27,17 @@ pub struct Arguments {
 }
 
 
+
+
 fn main() -> Result<()> {
     #[allow(unused_mut)]
     let mut args = Arguments::parse();
 
-
-
-    let mut compiler = Compiler::new();
+    
+    
+    
+    let context = RuntimeStatic::new(inkwell::context::Context::create());
+    let mut compiler = Compiler::new(RuntimeStatic::static_ref(&context));
 
     for file in &args.files {
         match fs::read_to_string(file) {
@@ -79,8 +83,8 @@ fn main() -> Result<()> {
     for (modp, m) in compiler.get_typed_modules() {
         println!("MODULE: [{}]:", modp);
 
-        for (sig, f) in &m.functions {
-            println!("{} {}", sig.to_string(&compiler.type_context), f.to_string(&compiler.type_context));
+        for f in &m.functions {
+            println!("{} {}", f.signature.to_string(&compiler.type_context), f.to_string(&compiler.type_context));
         }
         println!();
     }

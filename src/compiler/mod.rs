@@ -1,27 +1,26 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Debug;
 use std::mem;
+use std::ops::Deref;
 use std::process::abort;
+use inkwell::AddressSpace;
+use inkwell::types::{ArrayType, BasicType, BasicTypeEnum};
 use crate::common::source_owner::SourceOwner;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::lexer::token::{StatementToken, Token, TokenType};
 use crate::lexer::tokenizer::Tokens;
 pub use compile_message::CompileMessage;
-use lme::desc::LME;
 
 pub mod modules;
 pub mod compile_message;
-pub mod function_compiler;
-pub mod expression_compiler;
+pub mod codegen;
 
 use modules::*;
 use crate::ast::Item;
 use crate::ast::statements::vardecl::VarDecl;
 use crate::ast::structure::lstruct;
 use crate::ast::ty::Type;
-use crate::codegen::exec_builder::ExecBuilder;
-use crate::compiler::function_compiler::compile_function;
 use crate::typed_ast::ast::items::function::FunctionSignature;
 use crate::typed_ast::ast::statements::vardecl::TypedVarDecl;
 use crate::typed_ast::typing::scope::AvailableContext;
@@ -49,6 +48,8 @@ pub struct Compiler {
 
     _findset: HashSet<String>,
 
+
+    pub llvm_context: &'static inkwell::context::Context,
     pub type_context: TypeContext,
 }
 
@@ -56,14 +57,15 @@ pub struct Compiler {
 
 
 impl Compiler {
-    pub fn new() -> Self {
+    pub fn new(llvm_context: &'static inkwell::context::Context) -> Self {
         Self{
             errors:          Vec::new(),
             warnings:        Vec::new(),
             source_map:      HashMap::new(),
             untyped_modules: HashMap::new(),
             typed_modules:   HashMap::new(),
-            type_context:    TypeContext::new(),
+            type_context:    TypeContext::new(llvm_context),
+            llvm_context,
             _findset:        HashSet::new(),
         }
     }
@@ -90,7 +92,7 @@ impl Compiler {
                     //create its signature
                     let ret = match &func.data.ty {
                         Some(ty) => {
-                            let Some((_, id)) = self.resolve_type(ty) else {
+                            let Some(id) = self.resolve_type(ty) else {
 
                                 self.emit_compile_message(
                                     CompileMessage::new(
@@ -111,7 +113,7 @@ impl Compiler {
                     let mut params = Vec::new();
 
                     for p in &func.data.parameters {
-                        let (_, id) = match self.resolve_type(&p.data.ty) {
+                        let id = match self.resolve_type(&p.data.ty) {
                             Some(v ) => v,
                             None => {
                                 self.emit_compile_message(
@@ -129,18 +131,17 @@ impl Compiler {
                         params.push(id);
                     }
 
-                    //register this type
-                    //this is similar to what rust does as well, they did it to help
-                    //the optimization process, I did it because im lazy
-                    let (info, id) = self.type_context.add(
-                        Type::Typename(func.data.to_typename()),
-                        TypeInfo::new(
-                            TypeKind::Function { ret, params: params.clone() },
-                            TypeContext::SIZE_POINTER, TypeContext::SIZE_POINTER //size of a pointer because it is a pointer...?
-                        )
-                    );
                     
-                    info.ops.call.insert(params, ret);
+                    //get this functions type
+                    let id = self.type_context.add_functional_type(
+                        
+                        &FunctionSignature{
+                            name: func.data.name.clone(),
+                            ret,
+                            params
+                        }
+                    );
+
                     
                     context.declare_identifier_in_scope(func.data.name.clone(), id);
                 }
@@ -157,27 +158,9 @@ impl Compiler {
         self.untyped_modules = modules;
     }
 
-    pub fn compile(&mut self) -> anyhow::Result<LME> {
-        
-        let modules = mem::take(&mut self.typed_modules);
-        
-        let mut builder = ExecBuilder::new();
 
-        for (_, m) in modules {
-            for (sig, f) in &m.functions {
-                compile_function(self, &mut builder, &sig.clone(), f.clone())?;
-            }
-        }
-        
-        if self.raise_compile_errors(true) {
-            abort();
-        }
-
-
-        builder.build()
-    }
     
-    pub fn get_structure(&mut self, name: &String) -> Option<(&mut StructInfo, StructId)> {
+    pub fn get_structure(&mut self, name: &String) -> Option<StructId> {
         if let Some(s) = unsafe { &mut * (&raw mut self.type_context) }.get_struct(name) {
             Some(s)
         } else if self._findset.contains(name) {
@@ -200,23 +183,22 @@ impl Compiler {
             //we have to clone to obey the borrow checker
             let Some(structure) = res.cloned() else { return None; };
 
-            let Some(structure) = self.create_structure_from_ast(&structure.data, &structure.smap) else { return None; };
+            let Some(structure) = self.create_structure_from_ast(&structure.data, &structure.smap) else {
+                return None;
+            };
+            let res = self.type_context.add_struct(structure.name.clone(), structure);
 
-
-            Some(self.type_context.add_struct(structure.name.clone(), structure))
+            Some(res)
         }
     }
 
     pub fn create_structure_from_ast(&mut self, ast: &lstruct::Structure, smap: &SourceMap) -> Option<StructInfo> {
 
-        let mut align = 1;
-        let mut raw_offset = 0;
         let mut members = Vec::new();
-        let mut raw_size = 0;
 
         for VarDecl{ name, ty, value: _ } in &ast.members {
             //get the type
-            let Some((info, id)) = self.resolve_type(ty) else {
+            let Some(id) = self.resolve_type(ty) else {
                 self.emit_compile_message(
                     CompileMessage::new(
                         smap.clone(),
@@ -227,62 +209,45 @@ impl Compiler {
                 return None;
             };
 
-            raw_size += info.size;
-
-            align = align.max(info.align);
-            members.push(
-                StructMember{
-                    name: name.clone(),
-                    size: info.size,
-                    ty: id,
-                    offset: raw_offset,
-                }
-            );
-
-            raw_offset += info.size;
+            members.push(StructMember{
+                name: name.clone(),
+                ty: id,
+            });
         }
 
 
-        let mut accum_offset = 0;
-        let mut size = 0;
+        let struct_member_types: Vec<BasicTypeEnum> = members.iter()
+            .map(
+                |v: &StructMember|
+                    self.type_context.get_by_id(v.ty).unwrap().llvm_type.try_into().unwrap()
+            )
+            .collect();
 
-        //align members
-        for m in &mut members {
-            if (m.offset + accum_offset) % align != 0 {
-                //we need to increase this members offset
-                accum_offset += align - ((m.offset + accum_offset) % align);
-            }
-            m.offset += accum_offset;
-            size = m.offset + m.size;
-        }
 
         Some(StructInfo{
             name: ast.name.clone(),
             members,
-            size,
-            padding: size - raw_size,
-            align,
             type_id: 0, //to be set
+            llvm_struct: self.llvm_context.struct_type(&struct_member_types, false)
         })
     }
 
-    pub fn resolve_typename(&mut self, path: &String) -> Option<(&mut TypeInfo, TypeId)> {
+    pub fn resolve_typename(&mut self, path: &String) -> Option<TypeId> {
         if let Some(res) = unsafe { &mut *(&raw mut self.type_context) }.resolve_type(&Type::Typename(path.clone())) {
             Some(res)
         } else {
             //look for a structure in any of the modules
             self._findset.clear();
-            if let Some((info, id)) = self.get_structure(path) {
-                let tid = info.type_id;
+            if let Some(id) = self.get_structure(path) {
 
-                Some((self.type_context.get_by_id_mut(tid)?, tid))
+                self.type_context.get_struct_type(id)
             } else {
                 None
             }
         }
     }
 
-    pub fn resolve_type(&mut self, ty: &Type) -> Option<(&mut TypeInfo, TypeId)> {
+    pub fn resolve_type(&mut self, ty: &Type) -> Option<TypeId> {
         if let Some(res) = unsafe{ (&mut *( &raw mut self.type_context )) .resolve_type(ty) } {
             Some(res)
         } else {
@@ -295,12 +260,15 @@ impl Compiler {
                     }
                 }
                 Type::Reference(t) => {
-                    if let Some((ti, id)) = self.resolve_type(t) {
+                    if let Some(id) = self.resolve_type(t) {
                         Some(self.type_context.add(
                             Type::Reference(t.clone()),
                             TypeInfo::new(
                                 TypeKind::Reference(id),
-                                TypeContext::SIZE_POINTER, TypeContext::SIZE_POINTER
+                                TypeContext::SIZE_POINTER,
+                                self.llvm_context
+                                    .ptr_type(AddressSpace::try_from(0u32).unwrap())
+                                    .into()
                             )
                         ))
                     } else {
@@ -308,12 +276,15 @@ impl Compiler {
                     }
                 }
                 Type::Pointer(t) => {
-                    if let Some((ti, id)) = self.resolve_type(t) {
+                    if let Some(id) = self.resolve_type(t) {
                         Some(self.type_context.add(
                             Type::Pointer(t.clone()),
                             TypeInfo::new(
                                 TypeKind::Pointer(id),
-                                TypeContext::SIZE_POINTER, TypeContext::SIZE_POINTER
+                                TypeContext::SIZE_POINTER,
+                                self.llvm_context
+                                    .ptr_type(AddressSpace::try_from(0u32).unwrap())
+                                    .into()
                             )
                         ))
                     } else {
@@ -321,12 +292,15 @@ impl Compiler {
                     }
                 }
                 Type::Slice(t) => {
-                    if let Some((ti, id)) = self.resolve_type(t) {
+                    if let Some(id) = self.resolve_type(t) {
+                        let slice_struct =
+                            self.type_context.create_slice_llvm_structure().into();
                         Some(self.type_context.add(
                             Type::Slice(t.clone()),
                             TypeInfo::new(
                                 TypeKind::Slice(id),
-                                TypeContext::SIZE_POINTER * 2, TypeContext::SIZE_POINTER
+                                TypeContext::SIZE_POINTER * 2,
+                                slice_struct
                             )
                         ))
                     } else {
@@ -334,14 +308,19 @@ impl Compiler {
                     }
                 }
                 Type::Array { ty: t, size } => {
-                    if let Some((ti, id)) = self.resolve_type(t) {
-                        let r = ty;
-                        let ray_size = ti.size * size;
-                        let align = ti.align;
+                    if let Some(id) = self.resolve_type(t) {
+                        let ray_typ;
+                        let ray_size;
 
-                        let res = self.type_context.add(r.clone(), TypeInfo::new(
+                        let ti = &self.type_context.types[id as usize];
+                        ray_size = ti.size * size;
+                        let typ: BasicTypeEnum = ti.llvm_type.try_into().unwrap();
+                        ray_typ = typ.array_type(*size as u32);
+
+
+                        let res = self.type_context.add(t.deref().clone(), TypeInfo::new(
                             TypeKind::Array { ty: id, size: *size },
-                            ray_size, align
+                            ray_size, ray_typ.into()
                         ));
 
                         Some(res)

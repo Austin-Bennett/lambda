@@ -29,6 +29,7 @@ impl FunctionSignature {
 pub struct Function {
     //we might need it, not sure right now, and id like to avoid unnecessary clones
     //sig: FunctionSignature,
+    pub signature: FunctionSignature,
     pub code: TypedBlockSyntax,
     pub params: Vec<String>,
 }
@@ -57,12 +58,12 @@ impl Function {
 
 
 impl Function {
-    pub fn from_ast(func: &FunctionSyntax, compiler: &mut Compiler, context: &mut AvailableContext) -> Option<(FunctionSignature, Self)> {
+    pub fn from_ast(func: &FunctionSyntax, compiler: &mut Compiler, context: &mut AvailableContext) -> Option<Self> {
         context.push_new_scope();
 
         let ret = match &func.data.ty {
             Some(ty) => {
-                let Some((_, id)) = compiler.resolve_type(ty) else {
+                let Some(id) = compiler.resolve_type(ty) else {
 
                     compiler.emit_compile_message(
                         CompileMessage::new(
@@ -97,13 +98,13 @@ impl Function {
         
 
         let res = Some(
-            (
-                sig,
-                Self{
-                    code: TypedBlockSyntax::from_ast(&func.data.body, compiler, context)?,
-                    params: params.iter().map(|v| v.name.clone()).collect()
-                }
-            )
+
+            Self{
+                code: TypedBlockSyntax::from_ast(&func.data.body, compiler, context)?,
+                params: params.iter().map(|v| v.name.clone()).collect(),
+                signature: sig,
+            }
+
         );
 
         context.pop_last_scope();

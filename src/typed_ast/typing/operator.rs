@@ -1,14 +1,16 @@
 
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
-use crate::codegen::compilation_primitives::{BinaryMethodCompiler, MethodCompiler};
-use crate::typed_ast::typing::ty::TypeId;
+use inkwell::values::BasicValueEnum;
+use crate::compiler::Compiler;
+use crate::lexer::literal::IntegerLiteral;
+use crate::typed_ast::typing::ty::{TypeId, TypeInfo};
 
 //todo: figure out how were gonna compile ts
 
 
 
-
+pub type IntLiteralMaker = Box<dyn Fn(&Compiler, &TypeInfo, IntegerLiteral) -> BasicValueEnum<'static>>;
 
 
 //each operator overload maps its rhs (or call parameters) to its result type id
@@ -22,7 +24,7 @@ pub struct OperatorOverloads {
 
     //second is whether it is constructed directly on the stack or moved into RET
     pub copy: (),
-
+    pub from_int_literal: Option<IntLiteralMaker>,
     
     pub call: HashMap<Vec<TypeId>, TypeId>,
 
@@ -41,6 +43,7 @@ impl OperatorOverloads {
             div: HashMap::new(),
             
             copy: (),
+            from_int_literal: None,
             
             call: HashMap::new(),
 

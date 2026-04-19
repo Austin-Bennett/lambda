@@ -1,14 +1,12 @@
 use std::fs;
-use inkwell::debug_info::DWARFSourceLanguage::D;
-use lme::desc::LME;
+use inkwell::context::Context;
 use crate::ast::structure::StructureSyntax;
 #[cfg(test)]
 
 use crate::ast::ty::TypeSyntax;
 use crate::ast::Syntax;
-use crate::codegen::exec_builder::ExecBuilder;
-use crate::codegen::instructions::{Data, Instruction, EffectiveType, Register, Size};
 use crate::common::source_owner::{SourceDescriptor, SourceOwner};
+use crate::common::utils::runtime_static::RuntimeStatic;
 use crate::compiler::Compiler;
 use crate::lexer::token::TokenType;
 use crate::lexer::tokenizer::Tokens;
@@ -26,7 +24,8 @@ pub fn make_tokens(s: &str) -> Tokens {
 
 #[test]
 pub fn test_type_parse() {
-    let mut compiler = Compiler::new();
+    let context = RuntimeStatic::new(Context::create());
+    let mut compiler = Compiler::new(RuntimeStatic::static_ref(&context));
 
     let mut tokens = make_tokens("T&*[][N]").collect();
 
@@ -51,7 +50,8 @@ pub fn test_type_parse() {
 
 #[test]
 pub fn test_struct_make() {
-    let mut compiler = Compiler::new();
+    let llvm_context = RuntimeStatic::new(Context::create());
+    let mut compiler = Compiler::new(RuntimeStatic::static_ref(&llvm_context));
 
 
     let tokens = make_tokens("\
@@ -77,83 +77,7 @@ pub fn test_struct_make() {
     };
 
     println!("struct {}", s.name);
-    
-    println!("size: {}\npadding: {}\nalign: {}", s.size, s.padding, s.align);
-    
     for m in s.members {
-        println!("{} offset {}", m.name, m.offset);
+        println!("{}: {}", m.name, compiler.type_context.name_of(m.ty).unwrap())
     }
-}
-
-#[test]
-pub fn test_write_lme_format() {
-    let mut builder = ExecBuilder::new();
-
-    builder
-        .decl_label("fib".to_string())
-        .emit(Instruction::Push(Data::Register(Register::Bottom)))
-        .emit(Instruction::Move(Data::Register(Register::Stack), Register::Bottom))
-
-        .emit(Instruction::MvAux(Data::Value(1)))
-        .emit(Instruction::Leab(Data::Value((-24i64) as u64), Size::QWord))
-        .emit(Instruction::Cmp(EffectiveType::Unsigned))
-        .jump_le("fib_else")
-
-        .emit(Instruction::Sub(EffectiveType::Unsigned))
-        .emit(Instruction::Push(Data::Register(Register::Ret)))
-        .call("fib")
-        .emit(Instruction::PopN(Data::Value(1)))
-        .emit(Instruction::Push(Data::Register(Register::Ret)))
-        .emit(Instruction::Leab(Data::Value((-24i64) as u64), Size::QWord))
-        .emit(Instruction::MvAux(Data::Value(2)))
-        .emit(Instruction::Sub(EffectiveType::Unsigned))
-        .emit(Instruction::Push(Data::Register(Register::Ret)))
-        .call("fib")
-        .emit(Instruction::PopN(Data::Value(1)))
-        .emit(Instruction::Pop(Register::Aux))
-        .emit(Instruction::Add(EffectiveType::Unsigned))
-        .jump("fib_end")
-
-        .decl_label("fib_else")
-        .emit(Instruction::MvRet(Data::Value(1)))
-
-        .decl_label("fib_end")
-
-        .emit(Instruction::Pop(Register::Bottom))
-        .emit(Instruction::Return)
-        .decl_label("main".to_string())
-        .decl_entry()
-        .emit(Instruction::Push(Data::Value(2)))
-        .call("fib")
-        .emit(Instruction::PopN(Data::Value(1)))
-        .emit(Instruction::Return)
-    ;
-
-    // builder
-    //     .decl_label("main")
-    //     .decl_entry()
-    //     .emit(Instruction::MvRet(Data::Value(2)))
-    //     .emit(Instruction::MvAux(Data::Value(2)))
-    //     .emit(Instruction::Add(EffectiveType::Unsigned))
-    //     .emit(Instruction::Return);
-
-    let lme = builder.build().unwrap();
-    let bytes = lme.to_bytes().unwrap();
-
-    fs::write("test.lme", bytes).unwrap();
-}
-
-#[test]
-pub fn test_read_lme_format() {
-
-    let bytes = fs::read("test.lme").unwrap();
-
-    let mut lme = LME::from_memory(bytes).unwrap();
-
-    println!("{}", lme.code_entry);
-    for func in &lme.functions {
-        println!("{}: {}", func.name, func.loc);
-    }
-
-    println!("{:?}", lme.code);
 }

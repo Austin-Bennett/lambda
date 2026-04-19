@@ -17,7 +17,7 @@ pub struct TypedVarDecl {
 
 impl TypedVarDecl {
     pub fn from_ast(vd: &VarDeclSyntax, compiler: &mut Compiler, context: &mut AvailableContext) -> Option<Self> {
-        let (_, ty) = match compiler.resolve_type(&vd.data.ty) {
+        let ty = match compiler.resolve_type(&vd.data.ty) {
             Some(v) => v,
             None => {
                 compiler.emit_compile_message(
@@ -35,7 +35,7 @@ impl TypedVarDecl {
             Some(e) => {
                 let mut e = TypedExpr::from_ast(e, compiler, context)?;
 
-                let info = compiler.type_context.get_by_id(e.ty).unwrap();
+                let info = &compiler.type_context.types[e.ty as usize];
 
                 TypeInferencer::infer_unknown(&compiler.type_context, &mut e, ty);
 
