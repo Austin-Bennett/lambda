@@ -26,7 +26,7 @@ pub struct Arguments {
     #[arg(short, long, default_value = "a.out")]
     output: String,
 
-    #[arg(short, long, default_value = "false")]
+    #[arg(long, default_value = "false")]
     debug_ast: bool,
 
     /// Compile as a shared library (.so / .dll)
@@ -34,7 +34,7 @@ pub struct Arguments {
     shared: bool,
 
     /// Link against a shared library (e.g. -l pthread)
-    #[arg(short = 'l', value_name = "LIB", action = clap::ArgAction::Append)]
+    #[arg(short = 'l', long="link", value_name = "LIB", action = clap::ArgAction::Append)]
     libs: Vec<String>,
 
     /// Add a library search path (e.g. -L /usr/local/lib)
