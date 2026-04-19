@@ -98,6 +98,14 @@ pub fn eval_array_len_expr_uint(expr: &ExprSyntax, compiler: &mut Compiler) -> O
                 }
             }
         }
+        Expr::CastOp(_) => {
+            compiler.emit_compile_message(CompileMessage::new(
+                expr.smap.clone(),
+                "cast expressions are not allowed in constant expressions".into(),
+                CompileMessageType::Error,
+            ));
+            None
+        }
         Expr::CallOp(op) => {
             let caller = eval_array_len_expr_uint(&op.caller, compiler)?;
             if op.arguments.len() != 1 {

@@ -7,7 +7,7 @@ use crate::common::utils::outcome::Outcome;
 use crate::common::utils::progress::Progress;
 use crate::common::utils::Todo;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
-use crate::lexer::token::Token;
+use crate::lexer::token::{FeatureToken, Token, TokenType};
 use crate::typed_ast::ast::items::function::{Function, FunctionSignature};
 use crate::typed_ast::typing::scope::AvailableContext;
 
@@ -25,7 +25,10 @@ impl LModule {
         while !tokens.is_empty() {
 
             let Some(mut item) = ast::ItemSyntax::parse(&mut tokens, compiler) else {
-                if let Some(next) = tokens.pop_front() {
+                if let Some(Token{ typ: TokenType::Feature(FeatureToken::StatementEnd), smap: _ }) = tokens.get(0) {
+                    tokens.pop_front();
+                    continue;
+                } else if let Some(next) = tokens.pop_front() {
                     compiler.emit_compile_message(
                         CompileMessage::new(
                             next.smap,

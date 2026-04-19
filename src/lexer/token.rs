@@ -19,6 +19,8 @@ pub enum ExpressionToken {
     OpenBracket,
 
     CloseBracket,
+
+    AsKW,
 }
 
 impl ExpressionToken {
@@ -38,6 +40,7 @@ impl ExpressionToken {
 pub enum StatementToken {
     UseKW(String), //containing the module path
     StructKW,
+    ExternKW,
     FnKW,
     ReturnKW,
 }

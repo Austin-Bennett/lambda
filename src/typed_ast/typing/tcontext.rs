@@ -1,14 +1,13 @@
-use std::fmt::Write;
-use std::collections::HashMap;
-use inkwell::AddressSpace;
-use inkwell::types::{AnyType, AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, StructType};
-use crate::ast::structure::lstruct;
 use crate::ast::ty::Type;
-use crate::common::utils::modulepath::ModulePath;
 use crate::typed_ast::ast::items::function::FunctionSignature;
-use crate::typed_ast::ast::statements::expression::BinaryOperator;
-use crate::typed_ast::typing::operator::OperatorOverloads;
+use crate::typed_ast::typing::operator::{AssignmentMaker, BinaryOperatorMaker, ConversionMaker, OperatorOverloads, UnaryOperatorMaker};
+use inkwell::values::BasicValueEnum;
 use crate::typed_ast::typing::ty::{StructId, StructInfo, TypeId, TypeInfo, TypeKind};
+use inkwell::builder::Builder;
+use inkwell::types::{BasicType, BasicTypeEnum, StructType};
+use inkwell::AddressSpace;
+use std::collections::HashMap;
+use std::fmt::Write;
 
 pub struct TypeContext {
     pub llvm_context: &'static inkwell::context::Context,
@@ -20,7 +19,7 @@ pub struct TypeContext {
 
     pub none: TypeId,
     
-    pub infer: TypeId,
+    pub int_literal: TypeId,
 
     pub int8: TypeId,
     pub int16: TypeId,
@@ -58,7 +57,7 @@ impl TypeContext {
             structs: vec![],
             struct_lookup: Default::default(),
             none: 0,
-            infer: 0,
+            int_literal: 0,
             int8: 0,
             int16: 0,
             int32: 0,
@@ -80,9 +79,193 @@ impl TypeContext {
         types
     }
     
+    /// Auto-generate LLVM codegen callbacks for arithmetic (+, -, *, /) and negation
+    /// for the type identified by `id`.  The correct instruction family (integer vs float,
+    /// signed vs unsigned division) is selected from the type's `TypeKind`.
     fn enable_arithmetic_neg(&mut self, id: TypeId) {
-        self.types[id as usize].enable_arithmetic_operators(id);
-        self.types[id as usize].enable_neg_operator(id);
+        let kind = self.types[id as usize].kind.clone();
+
+        match kind {
+            // Signed integers and the compiler-internal int_literal type
+            TypeKind::Int(_) | TypeKind::IntLiteral => {
+                let add: BinaryOperatorMaker = Box::new(|b, l, r| {
+                    b.build_int_add(l.into_int_value(), r.into_int_value(), "iadd")
+                        .unwrap()
+                        .into()
+                });
+                let sub: BinaryOperatorMaker = Box::new(|b, l, r| {
+                    b.build_int_sub(l.into_int_value(), r.into_int_value(), "isub")
+                        .unwrap()
+                        .into()
+                });
+                let mul: BinaryOperatorMaker = Box::new(|b, l, r| {
+                    b.build_int_mul(l.into_int_value(), r.into_int_value(), "imul")
+                        .unwrap()
+                        .into()
+                });
+                let div: BinaryOperatorMaker = Box::new(|b, l, r| {
+                    b.build_int_signed_div(l.into_int_value(), r.into_int_value(), "idiv")
+                        .unwrap()
+                        .into()
+                });
+                let neg: UnaryOperatorMaker = Box::new(|b, v| {
+                    b.build_int_neg(v.into_int_value(), "ineg").unwrap().into()
+                });
+                self.types[id as usize].enable_arithmetic_operators(id, add, sub, mul, div);
+                self.types[id as usize].enable_neg_operator(id, neg);
+            }
+
+            // Unsigned integers – division is unsigned
+            TypeKind::UInt(_) => {
+                let add: BinaryOperatorMaker = Box::new(|b, l, r| {
+                    b.build_int_add(l.into_int_value(), r.into_int_value(), "uadd")
+                        .unwrap()
+                        .into()
+                });
+                let sub: BinaryOperatorMaker = Box::new(|b, l, r| {
+                    b.build_int_sub(l.into_int_value(), r.into_int_value(), "usub")
+                        .unwrap()
+                        .into()
+                });
+                let mul: BinaryOperatorMaker = Box::new(|b, l, r| {
+                    b.build_int_mul(l.into_int_value(), r.into_int_value(), "umul")
+                        .unwrap()
+                        .into()
+                });
+                let div: BinaryOperatorMaker = Box::new(|b, l, r| {
+                    b.build_int_unsigned_div(l.into_int_value(), r.into_int_value(), "udiv")
+                        .unwrap()
+                        .into()
+                });
+                let neg: UnaryOperatorMaker = Box::new(|b, v| {
+                    b.build_int_neg(v.into_int_value(), "uneg").unwrap().into()
+                });
+                self.types[id as usize].enable_arithmetic_operators(id, add, sub, mul, div);
+                self.types[id as usize].enable_neg_operator(id, neg);
+            }
+
+            // Floating-point types
+            TypeKind::Float(_) => {
+                let add: BinaryOperatorMaker = Box::new(|b, l, r| {
+                    b.build_float_add(l.into_float_value(), r.into_float_value(), "fadd")
+                        .unwrap()
+                        .into()
+                });
+                let sub: BinaryOperatorMaker = Box::new(|b, l, r| {
+                    b.build_float_sub(l.into_float_value(), r.into_float_value(), "fsub")
+                        .unwrap()
+                        .into()
+                });
+                let mul: BinaryOperatorMaker = Box::new(|b, l, r| {
+                    b.build_float_mul(l.into_float_value(), r.into_float_value(), "fmul")
+                        .unwrap()
+                        .into()
+                });
+                let div: BinaryOperatorMaker = Box::new(|b, l, r| {
+                    b.build_float_div(l.into_float_value(), r.into_float_value(), "fdiv")
+                        .unwrap()
+                        .into()
+                });
+                let neg: UnaryOperatorMaker = Box::new(|b, v| {
+                    b.build_float_neg(v.into_float_value(), "fneg").unwrap().into()
+                });
+                self.types[id as usize].enable_arithmetic_operators(id, add, sub, mul, div);
+                self.types[id as usize].enable_neg_operator(id, neg);
+            }
+
+            _ => {
+                // Non-numeric types that somehow ended up here – no-op.
+            }
+        }
+    }
+
+    pub fn enable_assignment(&mut self, id: TypeId) {
+        let maker: AssignmentMaker = Box::new(|b, ptr, val| {
+            b.build_store(ptr, BasicValueEnum::try_from(val).unwrap()).unwrap();
+        });
+        self.types[id as usize].ops.assign.insert(id, maker);
+    }
+
+    fn enable_conversions_to(&mut self, from_id: TypeId, to_id: TypeId) {
+        let from_kind = self.types[from_id as usize].kind.clone();
+        let to_kind   = self.types[to_id as usize].kind.clone();
+        let to_llvm: BasicTypeEnum = match self.types[to_id as usize].llvm_type.try_into() {
+            Ok(t) => t,
+            Err(_) => return,
+        };
+
+        let maker: ConversionMaker = match (&from_kind, &to_kind) {
+            (
+                TypeKind::Int(_) | TypeKind::UInt(_) | TypeKind::IntLiteral,
+                TypeKind::Int(_) | TypeKind::UInt(_),
+            ) => {
+                let src_bits: u32 = match &from_kind {
+                    TypeKind::Int(w) | TypeKind::UInt(w) => *w,
+                    TypeKind::IntLiteral => 32,
+                    _ => unreachable!(),
+                };
+                let dst_bits: u32 = match &to_kind {
+                    TypeKind::Int(w) | TypeKind::UInt(w) => *w,
+                    _ => unreachable!(),
+                };
+                let dst_int_ty = to_llvm.into_int_type();
+                if dst_bits > src_bits {
+                    match &from_kind {
+                        TypeKind::UInt(_) => Box::new(move |b: &Builder<'static>, v: inkwell::values::AnyValueEnum<'static>| {
+                            b.build_int_z_extend(v.into_int_value(), dst_int_ty, "zext").unwrap().into()
+                        }),
+                        _ => Box::new(move |b: &Builder<'static>, v: inkwell::values::AnyValueEnum<'static>| {
+                            b.build_int_s_extend(v.into_int_value(), dst_int_ty, "sext").unwrap().into()
+                        }),
+                    }
+                } else if dst_bits < src_bits {
+                    Box::new(move |b: &Builder<'static>, v: inkwell::values::AnyValueEnum<'static>| {
+                        b.build_int_truncate(v.into_int_value(), dst_int_ty, "trunc").unwrap().into()
+                    })
+                } else {
+                    Box::new(|_b, v| v) // same width, different sign — no-op in LLVM
+                }
+            }
+            (TypeKind::Int(_) | TypeKind::IntLiteral, TypeKind::Float(_)) => {
+                let dst_float_ty = to_llvm.into_float_type();
+                Box::new(move |b: &Builder<'static>, v: inkwell::values::AnyValueEnum<'static>| {
+                    b.build_signed_int_to_float(v.into_int_value(), dst_float_ty, "sitofp").unwrap().into()
+                })
+            }
+            (TypeKind::UInt(_), TypeKind::Float(_)) => {
+                let dst_float_ty = to_llvm.into_float_type();
+                Box::new(move |b: &Builder<'static>, v: inkwell::values::AnyValueEnum<'static>| {
+                    b.build_unsigned_int_to_float(v.into_int_value(), dst_float_ty, "uitofp").unwrap().into()
+                })
+            }
+            (TypeKind::Float(_), TypeKind::Int(_)) => {
+                let dst_int_ty = to_llvm.into_int_type();
+                Box::new(move |b: &Builder<'static>, v: inkwell::values::AnyValueEnum<'static>| {
+                    b.build_float_to_signed_int(v.into_float_value(), dst_int_ty, "fptosi").unwrap().into()
+                })
+            }
+            (TypeKind::Float(_), TypeKind::UInt(_)) => {
+                let dst_int_ty = to_llvm.into_int_type();
+                Box::new(move |b: &Builder<'static>, v: inkwell::values::AnyValueEnum<'static>| {
+                    b.build_float_to_unsigned_int(v.into_float_value(), dst_int_ty, "fptoui").unwrap().into()
+                })
+            }
+            (TypeKind::Float(sw), TypeKind::Float(dw)) => {
+                let dst_float_ty = to_llvm.into_float_type();
+                if dw > sw {
+                    Box::new(move |b: &Builder<'static>, v: inkwell::values::AnyValueEnum<'static>| {
+                        b.build_float_ext(v.into_float_value(), dst_float_ty, "fpext").unwrap().into()
+                    })
+                } else {
+                    Box::new(move |b: &Builder<'static>, v: inkwell::values::AnyValueEnum<'static>| {
+                        b.build_float_trunc(v.into_float_value(), dst_float_ty, "fptrunc").unwrap().into()
+                    })
+                }
+            }
+            _ => return,
+        };
+
+        self.types[from_id as usize].ops.conversion_ops.insert(to_id, maker);
     }
 
     fn setup_types(&mut self) {
@@ -98,14 +281,15 @@ impl TypeContext {
         self.none = id;
         
 
-        let id = self.add(Type::Typename("#infer".into()),
+        let id = self.add(Type::Typename("#int_literal".into()),
               TypeInfo::new(
-                  TypeKind::Infer,
-                  0, self.llvm_context.void_type().into()
+                  TypeKind::IntLiteral,
+                  4, self.llvm_context.i32_type().into()
               )
         );
-        self.infer = id;
+        self.int_literal = id;
         self.enable_arithmetic_neg(id);
+
         
         
         //SIGNED INTEGERS
@@ -115,7 +299,7 @@ impl TypeContext {
                           TypeInfo::new(
                               TypeKind::Int(8),
                               1, self.llvm_context.i8_type().into()
-                          )
+                          ).enable_from_int_literal(8, true)
         );
         self.int8 = id;
         self.enable_arithmetic_neg(id);
@@ -124,7 +308,7 @@ impl TypeContext {
                           TypeInfo::new(
                               TypeKind::Int(16),
                               2, self.llvm_context.i16_type().into()
-                          )
+                          ).enable_from_int_literal(16, true)
         );
         self.int16 = id;
         self.enable_arithmetic_neg(id);
@@ -133,7 +317,7 @@ impl TypeContext {
                           TypeInfo::new(
                               TypeKind::Int(32),
                               4, self.llvm_context.i32_type().into()
-                          )
+                          ).enable_from_int_literal(32, true)
         );
         self.int32 = id;
         self.enable_arithmetic_neg(id);
@@ -142,7 +326,7 @@ impl TypeContext {
                           TypeInfo::new(
                               TypeKind::Int(64),
                               8, self.llvm_context.i64_type().into()
-                          )
+                          ).enable_from_int_literal(64, true)
         );
         self.int64 = id;
         self.enable_arithmetic_neg(id);
@@ -155,37 +339,49 @@ impl TypeContext {
                           TypeInfo::new(
                               TypeKind::UInt(8),
                               1, self.llvm_context.i8_type().into()
-                          )
+                          ).enable_from_int_literal(8, false)
         );
         self.uint8 = id;
         self.enable_arithmetic_neg(id);
 
-        let id = self.add(Type::Typename("int16".into()),
+        let id = self.add(Type::Typename("uint16".into()),
                           TypeInfo::new(
                               TypeKind::UInt(16),
                               2, self.llvm_context.i16_type().into()
-                          )
+                          ).enable_from_int_literal(16, false)
         );
         self.uint16 = id;
         self.enable_arithmetic_neg(id);
 
-        let id = self.add(Type::Typename("int32".into()),
+        let id = self.add(Type::Typename("uint32".into()),
                           TypeInfo::new(
                               TypeKind::UInt(32),
                               4, self.llvm_context.i32_type().into()
-                          )
+                          ).enable_from_int_literal(32, false)
         );
         self.uint32 = id;
         self.enable_arithmetic_neg(id);
 
-        let id = self.add(Type::Typename("int64".into()),
+        let id = self.add(Type::Typename("uint64".into()),
                           TypeInfo::new(
                               TypeKind::UInt(64),
                               8, self.llvm_context.i64_type().into()
-                          )
+                          ).enable_from_int_literal(64, false)
         );
+
+
         self.uint64 = id;
         self.enable_arithmetic_neg(id);
+
+        let id = self.add(Type::Typename("usize".into()),
+        TypeInfo::new(
+            TypeKind::UInt(Self::SIZE_POINTER as u32 * 8),
+            Self::SIZE_POINTER, self.llvm_context.custom_width_int_type(Self::SIZE_POINTER as u32 * 8).into(),
+        ).enable_from_int_literal(Self::SIZE_POINTER as u32 * 8, false));
+
+        self.usize = id;
+        self.enable_arithmetic_neg(id);
+
 
         let id = self.add(Type::Typename("bool".into()),
                           TypeInfo::new(
@@ -217,6 +413,21 @@ impl TypeContext {
         self.float64 = id;
         self.enable_arithmetic_neg(id);
 
+        let numeric = [
+            self.int_literal,
+            self.int8, self.int16, self.int32, self.int64,
+            self.uint8, self.uint16, self.uint32, self.uint64, self.usize,
+            self.float32, self.float64,
+        ];
+        for &from_id in &numeric {
+            for &to_id in &numeric {
+                if from_id != to_id {
+                    self.enable_conversions_to(from_id, to_id);
+                }
+            }
+            self.enable_assignment(from_id);
+        }
+        self.enable_assignment(self.bool);
     }
 
     pub fn is_int(&self, id: TypeId) -> bool {
@@ -224,11 +435,13 @@ impl TypeContext {
         id == self.uint16 ||
         id == self.uint32 ||
         id == self.uint64 ||
+        id == self.usize ||
 
         id == self.int8 ||
         id == self.int16 ||
         id == self.int32 ||
-        id == self.int64
+        id == self.int64 ||
+        id == self.int_literal
     }
 
 
@@ -339,8 +552,8 @@ impl TypeContext {
     
 
     pub fn add(&mut self, ty: Type, info: TypeInfo) -> TypeId {
-        if let Some(id) = unsafe{ &mut * (&raw mut *self) }.resolve_type(&ty) {
-            return id;
+        if let Some(id) = self.type_lookup.get(&ty) {
+            return *id;
         }
 
         let id = self.types.len() as TypeId;
@@ -349,6 +562,7 @@ impl TypeContext {
 
         id
     }
+
 
 
 
@@ -433,7 +647,7 @@ impl TypeContext {
         let kind = &self.get_by_id(id)?.kind;
 
         Some(match kind {
-            TypeKind::Infer => "unknown".to_string(),
+            TypeKind::IntLiteral => "integer".to_string(),
             TypeKind::Int(w) => format!("int{}", w),
             TypeKind::UInt(w) => format!("uint{}", w),
             TypeKind::Float(w) => format!("float{}", w),

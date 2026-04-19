@@ -1,12 +1,11 @@
-use std::fmt::{Debug, Formatter};
-use std::ops::{Add, AddAssign};
 use crate::ast::function::FunctionSyntax;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
-use crate::typed_ast::ast::block::{TypedBlockSyntax};
+use crate::typed_ast::ast::block::TypedBlockSyntax;
 use crate::typed_ast::ast::statements::vardecl::TypedVarDecl;
 use crate::typed_ast::typing::scope::AvailableContext;
 use crate::typed_ast::typing::tcontext::TypeContext;
 use crate::typed_ast::typing::ty::TypeId;
+use std::ops::AddAssign;
 
 #[derive(PartialEq, Eq, Clone, Hash)]
 pub struct FunctionSignature {
@@ -29,8 +28,9 @@ impl FunctionSignature {
 pub struct Function {
     //we might need it, not sure right now, and id like to avoid unnecessary clones
     //sig: FunctionSignature,
+    pub is_extern: bool,
     pub signature: FunctionSignature,
-    pub code: TypedBlockSyntax,
+    pub code: Option<TypedBlockSyntax>,
     pub params: Vec<String>,
 }
 
@@ -38,18 +38,24 @@ impl Function {
     pub fn to_string(&self, context: &TypeContext) -> String {
         let mut f = String::new();
 
-        f.add_assign("{");
-        if !self.code.data.is_empty() {
-            f.add_assign("\n");
-        }
+        
+        
+        if let Some(code) = &self.code {
+            f.add_assign("{");
+            
+            if !code.data.is_empty() {
+                f.add_assign("\n");
+            }
 
-        for s in &self.code.data {
-            f.add_assign("\t");
-            f.add_assign(s.to_string(context).as_str());
-            f.add_assign("\n");
-        }
+            for s in &code.data {
+                f.add_assign("\t");
+                f.add_assign(s.to_string(context).as_str());
+                f.add_assign("\n");
+            }
 
-        f.add_assign("}");
+            f.add_assign("}");
+        }
+        
 
         f
     }
@@ -95,17 +101,34 @@ impl Function {
             params: params.iter().map(|v| v.ty).collect()
         };
 
+        if sig.name == "main" && sig.ret != compiler.type_context.int32 {
+            compiler.emit_compile_message(
+                CompileMessage::new(
+                    func.smap.clone(),
+                    "main function must return an i32 denoting the programs return type!".to_string(),
+                    CompileMessageType::Error
+                )
+            );
+            return None;
+        }
         
+        let code = if let Some(body) = &func.data.body {
+            Some(TypedBlockSyntax::from_ast(body, compiler, context)?)
+        } else {
+            None
+        };
 
         let res = Some(
 
             Self{
-                code: TypedBlockSyntax::from_ast(&func.data.body, compiler, context)?,
+                code,
                 params: params.iter().map(|v| v.name.clone()).collect(),
                 signature: sig,
+                is_extern: func.data.is_extern,
             }
 
         );
+
 
         context.pop_last_scope();
 

@@ -1,13 +1,12 @@
-use std::collections::VecDeque;
-use std::fmt::{Debug, Formatter, Pointer, Write};
-use std::process::abort;
-use crate::ast::statements::{Statement};
+use crate::ast::statements::Statement;
 use crate::ast::{GenericSyntax, Syntax};
 use crate::common::sourcemap::SourceMap;
-use crate::common::utils::outcome::Outcome;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{FeatureToken, Token, TokenType};
 use crate::{token_match, unpack_opt_tk};
+use std::collections::VecDeque;
+use std::fmt::{Debug, Formatter, Pointer, Write};
+use std::process::abort;
 
 pub type Block = Vec<Statement>;
 
@@ -36,7 +35,8 @@ impl Syntax for BlockSyntax {
 
             let mut result = BlockSyntax::new(Block::new(), smap);
             loop {
-                if token_match!(tokens, TokenType::Feature(FeatureToken::CloseBrace)) {
+                if let unpack_opt_tk!(TokenType::Feature(FeatureToken::CloseBrace), bsmap) = tokens.get(0) {
+                    result.smap.extend(bsmap);
                     tokens.pop_front();
                     break;
                 }else if token_match!(tokens, TokenType::Feature(FeatureToken::StatementEnd)) {

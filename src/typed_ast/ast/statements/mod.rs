@@ -1,9 +1,7 @@
-use crate::ast::GenericSyntax;
-use crate::ast::statements::{Statement};
-use crate::ast::statements::vardecl::VarDeclSyntax;
+use crate::ast::statements::Statement;
 use crate::compiler::Compiler;
 use crate::typed_ast::ast::statements::expression::TypedExpr;
-use crate::typed_ast::ast::statements::ret::{TypedReturn};
+use crate::typed_ast::ast::statements::ret::TypedReturn;
 use crate::typed_ast::ast::statements::vardecl::TypedVarDecl;
 use crate::typed_ast::typing::scope::AvailableContext;
 use crate::typed_ast::typing::tcontext::TypeContext;
@@ -41,7 +39,11 @@ impl TypedStatement {
                 Some(Self::VarDecl(TypedVarDecl::from_ast(vd, compiler, context)?))
             }
             Statement::Expression(expr) => {
-                Some(Self::Expr(TypedExpr::from_ast(expr, compiler, context)?))
+                let mut expr = TypedExpr::from_ast(expr, compiler, context)?;
+                if expr.ty == compiler.type_context.int_literal {
+                    expr.ty = compiler.type_context.int32;
+                }
+                Some(Self::Expr(expr))
             }
             Statement::Return(ret) => {
                 Some(Self::Return(TypedReturn::from_ast(ret, compiler, context)?))

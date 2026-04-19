@@ -1,8 +1,9 @@
 use std::ops::Deref;
 use lazy_static::lazy_static;
-use crate::lexer::token::StatementToken;
+use crate::lexer::token::{ExpressionToken, StatementToken};
 use crate::lexer::token::TokenType;
 use crate::lexer::token_parsers::Parser;
+use crate::lexer::token_parsers::expression_parsers::IdentifierParser;
 
 pub struct KeywordParser;
 
@@ -13,6 +14,8 @@ lazy_static!{
             ("struct", TokenType::Statement(StatementToken::StructKW)),
             ("fn", TokenType::Statement(StatementToken::FnKW)),
             ("return", TokenType::Statement(StatementToken::ReturnKW)),
+            ("extern", TokenType::Statement(StatementToken::ExternKW)),
+            ("as", TokenType::Expression(ExpressionToken::AsKW)),
         ];
 
         res.sort_by(|(s1, _), (s2, _)| s2.len().cmp(&s1.len()));
@@ -25,7 +28,10 @@ impl Parser for KeywordParser {
     fn parse(&self, s: &str) -> Option<(TokenType, usize)> {
         for (k, kw) in keywords.deref() {
             if s.starts_with(k) {
-                return Some((kw.clone(), k.len()));
+                let after = s[k.len()..].chars().next();
+                if after.map_or(true, |c| !IdentifierParser::is_identifier_character(c)) {
+                    return Some((kw.clone(), k.len()));
+                }
             }
         }
 

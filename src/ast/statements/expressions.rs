@@ -4,6 +4,7 @@ use std::ptr;
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter, Write};
 use crate::ast::{GenericSyntax, Syntax};
+use crate::ast::ty::{Type, TypeSyntax};
 use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
@@ -32,6 +33,12 @@ pub struct CallOperation {
 }
 
 #[derive(Hash, Clone)]
+pub struct CastOperation {
+    pub expr: ExprSyntax,
+    pub ty: Type,
+}
+
+#[derive(Hash, Clone)]
 pub enum Expr {
     Identifier(String),
     IntLiteral(IntegerLiteral),
@@ -41,6 +48,7 @@ pub enum Expr {
     BinaryOp(Box<BinaryOperation>),
     UnaryOp(Box<UnaryOperation>),
     CallOp(Box<CallOperation>),
+    CastOp(Box<CastOperation>),
 }
 
 
@@ -92,6 +100,9 @@ impl Debug for Expr {
                 }
                 f.write_str(")")?;
             }
+            Expr::CastOp(cast) => {
+                write!(f, "({:?} as {:?})", cast.expr.data, cast.ty)?;
+            }
         }
 
 
@@ -135,7 +146,7 @@ impl ExprSyntax {
     
     }
     
-    pub fn parse_parentheses(tokens: &mut VecDeque<Token>) -> Outcome<(Vec<ExprSyntax>, SourceMap), CompileMessage> {
+    pub fn parse_parentheses(tokens: &mut VecDeque<Token>, compiler: &mut Compiler) -> Outcome<(Vec<ExprSyntax>, SourceMap), CompileMessage> {
         let mut smap = if let Some((e, smap)) = tokens.peek_expression() {
 
             if let ExpressionToken::OpenParentheses = e {
@@ -153,7 +164,7 @@ impl ExprSyntax {
         
         let mut res = Vec::new();
         loop {
-            let expr = match Self::make_expression(tokens, 0) {
+            let expr = match Self::make_expression(tokens, 0, compiler) {
                 Outcome::Ok(e) => e,
                 Outcome::None => break,
                 Outcome::Err(v) => return Outcome::Err(v),
@@ -190,7 +201,7 @@ impl ExprSyntax {
         Outcome::Ok((res, smap))
     }
     
-    pub fn make_expression(tokens: &mut VecDeque<Token>, minbp: u8) -> Outcome<Self, CompileMessage> {
+    pub fn make_expression(tokens: &mut VecDeque<Token>, minbp: u8, compiler: &mut Compiler) -> Outcome<Self, CompileMessage> {
         //get the first expression token
         let Some((expr, mut smap)) = tokens.next_expression() else {
             return Outcome::None;
@@ -223,7 +234,7 @@ impl ExprSyntax {
                 }
 
                 //must be a unary operator
-                let rhs = match Self::make_expression(tokens, 0)? {
+                let rhs = match Self::make_expression(tokens, 0, compiler)? {
                     Some(v) => v,
                     None => return Outcome::Err(CompileMessage::new(smap, format!("Expected expression after operator \'{}\'", op.tk), CompileMessageType::Error)),
                 };
@@ -248,7 +259,7 @@ impl ExprSyntax {
             }
             //an open parenthese
             ExpressionToken::OpenParentheses => {
-                let (mut tuple, emap) = match Self::parse_parentheses(tokens)? {
+                let (mut tuple, emap) = match Self::parse_parentheses(tokens, compiler)? {
                     Some(v) => v,
                     None => return Outcome::Err(
                         CompileMessage::new(smap, "Expected ')' to close this '('".to_string(), CompileMessageType::Error),
@@ -286,7 +297,7 @@ impl ExprSyntax {
                     if Operator::MUL.bp.effective_lbp() < minbp { break }
 
                     //there is guaranteed to at least be a identifier or integer
-                    let rhs = unsafe { Self::make_expression(tokens, Operator::MUL.bp.effective_rbp())?.unwrap_unchecked() };
+                    let rhs = unsafe { Self::make_expression(tokens, Operator::MUL.bp.effective_rbp(), compiler)?.unwrap_unchecked() };
 
                     lhs.smap.extend(&rhs.smap);
                     lhs.make_binary_op(Operator::MUL, rhs);
@@ -315,7 +326,7 @@ impl ExprSyntax {
 
 
                     //must be a binary operator
-                    let rhs = match Self::make_expression(tokens, op.bp.effective_rbp())? {
+                    let rhs = match Self::make_expression(tokens, op.bp.effective_rbp(), compiler)? {
                         Some(v) => v,
                         //todo: postfix
                         None => return Outcome::Err(
@@ -334,7 +345,7 @@ impl ExprSyntax {
                 ExpressionToken::OpenParentheses => {
                     //a call expression
                     let emap = emap.clone();
-                    let (args, emap) = match Self::parse_parentheses(tokens)? {
+                    let (args, emap) = match Self::parse_parentheses(tokens, compiler)? {
                         Some(args) => args,
                         None => return Outcome::Err(CompileMessage::new(
                             emap,
@@ -349,6 +360,22 @@ impl ExprSyntax {
                 }
                 ExpressionToken::CloseParentheses => {
                     break;
+                }
+                ExpressionToken::AsKW => {
+                    let (_, as_smap) = tokens.next_expression().unwrap();
+                    let Some(ty_syntax) = TypeSyntax::parse(tokens, compiler) else {
+                        return Outcome::Err(CompileMessage::new(
+                            as_smap,
+                            "expected type after `as`".into(),
+                            CompileMessageType::Error,
+                        ));
+                    };
+                    let old_lhs = lhs.clone();
+                    lhs.smap.extend(&ty_syntax.smap);
+                    lhs.data = Expr::CastOp(Box::new(CastOperation {
+                        expr: old_lhs,
+                        ty: ty_syntax.data,
+                    }));
                 }
                 _ => break
             }
@@ -365,7 +392,7 @@ impl Syntax for ExprSyntax {
     where
         Self: Sized
     {
-        match Self::make_expression(tokens, 0) {
+        match Self::make_expression(tokens, 0, compiler) {
             Outcome::Ok(v) => { Some(v) }
             Outcome::None => { None }
             Outcome::Err(e) => { 

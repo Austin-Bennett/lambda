@@ -1,21 +1,26 @@
 
-//import a module
-use test_import
+extern fn add(a: int32, b: int32) = int32;
+
+extern fn malloc(size: usize) = uint8*;
 
 
 //2d integer vector
 struct ivec2 {
-    x: int64,
-    y: int64,
+    x: int32,
+    y: int32,
 }
 
 //functions that return values use the = type syntax
-fn sub(a: int64, b: int64) = int64 {
+fn sub(a: int32, b: int32) = int32 {
     return a - b;
 }
 
 //main function- this is where code starts executing
-fn main() {
-    b: int64 = 3;
-    a: int64 = add(2, 2b);
+fn main() = int32 {
+    b: int32 = 3;
+    a: int32 = add(2, 2b);
+
+    b = 5;
+
+    return b;
 }

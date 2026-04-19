@@ -1,31 +1,35 @@
-use std::collections::VecDeque;
-use std::fmt::{Debug, Formatter, Write};
-use std::process::abort;
-use crate::ast::block::{Block, BlockSyntax};
-use crate::ast::statements::vardecl::{VarDecl, VarDeclSyntax};
-use crate::ast::{GenericSyntax, Syntax};
+use crate::ast::block::BlockSyntax;
+use crate::ast::statements::vardecl::VarDeclSyntax;
 use crate::ast::ty::{Type, TypeSyntax};
+use crate::ast::{GenericSyntax, Syntax};
 use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
-use crate::common::utils::modulepath::ModulePath;
-use crate::common::utils::outcome::Outcome;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{ExpressionToken, FeatureToken, StatementToken, Token, TokenType};
-use crate::{compiler, unpack_opt_tk};
+use crate::unpack_opt_tk;
+use std::collections::VecDeque;
+use std::fmt::{Debug, Formatter, Write};
 
 
 //todo: return value
 pub struct Function {
     pub name: String,
     pub parameters: Vec<VarDeclSyntax>,
-    pub body: BlockSyntax,
+    pub body: Option<BlockSyntax>,
     pub ty: Option<Type>, //None for void
+
+    //i.e C compliant (if it has a body) or declared in an externally linked file
+    pub is_extern: bool,
 }
 
 
 
 impl Debug for Function {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.is_extern {
+            write!(f, "extern ")?;
+        }
+
         write!(f, "{}(", self.name)?;
 
         let mut first = true;
@@ -43,13 +47,16 @@ impl Debug for Function {
             write!(f, " = {:?}", ty)?;
         }
 
-        write!(f, " {{{}", if self.body.data.is_empty() { "" } else { "\n" })?;
+        if let Some(data) = &self.body {
+            write!(f, " {{{}", if data.data.is_empty() { "" } else { "\n" })?;
 
-        for s in &self.body.data {
-            write!(f, "\t{:?}\n", s)?;
+            for s in &data.data {
+                write!(f, "\t{:?}\n", s)?;
+            }
+
+            write!(f, "}}")?;
         }
 
-        write!(f, "}}")?;
 
         Ok(())
     }
@@ -62,8 +69,31 @@ impl Syntax for FunctionSyntax {
     where
         Self: Sized
     {
-        let unpack_opt_tk!( TokenType::Statement(StatementToken::FnKW), smap ) = tokens.get(0) else { return None };
-        let unpack_opt_tk!( TokenType::Statement(StatementToken::FnKW), mut smap ) = tokens.pop_front() else { abort(); };
+        let is_extern = if let unpack_opt_tk!( TokenType::Statement(StatementToken::ExternKW), _ ) = tokens.get(0) {
+            true
+        } else {
+            false
+        };
+        let ind = if is_extern { 1 } else { 0 };
+
+        let unpack_opt_tk!( TokenType::Statement(StatementToken::FnKW), smap ) = tokens.get(ind) else { return None };
+
+        let smap = if is_extern {
+            let unpack_opt_tk!( TokenType::Statement(StatementToken::ExternKW), mut smap ) = tokens.pop_front()
+            else { unreachable!() };
+            Some(smap)
+        } else {
+            None
+        };
+        let unpack_opt_tk!( TokenType::Statement(StatementToken::FnKW), fnsmap ) = tokens.pop_front() else { unreachable!() };
+
+        let mut smap = if let Some(mut smap) = smap {
+            smap.extend(fnsmap);
+            smap
+        } else {
+            fnsmap
+        };
+
 
         //get the name next
         let next = tokens.pop_front();
@@ -172,22 +202,10 @@ impl Syntax for FunctionSyntax {
         };
 
         //get the block
-        let block = match BlockSyntax::parse(tokens, compiler) {
-            Some(b) => b,
-            None => {
-                compiler.emit_compile_message(
-                    CompileMessage::expected_token_error(
-                        last_smap,
-                        "function body",
-                        "')'",
-                        tokens.pop_front(),
-                    )
-                );
-                return None;
-            }
-        };
+        let block = BlockSyntax::parse(tokens, compiler);
 
-        smap.extend(&block.smap);
+
+        block.as_ref().map(|b| smap.extend(&b.smap));
 
 
         Some(Self{
@@ -196,7 +214,8 @@ impl Syntax for FunctionSyntax {
                 name,
                 parameters: args,
                 body: block,
-                ty
+                ty,
+                is_extern
             }
         })
     }

@@ -1,11 +1,9 @@
-use std::collections::HashMap;
-use std::fmt::{Debug, Formatter, Write};
-use inkwell::types::{AnyType, AnyTypeEnum, BasicTypeEnum, StructType};
-use inkwell::values::BasicValueEnum;
-use crate::common::utils::modulepath::ModulePath;
-use crate::compiler::Compiler;
 use crate::lexer::literal::IntegerLiteral;
-use crate::typed_ast::typing::operator::OperatorOverloads;
+use crate::typed_ast::typing::operator::{BinaryOperatorMaker, OperatorOverloads, UnaryOperatorMaker};
+use inkwell::context::Context;
+use inkwell::types::{AnyTypeEnum, StructType};
+use inkwell::values::AnyValueEnum;
+use std::fmt::{Debug, Formatter};
 
 pub type TypeId = u32;
 pub type StructId = u32;
@@ -31,12 +29,12 @@ pub struct TypeInfo {
 
     pub ops: OperatorOverloads,
 
-    pub llvm_type: AnyTypeEnum<'static>
+    pub llvm_type: AnyTypeEnum<'static>,
 }
 
 impl TypeInfo {
     pub fn new(kind: TypeKind, size: usize, llvm_type: AnyTypeEnum<'static>) -> Self {
-        Self{
+        Self {
             kind,
             size,
             ops: OperatorOverloads::new(),
@@ -44,45 +42,46 @@ impl TypeInfo {
         }
     }
 
-    pub fn enable_from_int_literal(&mut self, width: u32, signed: bool) {
-        self.ops.from_int_literal = Some(
-            Box::new(
-                move |compiler: &Compiler, info: &TypeInfo, literal: IntegerLiteral| -> BasicValueEnum {
-                    compiler.llvm_context.custom_width_int_type(width).const_int(literal.as_u64_lossy(), signed).into()
-                }
-            )
-        )
+    pub fn enable_from_int_literal(mut self, width: u32, signed: bool) -> Self {
+        self.ops.from_int_literal = Some(Box::new(
+            move |context: &'static Context, literal: IntegerLiteral| -> AnyValueEnum<'static> {
+                context
+                    .custom_width_int_type(width)
+                    .const_int(literal.as_u64_lossy(), signed)
+                    .into()
+            },
+        ));
+        self
     }
 
-    pub fn enable_neg_operator(&mut self, self_id: TypeId) {
-        self.ops.neg = Some(self_id)
-    }
+    /// Register add/sub/mul/div overloads against `self_id` with the given codegen callbacks.
+    /// Also registers `call(self_id) -> self_id` (multiplication-as-call for numeric types).
+    pub fn enable_arithmetic_operators(
+        &mut self,
+        self_id: TypeId,
+        add: BinaryOperatorMaker,
+        sub: BinaryOperatorMaker,
+        mul: BinaryOperatorMaker,
+        div: BinaryOperatorMaker,
+    ) {
+        self.ops.add.insert(self_id, (self_id, add));
+        self.ops.sub.insert(self_id, (self_id, sub));
+        self.ops.mul.insert(self_id, (self_id, mul));
+        self.ops.div.insert(self_id, (self_id, div));
 
-    pub fn enable_arithmetic_operators(&mut self, self_id: TypeId) {
-        self.ops.add.insert(self_id, self_id);
-        self.ops.sub.insert(self_id, self_id);
-        self.ops.mul.insert(self_id, self_id);
-        self.ops.div.insert(self_id, self_id);
-
-        //for arithmetic types, the call operator is the same as multiplication
+        // For arithmetic types, `x(y)` is sugar for multiplication.
         self.ops.call.insert(vec![self_id], self_id);
     }
 
-
+    pub fn enable_neg_operator(&mut self, self_id: TypeId, maker: UnaryOperatorMaker) {
+        self.ops.neg = Some((self_id, maker));
+    }
 }
 
-#[macro_export]
-macro_rules! enable_operators_with {
-    ($info: expr, $id: expr, $($others: expr),*) => {
-        $(
-            $info.enable_arithmetic_operators_with_other($id, $others);
-        )*
-    };
-}
 
 #[derive(Clone)]
 pub enum TypeKind {
-    Infer, //used for integer literals and such
+    IntLiteral,
     Int(u32),
     UInt(u32),
 
@@ -90,21 +89,21 @@ pub enum TypeKind {
 
     Boolean,
 
-    None, //void or ()
+    None, // void / ()
 
     Struct(StructId),
     Pointer(TypeId),
     Reference(TypeId),
     Slice(TypeId),
-    Array{ ty: TypeId, size: usize }, //size is const-evaluated
-    Function { params: Vec<TypeId>, ret: TypeId }
+    Array { ty: TypeId, size: usize }, // size is const-evaluated
+    Function { params: Vec<TypeId>, ret: TypeId },
 }
 
-//truly only for debug
+// Truly only for debug
 impl Debug for TypeKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            TypeKind::Infer => f.write_str("unknown"),
+            TypeKind::IntLiteral => write!(f, "integer"),
             TypeKind::Int(w) => write!(f, "int{}", w),
             TypeKind::UInt(w) => write!(f, "uint{}", w),
             TypeKind::Float(w) => write!(f, "float{}", w),
