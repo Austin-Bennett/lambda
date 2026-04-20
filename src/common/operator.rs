@@ -34,6 +34,14 @@ impl BindingPower {
         }
     }
 
+    pub const fn effective_unary_rbp(&self) -> u8 {
+        match self {
+            BindingPower::Unary => 255,
+            BindingPower::BinaryOrUnary(_, _) => 255,
+            BindingPower::Binary(_, _) => 0,
+        }
+    }
+
     pub const fn is_unary(&self) -> bool {
         match self {
             BindingPower::Binary(_, _) => false,
@@ -57,8 +65,6 @@ impl Operator {
     pub const ADDITIVE_BP: BindingPower = BindingPower::Binary(4, 3);
     pub const MULTIPLICATIVE_BP: BindingPower = BindingPower::Binary(6, 5);
     pub const BITWISE_AND_BP: BindingPower = BindingPower::Binary(2, 1);
-
-
 
 
 

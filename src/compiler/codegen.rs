@@ -1,6 +1,6 @@
 use crate::compiler::Compiler;
 use crate::typed_ast::ast::items::function::Function;
-use crate::typed_ast::ast::statements::expression::{BinaryOperator, TypedExpr, TypedExprNode};
+use crate::typed_ast::ast::statements::expression::{BinaryOperator, UnaryOperator, TypedExpr, TypedExprNode};
 use crate::typed_ast::ast::statements::TypedStatement;
 use crate::typed_ast::typing::ty::{TypeKind, TypeId};
 use inkwell::builder::Builder;
@@ -174,6 +174,16 @@ impl Compiler {
                 maker_result
             }
 
+            TypedExprNode::RefRead(inner) => {
+                // Evaluate the inner expr to get the reference pointer, then load through it.
+                let ref_ptr = self.compile_expression(builder, globals, locals, inner)?;
+                let inner_ty: BasicTypeEnum<'static> = self
+                    .type_context
+                    .get_by_id(e.ty)
+                    .and_then(|info| info.llvm_type.try_into().ok())?;
+                Some(builder.build_load(inner_ty, ref_ptr.into_pointer_value(), "refread").unwrap().into())
+            }
+
             TypedExprNode::Identifier(ident) => {
                 if let Some(alloca_val) = locals.get(ident) {
                     // Local variable: load from its alloca slot.
@@ -195,13 +205,27 @@ impl Compiler {
 
             TypedExprNode::BinaryOp(bop) => {
                 if let BinaryOperator::Assign = &bop.op {
-                    let TypedExprNode::Identifier(name) = &bop.lhs.value else { return None; };
-                    let alloca = locals.get(name)?.into_pointer_value();
                     let rhs_val = self.compile_expression(builder, globals, locals, &bop.rhs)?;
-                    {
-                        let ops = &self.type_context.get_by_id(bop.lhs.ty)?.ops;
-                        let maker = ops.assign.get(&bop.rhs.ty)?;
-                        maker(builder, alloca, rhs_val);
+                    match &bop.lhs.value {
+                        TypedExprNode::RefRead(ref_inner) => {
+                            // Store through the reference pointer.
+                            let ref_ptr = self.compile_expression(builder, globals, locals, ref_inner)?;
+                            let basic: BasicValueEnum<'static> = rhs_val.try_into().ok()?;
+                            builder.build_store(ref_ptr.into_pointer_value(), basic).unwrap();
+                        }
+                        TypedExprNode::Identifier(name) => {
+                            let alloca = locals.get(name)?.into_pointer_value();
+                            let ops = &self.type_context.get_by_id(bop.lhs.ty)?.ops;
+                            let maker = ops.assign.get(&bop.rhs.ty)?;
+                            maker(builder, alloca, rhs_val);
+                        }
+                        TypedExprNode::UnaryOp(uop) if matches!(uop.op, UnaryOperator::Dereference) => {
+                            // Compile the pointer operand to get the address, then store through it.
+                            let ptr_val = self.compile_expression(builder, globals, locals, &uop.operand)?;
+                            let basic: BasicValueEnum<'static> = rhs_val.try_into().ok()?;
+                            builder.build_store(ptr_val.into_pointer_value(), basic).unwrap();
+                        }
+                        _ => return None,
                     }
                     return Some(rhs_val);
                 }
@@ -226,6 +250,30 @@ impl Compiler {
             }
 
             TypedExprNode::UnaryOp(uop) => {
+                match &uop.op {
+                    UnaryOperator::Reference => {
+                        let TypedExprNode::Identifier(name) = &uop.operand.value else { return None; };
+                        if let Some(alloca) = locals.get(name) {
+                            return Some(alloca.into_pointer_value().into());
+                        }
+                        // functions are already pointers in LLVM's opaque pointer model
+                        if let Some(&global) = globals.get(name) {
+                            return Some(global);
+                        }
+                        return None;
+                    }
+                    UnaryOperator::Dereference => {
+                        let ptr_val = self.compile_expression(builder, globals, locals, &uop.operand)?;
+                        let inner_ty = match self.type_context.get_by_id(uop.operand.ty)?.kind.clone() {
+                            TypeKind::Pointer(id) | TypeKind::Reference(id) => id,
+                            _ => return None,
+                        };
+                        let llvm_ty: BasicTypeEnum = self.type_context.get_by_id(inner_ty)?.llvm_type.try_into().ok()?;
+                        return Some(builder.build_load(llvm_ty, ptr_val.into_pointer_value(), "deref").unwrap().into());
+                    }
+                    UnaryOperator::Neg => {}
+                }
+
                 let operand_val = self.compile_expression(builder, globals, locals, &uop.operand)?;
 
                 let result = {
@@ -237,29 +285,8 @@ impl Compiler {
 
             TypedExprNode::Cast(cast) => {
                 let val = self.compile_expression(builder, globals, locals, &cast.expr)?;
-                let result = {
-                    let ops = &self.type_context.get_by_id(cast.expr.ty)?.ops;
-                    ops.conversion_ops.get(&cast.target).map(|maker| maker(builder, val))
-                };
-                if result.is_some() {
-                    return result;
-                }
-                // pointer↔pointer: no-op in opaque pointer model
-                let src_kind = &self.type_context.get_by_id(cast.expr.ty)?.kind.clone();
-                let dst_kind = &self.type_context.get_by_id(cast.target)?.kind.clone();
-                let usize_id = self.type_context.usize;
-                let usize_llvm: BasicTypeEnum = self.type_context.get_by_id(usize_id)?.llvm_type.try_into().ok()?;
-                match (src_kind, dst_kind) {
-                    (TypeKind::Pointer(_) | TypeKind::Reference(_), TypeKind::Pointer(_) | TypeKind::Reference(_)) => Some(val),
-                    (TypeKind::Pointer(_) | TypeKind::Reference(_), TypeKind::UInt(_)) if cast.target == usize_id => {
-                        Some(builder.build_ptr_to_int(val.into_pointer_value(), usize_llvm.into_int_type(), "ptrtoint").unwrap().into())
-                    }
-                    (TypeKind::UInt(_), TypeKind::Pointer(_) | TypeKind::Reference(_)) if cast.expr.ty == usize_id => {
-                        let dst_llvm: BasicTypeEnum = self.type_context.get_by_id(cast.target)?.llvm_type.try_into().ok()?;
-                        Some(builder.build_int_to_ptr(val.into_int_value(), dst_llvm.into_pointer_type(), "inttoptr").unwrap().into())
-                    }
-                    _ => None,
-                }
+                let ops = &self.type_context.get_by_id(cast.expr.ty)?.ops;
+                ops.conversion_ops.get(&cast.target).map(|maker| maker(builder, val))
             }
             TypedExprNode::CallOp(call) => {
                 let caller_val = self.compile_expression(builder, globals, locals, &call.caller)?;

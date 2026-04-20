@@ -234,7 +234,7 @@ impl ExprSyntax {
                 }
 
                 //must be a unary operator
-                let rhs = match Self::make_expression(tokens, 0, compiler)? {
+                let rhs = match Self::make_expression(tokens, op.bp.effective_unary_rbp(), compiler)? {
                     Some(v) => v,
                     None => return Outcome::Err(CompileMessage::new(smap, format!("Expected expression after operator \'{}\'", op.tk), CompileMessageType::Error)),
                 };

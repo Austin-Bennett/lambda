@@ -13,6 +13,7 @@ pub struct TypeContext {
     pub llvm_context: &'static inkwell::context::Context,
     pub types: Vec<TypeInfo>, //stores all known types
     pub type_lookup: HashMap<Type, TypeId>,
+    pub type_ids: HashMap<TypeId, Type>, // reverse map
 
     pub structs: Vec<StructInfo>,
     pub struct_lookup: HashMap<String, StructId>,
@@ -54,6 +55,7 @@ impl TypeContext {
             llvm_context,
             types: Vec::new(),
             type_lookup: HashMap::new(),
+            type_ids: HashMap::new(),
             structs: vec![],
             struct_lookup: Default::default(),
             none: 0,
@@ -551,16 +553,85 @@ impl TypeContext {
 
     
 
+    fn enable_ptr_conversions(&mut self, ptr_id: TypeId) {
+        let usize_id = self.usize;
+        let usize_int_ty = match BasicTypeEnum::try_from(self.types[usize_id as usize].llvm_type) {
+            Ok(t) => t.into_int_type(),
+            Err(_) => return,
+        };
+        let ptr_llvm_ty = self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap());
+
+        // ptr → usize
+        self.types[ptr_id as usize].ops.conversion_ops.insert(usize_id, Box::new(move |b, v| {
+            b.build_ptr_to_int(v.into_pointer_value(), usize_int_ty, "ptrtoint").unwrap().into()
+        }));
+
+        // usize → ptr
+        self.types[usize_id as usize].ops.conversion_ops.insert(ptr_id, Box::new(move |b, v| {
+            b.build_int_to_ptr(v.into_int_value(), ptr_llvm_ty, "inttoptr").unwrap().into()
+        }));
+
+        // cross-ptr no-op conversions with all existing pointer/reference types
+        let existing: Vec<TypeId> = self.types.iter().enumerate()
+            .filter_map(|(i, info)| {
+                let id = i as TypeId;
+                if id == ptr_id { return None; }
+                match &info.kind {
+                    TypeKind::Pointer(_) | TypeKind::Reference(_) => Some(id),
+                    _ => None,
+                }
+            })
+            .collect();
+
+        for &other_id in &existing {
+            self.types[ptr_id as usize].ops.conversion_ops.insert(other_id, Box::new(|_b, v| v));
+            self.types[other_id as usize].ops.conversion_ops.insert(ptr_id, Box::new(|_b, v| v));
+        }
+    }
+
     pub fn add(&mut self, ty: Type, info: TypeInfo) -> TypeId {
         if let Some(id) = self.type_lookup.get(&ty) {
             return *id;
         }
 
         let id = self.types.len() as TypeId;
-        self.type_lookup.insert(ty, id);
+        self.type_lookup.insert(ty.clone(), id);
+        self.type_ids.insert(id, ty);
         self.types.push(info);
 
+        if matches!(self.types[id as usize].kind, TypeKind::Pointer(_) | TypeKind::Reference(_))
+            && self.usize != 0
+        {
+            self.enable_ptr_conversions(id);
+        }
+
         id
+    }
+
+    pub fn pointer_to(&mut self, inner_id: TypeId) -> TypeId {
+        let inner_ty = self.type_ids[&inner_id].clone();
+        let ptr_ty = Type::Pointer(Box::new(inner_ty));
+        if let Some(&id) = self.type_lookup.get(&ptr_ty) {
+            return id;
+        }
+        self.add(ptr_ty, TypeInfo::new(
+            TypeKind::Pointer(inner_id),
+            Self::SIZE_POINTER,
+            self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into(),
+        ))
+    }
+
+    pub fn reference_to(&mut self, inner_id: TypeId) -> TypeId {
+        let inner_ty = self.type_ids[&inner_id].clone();
+        let ref_ty = Type::Reference(Box::new(inner_ty));
+        if let Some(&id) = self.type_lookup.get(&ref_ty) {
+            return id;
+        }
+        self.add(ref_ty, TypeInfo::new(
+            TypeKind::Reference(inner_id),
+            Self::SIZE_POINTER,
+            self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into(),
+        ))
     }
 
 

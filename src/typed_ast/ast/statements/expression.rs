@@ -4,9 +4,10 @@ use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::literal::IntegerLiteral;
 use crate::typed_ast::typing::scope::AvailableContext;
 use crate::typed_ast::typing::tcontext::TypeContext;
-use crate::typed_ast::typing::ty::TypeId;
+use crate::typed_ast::typing::ty::{TypeId, TypeKind};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter, Pointer, Write};
+use crate::ast::ty::Type;
 
 pub enum BinaryOperator {
     Add,
@@ -32,12 +33,16 @@ impl Debug for BinaryOperator {
 
 pub enum UnaryOperator {
     Neg,
+    Reference,
+    Dereference,
 }
 
 impl Debug for UnaryOperator {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self { 
             UnaryOperator::Neg => f.write_str("-"),
+            UnaryOperator::Reference => f.write_str("&"),
+            UnaryOperator::Dereference => f.write_str("*"),
         }
     }
 }
@@ -66,6 +71,8 @@ pub struct TypedCastOperation {
 pub enum TypedExprNode {
     IntLiteral(IntegerLiteral),
     Identifier(String),
+    /// Transparent read through a reference. Inner expr has type `Reference(T)`; this node's `ty` is `T`.
+    RefRead(Box<TypedExpr>),
 
     Tuple(Vec<TypedExpr>),
 
@@ -80,6 +87,7 @@ impl TypedExprNode {
         match self {
             TypedExprNode::IntLiteral(_) => { true }
             TypedExprNode::Identifier(_) => { false }
+            TypedExprNode::RefRead(_) => { false }
             TypedExprNode::Tuple(_) => { false }
             TypedExprNode::BinaryOp(bop) => { bop.lhs.value.is_int_literal_expr() && bop.rhs.value.is_int_literal_expr() }
             TypedExprNode::UnaryOp(uop) => { uop.operand.value.is_int_literal_expr() }
@@ -106,6 +114,7 @@ impl Debug for TypedExprNode {
         match self {
             TypedExprNode::IntLiteral(i) => { i.fmt(f) }
             TypedExprNode::Identifier(ident) => { write!(f, "{}", ident) }
+            TypedExprNode::RefRead(inner) => { write!(f, "refread({:?})", inner) }
             TypedExprNode::Tuple(_) => { todo!() }
             TypedExprNode::BinaryOp(op) => {
                 write!(f, "({:?} {:?} {:?})", op.lhs, op.op, op.rhs)
@@ -125,6 +134,16 @@ impl TypedExpr {
 
 
 
+
+    /// If `expr` has a reference type `T&`, wrap it in `RefRead` so the result has type `T`.
+    pub fn coerce_ref(expr: TypedExpr, context: &TypeContext) -> TypedExpr {
+        if let TypeKind::Reference(inner_id) = context.get_by_id(expr.ty).map(|i| i.kind.clone()).unwrap_or(TypeKind::None) {
+            let smap = expr.smap.clone();
+            TypedExpr { value: TypedExprNode::RefRead(Box::new(expr)), ty: inner_id, smap }
+        } else {
+            expr
+        }
+    }
 
     pub fn infer_ints_binary(context: &TypeContext, lhs: &mut TypedExpr, rhs: &mut TypedExpr) -> bool {
         if lhs.ty == rhs.ty { return true; }
@@ -192,7 +211,13 @@ impl TypedExpr {
                     );
                     return None;
                 };
-                
+
+                // If the declared type is a reference, transparently read through it.
+                if let TypeKind::Reference(inner_id) = compiler.type_context.get_by_id(ty).unwrap().kind {
+                    let ref_expr = TypedExpr { value: TypedExprNode::Identifier(ident.clone()), ty, smap: expr.smap.clone() };
+                    return Some((TypedExprNode::RefRead(Box::new(ref_expr)), inner_id));
+                }
+
                 Some((TypedExprNode::Identifier(ident.clone()), ty))
             }
             Expr::IntLiteral(il) => {
@@ -203,7 +228,13 @@ impl TypedExpr {
                 let mut lhs = TypedExpr::from_ast(&bin.lhs, compiler, context)?;
                 let mut rhs = TypedExpr::from_ast(&bin.rhs, compiler, context)?;
 
-                if !Self::infer_ints_binary(&compiler.type_context, &mut lhs, &mut rhs) {
+                // Coerce references on both sides (except `=` LHS which is handled separately).
+                if bin.op.tk != "=" {
+                    lhs = Self::coerce_ref(lhs, &compiler.type_context);
+                }
+                rhs = Self::coerce_ref(rhs, &compiler.type_context);
+
+                if bin.op.tk != "=" && !Self::infer_ints_binary(&compiler.type_context, &mut lhs, &mut rhs) {
                     let mut smap = lhs.smap.clone();
                     smap.extend(&rhs.smap);
                     compiler.emit_compile_message(
@@ -331,47 +362,67 @@ impl TypedExpr {
                     }
 
                     "=" => {
-                        // LHS must be a local variable (lvalue)
-                        let Expr::Identifier(name) = &bin.lhs.data else {
-                            compiler.emit_compile_message(CompileMessage::new(
-                                expr.smap.clone(),
-                                "left-hand side of `=` must be a variable".into(),
-                                CompileMessageType::Error,
-                            ));
-                            return None;
-                        };
-                        let Some(lhs_ty) = context.get_identifier_type(name) else {
-                            compiler.emit_compile_message(CompileMessage::new(
-                                expr.smap.clone(),
-                                format!("unknown identifier `{}`", name),
-                                CompileMessageType::Error,
-                            ));
-                            return None;
+                        // Determine the target type and whether the LHS is a pointer dereference.
+                        let (target_ty, lhs_is_deref) = match &lhs.value {
+                            TypedExprNode::Identifier(_) | TypedExprNode::RefRead(_) => (lhs.ty, false),
+                            TypedExprNode::UnaryOp(uop) if matches!(uop.op, UnaryOperator::Dereference) => {
+                                match compiler.type_context.get_by_id(lhs.ty).map(|i| i.kind.clone()) {
+                                    Some(TypeKind::Reference(inner)) => (inner, true),
+                                    _ => {
+                                        compiler.emit_compile_message(CompileMessage::new(
+                                            expr.smap.clone(),
+                                            "invalid dereference lvalue in assignment".into(),
+                                            CompileMessageType::Error,
+                                        ));
+                                        return None;
+                                    }
+                                }
+                            }
+                            _ => {
+                                compiler.emit_compile_message(CompileMessage::new(
+                                    expr.smap.clone(),
+                                    "left-hand side of `=` must be a variable or dereference expression".into(),
+                                    CompileMessageType::Error,
+                                ));
+                                return None;
+                            }
                         };
 
-                        // coerce int_literal on rhs to lhs type
-                        if rhs.ty == compiler.type_context.int_literal && compiler.type_context.is_int(lhs_ty) {
-                            rhs.ty = lhs_ty;
+                        // Coerce int_literal RHS to target type.
+                        if rhs.ty == compiler.type_context.int_literal && compiler.type_context.is_int(target_ty) {
+                            rhs.ty = target_ty;
                         }
 
-                        let lhs_info = compiler.type_context.get_by_id(lhs_ty).unwrap();
-                        if !lhs_info.ops.assign.contains_key(&rhs.ty) {
-                            compiler.emit_compile_message(CompileMessage::new(
-                                expr.smap.clone(),
-                                format!("cannot assign {} to variable of type {}",
-                                    compiler.type_context.name_of(rhs.ty).unwrap(),
-                                    compiler.type_context.name_of(lhs_ty).unwrap()),
-                                CompileMessageType::Error,
-                            ));
-                            return None;
+                        if lhs_is_deref {
+                            if rhs.ty != target_ty {
+                                compiler.emit_compile_message(CompileMessage::new(
+                                    expr.smap.clone(),
+                                    format!("cannot assign {} through pointer to {}",
+                                        compiler.type_context.name_of(rhs.ty).unwrap_or_default(),
+                                        compiler.type_context.name_of(target_ty).unwrap_or_default()),
+                                    CompileMessageType::Error,
+                                ));
+                                return None;
+                            }
+                        } else {
+                            let lhs_info = compiler.type_context.get_by_id(target_ty).unwrap();
+                            if !lhs_info.ops.assign.contains_key(&rhs.ty) {
+                                compiler.emit_compile_message(CompileMessage::new(
+                                    expr.smap.clone(),
+                                    format!("cannot assign {} to variable of type {}",
+                                        compiler.type_context.name_of(rhs.ty).unwrap_or_default(),
+                                        compiler.type_context.name_of(target_ty).unwrap_or_default()),
+                                    CompileMessageType::Error,
+                                ));
+                                return None;
+                            }
                         }
 
-                        let lhs_typed = TypedExpr { value: TypedExprNode::Identifier(name.clone()), ty: lhs_ty, smap: bin.lhs.smap.clone() };
                         Some((TypedExprNode::BinaryOp(Box::new(TypedBinaryOperation {
                             op: BinaryOperator::Assign,
-                            lhs: lhs_typed,
+                            lhs,
                             rhs,
-                        })), lhs_ty))
+                        })), target_ty))
                     }
 
                     _ => {
@@ -382,7 +433,14 @@ impl TypedExpr {
             }
             Expr::UnaryOp(op) => {
                 let (lhs, lhs_ty) = TypedExpr::from_node(&op.operand, compiler, context)?;
-                //lhs must have a unary operator overload for the specified operator
+                let mut lhs_expr = TypedExpr { value: lhs, ty: lhs_ty, smap: op.operand.smap.clone() };
+
+                // Coerce references for arithmetic ops; `&` and `*` need the raw type.
+                if op.op.tk == "-" {
+                    lhs_expr = Self::coerce_ref(lhs_expr, &compiler.type_context);
+                }
+                let lhs_ty = lhs_expr.ty;
+                let lhs = lhs_expr.value;
 
                 let lhs_inf = compiler.type_context.get_by_id(lhs_ty).unwrap();
 
@@ -407,12 +465,66 @@ impl TypedExpr {
                                 Box::new(
                                     TypedUnaryOperation{
                                         op: UnaryOperator::Neg,
-                                        operand: TypedExpr{ value: lhs, ty: lhs_ty, smap: op.operand.smap.clone() },
+                                        operand: TypedExpr{ value: lhs, ty: lhs_ty, smap: expr.smap.clone() },
                                     }
                                 ),
                             ),
                                 *neg_ty
                             )
+                        )
+                    },
+                    "&" => {
+                        //lhs MUST be a identifier
+                        let TypedExprNode::Identifier(_) = &lhs else {
+                            compiler.emit_compile_message(
+                                CompileMessage::new(
+                                    expr.smap.clone(),
+                                    "Cannot take address of rvalue!".to_string(),
+                                    CompileMessageType::Error,
+                                )
+                            );
+
+                            return None;
+                        };
+
+
+                        let ref_type = compiler.type_context.reference_to(lhs_ty);
+
+                        Some((TypedExprNode::UnaryOp(
+                            Box::new(
+                                TypedUnaryOperation{
+                                    op: UnaryOperator::Reference,
+                                    operand: TypedExpr{ value: lhs, ty: ref_type, smap: expr.smap.clone() }
+                                }
+                            ),
+
+                        ), ref_type))
+                    },
+                    "*" => {
+                        //can be any POINTER type
+                        let result = match &lhs_inf.kind {
+                            TypeKind::Pointer(i) => compiler.type_context.reference_to(*i),
+                            ty => {
+                                compiler.emit_compile_message(
+                                    CompileMessage::new(
+                                        expr.smap.clone(),
+                                        format!("Cannot dereference type {}", compiler.type_context.name_of(lhs_ty).unwrap()),
+                                        CompileMessageType::Error
+                                    )
+                                );
+                                return None;
+                            }
+                        };
+
+                        Some(
+                            (TypedExprNode::UnaryOp(
+                                Box::new(
+                                    TypedUnaryOperation{
+                                        op: UnaryOperator::Dereference,
+                                        operand: TypedExpr{ value: lhs, ty: result, smap: expr.smap.clone() }
+                                    }
+                                )
+                            ), result)
                         )
                     }
                     _ => {
