@@ -1,0 +1,120 @@
+# Lambda
+Compiled language based on LLVM, compiler written in rust
+
+## Usage
+`lambda [--output, -o <output> (default: a.out)] [--debug_ast] [--shared] [-l, --link <shared library>] [-L <linkage directory>] files...`
+
+**output:** the output file path
+
+**debug_ast:** print the AST as a debug step
+
+**shared:** compile this as a shared (.so or .dll) library
+
+**link:** link to a shared library, can pass this argument more than once
+
+**L:** specify a linkage directory for linking to a file
+
+**files:** files to compile
+
+## Lang features
+
+### Structures
+
+**Syntax:**
+
+```lambda
+struct MyStruct {
+  x: int32,
+  y: uint32,
+}
+```
+
+**Allows the programmer to define their own data types**
+
+*Note: There is no syntax for constructing a structure yet*
+
+
+### Functions
+
+**Syntax:**
+
+```lambda
+[extern] fn add(a: int32, b: int32) = int32 {
+  return a + b;
+}
+```
+
+**A function is a callable item of code**
+
+declare using the following structure:
+`[extern] fn NAME(arg1: type1, arg2: type2 ... argn: typen) = return_type`
+**Extern tells the compiler either a) the symbol is defined elsewhere or b) this symbol should be exported to a shared library**
+
+
+### Statements
+
+#### Expressions
+
+An expression is anything that performs actions on values, for example, `a+b` is an expression, `2b` is an expression, and `add(a, b)` is also an expression
+
+**Notes:**
+
+putting a number in front of any identifier (such as the `2b` example) is the same as multiplication
+all primitive types can use the syntax `a(b)` for multiplication as well (i.e `2(2)` will return `4`)
+
+#### Variable Declarations
+
+
+**Syntax:**
+
+`a: int32 = 2 + 2;`
+
+Declare any variable using the structure:
+
+`NAME: TYPE = EXPRESSION`
+
+
+#### Return Statements
+
+**Syntax:**
+
+`return 2a; //return 2 * a`
+
+returns a value from a function
+
+#### Casting
+
+**Syntax**
+```lambda
+a: i32 = 2;
+b: i64 = a as i64 + 2
+```
+
+casts a value to the specified type if it can
+the structure is:
+
+`VALUE as TYPE`
+
+**Notes:**
+any primitive (floatN, intN, uintN) can be casted between eachother
+any pointer can be cast to a usize, and any integer to a pointer
+
+#### Pointer arithmetic
+
+`&ident` gives a reference to an identifier
+`ref as *type` casts a reference to a pointer
+`*ptr` turns the pointer into a reference again
+
+```lambda
+a: i32 = 10;
+a_ref: i32& = &a;
+a_ptr = a_ref as i32*;
+a_ref_2 = *a_ptr;
+```
+
+
+
+
+
+
+
