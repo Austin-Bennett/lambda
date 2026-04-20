@@ -203,7 +203,6 @@ impl TypeContext {
                     let elem_ptr = b.build_gep(basic,
                                 array.into_pointer_value(),
                                 &[
-                                    usize_info.const_int(0, false),
                                     index.try_into().unwrap()
                                 ],
                                 "array_element_ptr"

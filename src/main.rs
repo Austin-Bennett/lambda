@@ -111,10 +111,21 @@ fn main() -> Result<()> {
 
     let llvm_mod = compiler.compile();
 
+
+
+
     compiler.raise_compile_warnings(true);
     if compiler.raise_compile_errors(true) {
         abort();
     }
+
+    if let Err(err) = llvm_mod.verify() {
+        eprintln!("LLVM IR Verification Error: {}", err.to_string());
+        // This will print exactly what is wrong with your GEP or types
+        abort();
+    }
+
+    llvm_mod.print_to_file("intermediate.llvm").unwrap();
 
     // --- Codegen: LLVM IR -> native object file -> executable ---
 

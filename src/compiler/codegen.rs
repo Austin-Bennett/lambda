@@ -223,12 +223,11 @@ impl Compiler {
                     unsafe {
                         let elem_ptr = builder.build_gep(basic, ptr,
                         &[
-                            usize_info.const_int(0, false),
                             usize_info.const_int(i as u64, false),
                         ], "elem")
                             .unwrap();
 
-                        let compiled_expr = self.compile_expression(builder, globals, locals, expr)?;
+                        let compiled_expr = self.compile_expression(builder, globals, locals, expr).unwrap();
                         let basic: BasicValueEnum = compiled_expr.try_into().unwrap();
 
                         builder.build_store(elem_ptr, basic).unwrap();

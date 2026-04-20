@@ -9,6 +9,9 @@ pub enum ExpressionToken {
     Identifier(String), //variable names
 
     IntegerLiteral(IntegerLiteral),
+    BoolLiteral(bool),
+    FloatLiteral(f64),
+
     
     Operator(Operator),
     

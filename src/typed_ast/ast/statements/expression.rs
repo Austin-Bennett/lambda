@@ -183,6 +183,7 @@ impl TypedExpr {
     }
 
     pub fn coerce_int_array(mut expr: TypedExpr, context: &mut TypeContext, ty: TypeId) -> TypedExpr {
+        let TypedExprNode::Array(ray) = &mut expr.value else { return expr; };
         let info1 = context.get_by_id(ty).unwrap();
         let expr_info = context.get_by_id(expr.ty).unwrap();
 
@@ -192,6 +193,10 @@ impl TypedExpr {
         if context.is_int(inner1) && expr1 == context.int_literal {
             let new_ty = context.array_of(inner1, expr_size);
             expr.ty = new_ty;
+
+            for i in ray {
+                i.ty = inner1;
+            }
         }
         expr
     }

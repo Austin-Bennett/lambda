@@ -25,6 +25,8 @@ use crate::lexer::token_parsers::Parser;
 pub struct OperatorParser;
 pub struct IdentifierParser;
 pub struct IntLiteralParser;
+pub struct BoolLiteralParser;
+pub struct FloatLiteralParser;
 
 impl IdentifierParser {
     pub fn is_identifier_character(c: char) -> bool {
@@ -92,6 +94,7 @@ impl Parser for IdentifierParser {
     }
 }
 
+
 impl Parser for IntLiteralParser {
     fn parse(&self, s: &str) -> Option<(TokenType, usize)> {
         let mut chars = s.chars().peekable();
@@ -117,5 +120,43 @@ impl Parser for IntLiteralParser {
         } else {
             None
         }
+    }
+}
+
+impl Parser for BoolLiteralParser {
+    fn parse(&self, s: &str) -> Option<(TokenType, usize)> {
+        if s.starts_with("true") && !IdentifierParser::is_identifier_character(s[4..].chars().next().unwrap_or('\0')) {
+            Some((TokenType::Expression(ExpressionToken::BoolLiteral(true)), 4))
+        } else if s.starts_with("false") && !IdentifierParser::is_identifier_character(s[5..].chars().next().unwrap_or('\0')) {
+            Some((TokenType::Expression(ExpressionToken::BoolLiteral(false)), 5))
+        } else {
+            None
+        }
+    }
+}
+
+impl Parser for FloatLiteralParser {
+    fn parse(&self, s: &str) -> Option<(TokenType, usize)> {
+        //parse in all numbers and exactly 1 period, if the next character is an e, parse in that aswell
+        let mut num = String::new();
+        let mut found_period = false;
+        
+        let mut chars = s.chars();
+        while let Some(c) = chars.next() {
+            if c.is_numeric() {
+                num.push(c)
+            } else if c == '.' && !found_period {
+                found_period = true;
+                num.push('.')
+            } else {
+                return Some((TokenType::CompileError("Extraneous '.'".to_string()), num.len()))
+            }
+        }
+        
+        if let Some('e') = chars.next() {
+            
+        }
+        
+        todo!()
     }
 }
