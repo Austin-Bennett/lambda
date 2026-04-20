@@ -29,6 +29,9 @@ pub struct Arguments {
     #[arg(long, default_value = "false")]
     debug_ast: bool,
 
+    #[arg(long, default_value = "false")]
+    no_codegen: bool,
+
     /// Compile as a shared library (.so / .dll)
     #[arg(long)]
     shared: bool,
@@ -73,13 +76,16 @@ fn main() -> Result<()> {
         abort();
     }
 
+
     if args.debug_ast {
+        println!("Untyped AST:");
         for (mp, md) in compiler.get_untyped_modules() {
             println!("Module {}:", mp);
             for item in &md.ast {
                 println!("{:?}", item)
             }
         }
+        println!();
     }
 
     compiler.create_typed_ast();
@@ -90,12 +96,17 @@ fn main() -> Result<()> {
     }
 
     if args.debug_ast {
+        println!("Typed AST:");
         for (mp, md) in compiler.get_typed_modules() {
             println!("Module {}:", mp);
             for f in &md.functions {
                 println!("{} {}", f.signature.to_string(&compiler.type_context), f.to_string(&compiler.type_context));
             }
         }
+    }
+
+    if args.no_codegen {
+        return Ok(());
     }
 
     let llvm_mod = compiler.compile();

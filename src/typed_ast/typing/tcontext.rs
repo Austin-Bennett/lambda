@@ -1,7 +1,7 @@
 use crate::ast::ty::Type;
 use crate::typed_ast::ast::items::function::FunctionSignature;
 use crate::typed_ast::typing::operator::{AssignmentMaker, BinaryOperatorMaker, ConversionMaker, OperatorOverloads, UnaryOperatorMaker};
-use inkwell::values::BasicValueEnum;
+use inkwell::values::{ArrayValue, BasicValueEnum, PointerValue};
 use crate::typed_ast::typing::ty::{StructId, StructInfo, TypeId, TypeInfo, TypeKind};
 use inkwell::builder::Builder;
 use inkwell::types::{BasicType, BasicTypeEnum, StructType};
@@ -181,6 +181,43 @@ impl TypeContext {
         }
     }
 
+    fn enable_array_operator(&mut self, id: TypeId) {
+
+        let usize_info = self.types[self.usize as usize].llvm_type.into_int_type();
+        let TypeKind::Array { ty: array_ty, size: usize } = self.types[id as usize].kind.clone() else { return; };
+        let inner_info = self.types[array_ty as usize].llvm_type;
+
+
+
+
+        self.types[id as usize].enable_index_operator(
+            self.usize,
+            array_ty,
+            Box::new(
+                move |b, array, index| unsafe {
+
+                    let basic: BasicTypeEnum = inner_info.try_into().unwrap();
+
+
+
+                    let elem_ptr = b.build_gep(basic,
+                                array.into_pointer_value(),
+                                &[
+                                    usize_info.const_int(0, false),
+                                    index.try_into().unwrap()
+                                ],
+                                "array_element_ptr"
+                    ).unwrap();
+
+                    b.build_load(basic, elem_ptr, "array_element")
+                        .unwrap()
+                        .into()
+                }
+            )
+        );
+
+    }
+
     pub fn enable_assignment(&mut self, id: TypeId) {
         let maker: AssignmentMaker = Box::new(|b, ptr, val| {
             b.build_store(ptr, BasicValueEnum::try_from(val).unwrap()).unwrap();
@@ -277,7 +314,7 @@ impl TypeContext {
         let id = self.add(Type::Typename("none".into()),
             TypeInfo::new(
                 TypeKind::None,
-                0, self.llvm_context.void_type().into()
+                self.llvm_context.void_type().into()
             )
         );
         self.none = id;
@@ -286,7 +323,7 @@ impl TypeContext {
         let id = self.add(Type::Typename("#int_literal".into()),
               TypeInfo::new(
                   TypeKind::IntLiteral,
-                  4, self.llvm_context.i32_type().into()
+                  self.llvm_context.i32_type().into()
               )
         );
         self.int_literal = id;
@@ -300,7 +337,7 @@ impl TypeContext {
         let id = self.add(Type::Typename("int8".into()),
                           TypeInfo::new(
                               TypeKind::Int(8),
-                              1, self.llvm_context.i8_type().into()
+                              self.llvm_context.i8_type().into()
                           ).enable_from_int_literal(8, true)
         );
         self.int8 = id;
@@ -309,7 +346,7 @@ impl TypeContext {
         let id = self.add(Type::Typename("int16".into()),
                           TypeInfo::new(
                               TypeKind::Int(16),
-                              2, self.llvm_context.i16_type().into()
+                              self.llvm_context.i16_type().into()
                           ).enable_from_int_literal(16, true)
         );
         self.int16 = id;
@@ -318,7 +355,7 @@ impl TypeContext {
         let id = self.add(Type::Typename("int32".into()),
                           TypeInfo::new(
                               TypeKind::Int(32),
-                              4, self.llvm_context.i32_type().into()
+                              self.llvm_context.i32_type().into()
                           ).enable_from_int_literal(32, true)
         );
         self.int32 = id;
@@ -327,7 +364,7 @@ impl TypeContext {
         let id = self.add(Type::Typename("int64".into()),
                           TypeInfo::new(
                               TypeKind::Int(64),
-                              8, self.llvm_context.i64_type().into()
+                              self.llvm_context.i64_type().into()
                           ).enable_from_int_literal(64, true)
         );
         self.int64 = id;
@@ -340,7 +377,7 @@ impl TypeContext {
         let id = self.add(Type::Typename("uint8".into()),
                           TypeInfo::new(
                               TypeKind::UInt(8),
-                              1, self.llvm_context.i8_type().into()
+                              self.llvm_context.i8_type().into()
                           ).enable_from_int_literal(8, false)
         );
         self.uint8 = id;
@@ -349,7 +386,7 @@ impl TypeContext {
         let id = self.add(Type::Typename("uint16".into()),
                           TypeInfo::new(
                               TypeKind::UInt(16),
-                              2, self.llvm_context.i16_type().into()
+                              self.llvm_context.i16_type().into()
                           ).enable_from_int_literal(16, false)
         );
         self.uint16 = id;
@@ -358,7 +395,7 @@ impl TypeContext {
         let id = self.add(Type::Typename("uint32".into()),
                           TypeInfo::new(
                               TypeKind::UInt(32),
-                              4, self.llvm_context.i32_type().into()
+                              self.llvm_context.i32_type().into()
                           ).enable_from_int_literal(32, false)
         );
         self.uint32 = id;
@@ -367,7 +404,7 @@ impl TypeContext {
         let id = self.add(Type::Typename("uint64".into()),
                           TypeInfo::new(
                               TypeKind::UInt(64),
-                              8, self.llvm_context.i64_type().into()
+                              self.llvm_context.i64_type().into()
                           ).enable_from_int_literal(64, false)
         );
 
@@ -378,7 +415,7 @@ impl TypeContext {
         let id = self.add(Type::Typename("usize".into()),
         TypeInfo::new(
             TypeKind::UInt(Self::SIZE_POINTER as u32 * 8),
-            Self::SIZE_POINTER, self.llvm_context.custom_width_int_type(Self::SIZE_POINTER as u32 * 8).into(),
+            self.llvm_context.custom_width_int_type(Self::SIZE_POINTER as u32 * 8).into(),
         ).enable_from_int_literal(Self::SIZE_POINTER as u32 * 8, false));
 
         self.usize = id;
@@ -388,7 +425,7 @@ impl TypeContext {
         let id = self.add(Type::Typename("bool".into()),
                           TypeInfo::new(
                               TypeKind::Boolean,
-                              1, self.llvm_context.i8_type().into()
+                              self.llvm_context.i8_type().into()
                           )
         );
         self.bool = id;
@@ -400,7 +437,7 @@ impl TypeContext {
         let id = self.add(Type::Typename("float32".into()),
                           TypeInfo::new(
                               TypeKind::Float(32),
-                              4, self.llvm_context.f32_type().into()
+                              self.llvm_context.f32_type().into()
                           )
         );
         self.float32 = id;
@@ -409,7 +446,7 @@ impl TypeContext {
         let id = self.add(Type::Typename("float64".into()),
                           TypeInfo::new(
                               TypeKind::Float(64),
-                              8, self.llvm_context.f64_type().into()
+                              self.llvm_context.f64_type().into()
                           )
         );
         self.float64 = id;
@@ -482,7 +519,7 @@ impl TypeContext {
                         let r = ty;
                         let res = self.add(r.clone(), TypeInfo::new(
                             TypeKind::Reference(id),
-                            Self::SIZE_POINTER, self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into()
+                            self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into()
                         ));
 
                         Some(res)
@@ -495,7 +532,7 @@ impl TypeContext {
                         let r = ty;
                         let res = self.add(r.clone(), TypeInfo::new(
                             TypeKind::Pointer(id),
-                            Self::SIZE_POINTER, self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into()
+                            self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into()
                         ));
 
                         Some(res)
@@ -514,7 +551,7 @@ impl TypeContext {
                         let usize_type = self.get_by_id(self.usize).unwrap();
                         let res = self.add(r.clone(), TypeInfo::new(
                             TypeKind::Slice(id),
-                            2*Self::SIZE_POINTER, self.llvm_context.struct_type(
+                            self.llvm_context.struct_type(
                                 &[
                                     usize_type.llvm_type.try_into().unwrap(),
                                     self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).as_basic_type_enum()
@@ -533,12 +570,12 @@ impl TypeContext {
                         let r = ty;
                         
                         let ti = &self.types[id as usize];
-                        let ray_size = ti.size * size;
                         let ray_type: BasicTypeEnum = ti.llvm_type.try_into().unwrap();
 
                         let res = self.add(r.clone(), TypeInfo::new(
                             TypeKind::Array { ty: id, size: *size },
-                            ray_size, ray_type.array_type(*size as u32).into()
+                            //arrays are just pointers
+                            self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into()
                         ));
 
                         Some(res)
@@ -603,6 +640,8 @@ impl TypeContext {
             && self.usize != 0
         {
             self.enable_ptr_conversions(id);
+        } else if matches!(self.types[id as usize].kind, TypeKind::Array { .. }) {
+            self.enable_array_operator(id)
         }
 
         id
@@ -616,7 +655,6 @@ impl TypeContext {
         }
         self.add(ptr_ty, TypeInfo::new(
             TypeKind::Pointer(inner_id),
-            Self::SIZE_POINTER,
             self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into(),
         ))
     }
@@ -629,12 +667,25 @@ impl TypeContext {
         }
         self.add(ref_ty, TypeInfo::new(
             TypeKind::Reference(inner_id),
-            Self::SIZE_POINTER,
             self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into(),
         ))
     }
 
+    pub fn array_of(&mut self, array_ty: TypeId, size: usize) -> TypeId {
+        let inner_ty = self.type_ids[&array_ty].clone();
+        let ray_ty = Type::Array { ty: Box::new(inner_ty), size };
 
+        let ray_ty_info = self.get_by_id(array_ty).unwrap();
+        let ray_basic_ty: BasicTypeEnum = ray_ty_info.llvm_type.try_into().unwrap();
+
+        if let Some(&id) = self.type_lookup.get(&ray_ty) {
+            return id;
+        }
+        self.add( ray_ty, TypeInfo::new(
+            TypeKind::Array { ty: array_ty, size },
+            self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into()
+        ))
+    }
 
 
     pub fn add_functional_type(&mut self, sig: &FunctionSignature) -> TypeId {
@@ -645,7 +696,6 @@ impl TypeContext {
         //its type is a pointer to this function
         let mut info = TypeInfo{
             kind: TypeKind::Function { params: sig.params.clone(), ret: sig.ret },
-            size: Self::SIZE_POINTER,
             ops: OperatorOverloads::new(),
             llvm_type: self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into(),
         };
@@ -699,11 +749,6 @@ impl TypeContext {
         
         let (tid) = self.add(Type::Typename(name), TypeInfo::new(
             TypeKind::Struct(id),
-            info.llvm_struct
-                .size_of()
-                .map(|i| i.get_zero_extended_constant().unwrap())
-                .unwrap_or(0)
-                as usize,
             info.llvm_struct.into()
         ));
         self.structs.push(info);

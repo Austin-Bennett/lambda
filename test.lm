@@ -2,6 +2,7 @@ use test_import
 
 
 extern fn malloc(size: usize) = uint8*;
+extern fn free(ptr: uint8*);
 
 
 //2d integer vector
@@ -17,13 +18,10 @@ fn sub(a: int32, b: int32) = int32 {
 
 //main function- this is where code starts executing
 fn main() = int32 {
-    b: int32 = 3;
-    a: int32 = add(2, 2b);
 
-    b = 5;
 
-    c: int32* = malloc(4) as int32*;
-    *c = 5;
+    d: int32[5] = [1, 2, 3, 4, 5];
 
-    return *c;
+
+    return d[2]; //should return 3
 }

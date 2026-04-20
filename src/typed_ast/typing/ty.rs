@@ -25,7 +25,6 @@ pub struct StructInfo {
 
 pub struct TypeInfo {
     pub kind: TypeKind,
-    pub size: usize,
 
     pub ops: OperatorOverloads,
 
@@ -33,10 +32,9 @@ pub struct TypeInfo {
 }
 
 impl TypeInfo {
-    pub fn new(kind: TypeKind, size: usize, llvm_type: AnyTypeEnum<'static>) -> Self {
+    pub fn new(kind: TypeKind, llvm_type: AnyTypeEnum<'static>) -> Self {
         Self {
             kind,
-            size,
             ops: OperatorOverloads::new(),
             llvm_type,
         }
@@ -52,6 +50,12 @@ impl TypeInfo {
             },
         ));
         self
+    }
+
+    pub fn enable_index_operator(&mut self, index: TypeId, result: TypeId, maker: BinaryOperatorMaker) {
+        self.ops.index.insert(
+            index, (result, maker)
+        );
     }
 
     /// Register add/sub/mul/div overloads against `self_id` with the given codegen callbacks.

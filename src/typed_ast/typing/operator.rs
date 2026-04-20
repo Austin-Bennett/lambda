@@ -36,11 +36,16 @@ pub struct OperatorOverloads {
 
     // assign: rhs TypeId -> store callback
     pub assign: HashMap<TypeId, AssignmentMaker>,
+    
+    
+    
     pub from_int_literal: Option<IntLiteralMaker>,
 
     // call: parameter type list -> result TypeId
     // (codegen for call is handled separately in compile_expression)
     pub call: HashMap<Vec<TypeId>, TypeId>,
+    
+    pub index: HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
 
     // explicit `as` casts: target TypeId -> codegen callback
     pub conversion_ops: HashMap<TypeId, ConversionMaker>,
@@ -60,6 +65,8 @@ impl OperatorOverloads {
             from_int_literal: None,
 
             call: HashMap::new(),
+            
+            index: HashMap::new(),
 
             conversion_ops: HashMap::new(),
         }

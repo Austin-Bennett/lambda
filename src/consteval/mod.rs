@@ -36,6 +36,8 @@ pub fn eval_array_len_expr_uint(expr: &ExprSyntax, compiler: &mut Compiler) -> O
                 }
             }
         }
+        Expr::Array(_) => panic!(),
+        Expr::Index(_) => panic!(),
         Expr::Tuple(values) => {
             if values.len() != 1 {
                 compiler.emit_compile_message(

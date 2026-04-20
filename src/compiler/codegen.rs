@@ -202,6 +202,51 @@ impl Compiler {
             TypedExprNode::Tuple(_) => {
                 todo!("tuple expressions")
             }
+            TypedExprNode::Array(ray) => {
+                let ty = self.type_context.get_by_id(e.ty).unwrap();
+
+                let TypeKind::Array { ty: elem_ty, size } = ty.kind else { unreachable!() };
+
+                let elem_ty: BasicTypeEnum = self.type_context.get_by_id(elem_ty)?.llvm_type.try_into().unwrap();
+                let llvm_ty = ty.llvm_type.into_pointer_type();
+                let usize_info = self.type_context.get_by_id(self.type_context.usize).unwrap().llvm_type.into_int_type();
+
+
+                let ptr = builder.build_array_alloca(elem_ty,
+                                                     self.llvm_context.i64_type().const_int(ray.len() as u64, false),
+                                                     "array_ptr"
+                ).unwrap();
+
+                for (i, expr) in ray.iter().enumerate() {
+                    let ty = self.type_context.get_by_id(expr.ty).unwrap();
+                    let basic: BasicTypeEnum = ty.llvm_type.try_into().unwrap();
+                    unsafe {
+                        let elem_ptr = builder.build_gep(basic, ptr,
+                        &[
+                            usize_info.const_int(0, false),
+                            usize_info.const_int(i as u64, false),
+                        ], "elem")
+                            .unwrap();
+
+                        let compiled_expr = self.compile_expression(builder, globals, locals, expr)?;
+                        let basic: BasicValueEnum = compiled_expr.try_into().unwrap();
+
+                        builder.build_store(elem_ptr, basic).unwrap();
+                    }
+                }
+
+                Some(ptr.into())
+
+            },
+            TypedExprNode::Index(index) => {
+                let compiled_operand = self.compile_expression(builder, globals, locals, &index.operand)?;
+                let compiled_index = self.compile_expression(builder, globals, locals, &index.index)?;
+
+                let info = self.type_context.get_by_id(index.operand.ty).unwrap();
+
+                let maker = &info.ops.index[&index.index.ty].1;
+                Some(maker(builder, compiled_operand, compiled_index))
+            },
 
             TypedExprNode::BinaryOp(bop) => {
                 if let BinaryOperator::Assign = &bop.op {
@@ -263,13 +308,18 @@ impl Compiler {
                         return None;
                     }
                     UnaryOperator::Dereference => {
+
+                        //dereferencing a pointer is syntactic sugar, we basically just return the pointer and let the "read ref"
+                        //do the rest
                         let ptr_val = self.compile_expression(builder, globals, locals, &uop.operand)?;
-                        let inner_ty = match self.type_context.get_by_id(uop.operand.ty)?.kind.clone() {
-                            TypeKind::Pointer(id) | TypeKind::Reference(id) => id,
-                            _ => return None,
-                        };
-                        let llvm_ty: BasicTypeEnum = self.type_context.get_by_id(inner_ty)?.llvm_type.try_into().ok()?;
-                        return Some(builder.build_load(llvm_ty, ptr_val.into_pointer_value(), "deref").unwrap().into());
+                        //return the pointer
+                        // let inner_ty = match self.type_context.get_by_id(uop.operand.ty)?.kind.clone() {
+                        //     TypeKind::Pointer(id) => id,
+                        //     _ => return None,
+                        // };
+                        // let llvm_ty: BasicTypeEnum = self.type_context.get_by_id(inner_ty)?.llvm_type.try_into().ok()?;
+                        // return Some(builder.build_load(llvm_ty, ptr_val.into_pointer_value(), "deref").unwrap().into());
+                        return Some(ptr_val)
                     }
                     UnaryOperator::Neg => {}
                 }

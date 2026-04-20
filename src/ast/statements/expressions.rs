@@ -3,6 +3,7 @@ use crate::lexer::iter::TokenIterator;
 use std::ptr;
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter, Write};
+use std::mem::discriminant;
 use crate::ast::{GenericSyntax, Syntax};
 use crate::ast::ty::{Type, TypeSyntax};
 use crate::common::operator::Operator;
@@ -18,6 +19,12 @@ pub struct BinaryOperation {
     pub op: Operator,
     pub lhs: ExprSyntax,
     pub rhs: ExprSyntax,
+}
+
+#[derive(Hash, Clone)]
+pub struct IndexOperation {
+    pub operand: ExprSyntax,
+    pub index: ExprSyntax,
 }
 
 #[derive(Hash, Clone)]
@@ -44,7 +51,10 @@ pub enum Expr {
     IntLiteral(IntegerLiteral),
 
     Tuple(Vec<ExprSyntax>),
-
+    
+    Array(Vec<ExprSyntax>),
+    Index(Box<IndexOperation>),
+    
     BinaryOp(Box<BinaryOperation>),
     UnaryOp(Box<UnaryOperation>),
     CallOp(Box<CallOperation>),
@@ -77,6 +87,24 @@ impl Debug for Expr {
                     write!(f, "{:?}", expr.data)?;
                 }
                 f.write_str(")")?;
+            }
+            Expr::Array(array) => {
+                f.write_str("[")?;
+                let mut first = true;
+                for expr in array {
+
+                    if !first {
+                        f.write_str(", ")?;
+                    }
+                    first = false;
+
+                    write!(f, "{:?}", expr.data)?;
+                }
+                f.write_str("]")?;
+            }
+            Expr::Index(index) => {
+                
+                write!(f, "{:?}[{:?}]", index.operand.data, index.index.data)?;
             }
             Expr::BinaryOp(bop) => {
                 write!(f, "({:?} {} {:?})", bop.lhs.data, bop.op.tk, bop.rhs.data)?;
@@ -146,11 +174,11 @@ impl ExprSyntax {
     
     }
     
-    pub fn parse_parentheses(tokens: &mut VecDeque<Token>, compiler: &mut Compiler) -> Outcome<(Vec<ExprSyntax>, SourceMap), CompileMessage> {
+    pub fn parse_parentheses(tokens: &mut VecDeque<Token>, compiler: &mut Compiler, open_token: &ExpressionToken, close_token: &ExpressionToken) -> Outcome<(Vec<ExprSyntax>, SourceMap), CompileMessage> {
         let mut smap = if let Some((e, smap)) = tokens.peek_expression() {
 
-            if let ExpressionToken::OpenParentheses = e {
-                let Some((_, smap)) = tokens.next_expression() else { panic!("Shouldn't happen") };
+            if discriminant(open_token) == discriminant(e) {
+                let Some((_, smap)) = tokens.next_expression() else { unreachable!() };
 
                 smap
             } else {
@@ -173,13 +201,13 @@ impl ExprSyntax {
             
             res.push(expr);
 
-            if let Some((ExpressionToken::CloseParentheses, _emap)) = tokens.peek_expression() {
-                let Some((ExpressionToken::CloseParentheses, emap)) = tokens.next_expression() else { panic!("Shouldn't happen") };
+            if let Some((tk, _)) = tokens.peek_expression() && discriminant(tk) == discriminant(close_token) {
+                let Some((_, emap)) = tokens.next_expression() else { unreachable!() };
 
                 smap.extend(emap);
                 break;
             } else if let Some(Token{ typ: TokenType::Feature(FeatureToken::Comma), smap: _emap }) = tokens.get(0) {
-                let Some(Token{ typ: TokenType::Feature(FeatureToken::Comma), smap: emap }) = tokens.pop_front() else { panic!("Shouldn't happen") };
+                let Some(Token{ typ: TokenType::Feature(FeatureToken::Comma), smap: emap }) = tokens.pop_front() else { unreachable!() };
 
                 smap.extend(emap);
             } else if let Some(tk) = tokens.pop_front() {
@@ -259,7 +287,8 @@ impl ExprSyntax {
             }
             //an open parenthese
             ExpressionToken::OpenParentheses => {
-                let (mut tuple, emap) = match Self::parse_parentheses(tokens, compiler)? {
+                let (mut tuple, emap) = match Self::parse_parentheses(tokens, compiler, 
+                                                                      &ExpressionToken::OpenParentheses, &ExpressionToken::CloseParentheses)? {
                     Some(v) => v,
                     None => return Outcome::Err(
                         CompileMessage::new(smap, "Expected ')' to close this '('".to_string(), CompileMessageType::Error),
@@ -279,7 +308,23 @@ impl ExprSyntax {
                 }
             }
 
-            //todo: parse array expressions [...]
+            ExpressionToken::OpenBracket => {
+                let (array, emap) = match Self::parse_parentheses(tokens, compiler,
+                                                                      &ExpressionToken::OpenBracket, &ExpressionToken::CloseBracket)? {
+                    Some(v) => v,
+                    None => return Outcome::Err(
+                        CompileMessage::new(smap, "Expected ']' to close this '['".to_string(), CompileMessageType::Error),
+                    ),
+                };
+
+                smap.extend(emap);
+
+                ExprSyntax{
+                    smap,
+                    data: Expr::Array(array)
+                }
+            
+            }
             _ => return Outcome::None,
         };
         
@@ -309,7 +354,7 @@ impl ExprSyntax {
                     }
 
                     let Some((ExpressionToken::Operator(op), emap)) = tokens.next_expression() else {
-                        panic!("Shouldn't happen")
+                        unreachable!()
                     };
 
                     if !op.bp.is_binary() {
@@ -345,11 +390,12 @@ impl ExprSyntax {
                 ExpressionToken::OpenParentheses => {
                     //a call expression
                     let emap = emap.clone();
-                    let (args, emap) = match Self::parse_parentheses(tokens, compiler)? {
+                    let (args, emap) = match Self::parse_parentheses(tokens, compiler, 
+                                                                     &ExpressionToken::OpenParentheses, &ExpressionToken::CloseParentheses)? {
                         Some(args) => args,
                         None => return Outcome::Err(CompileMessage::new(
                             emap,
-                            "expected ')' to close this tuple expressions!".to_string(),
+                            "expected ')' to close this call expression!".to_string(),
                             CompileMessageType::Error
                         ))
                     };
@@ -358,7 +404,41 @@ impl ExprSyntax {
                     lhs.smap.extend(emap);
                     lhs.make_call_expression(args)
                 }
+                ExpressionToken::OpenBracket => {
+                    //index operation
+                    let emap = emap.clone();
+                    let (mut index, emap) = match Self::parse_parentheses(tokens, compiler,
+                                                                     &ExpressionToken::OpenBracket, &ExpressionToken::CloseBracket)? {
+                        Some(args) => args,
+                        None => return Outcome::Err(CompileMessage::new(
+                            emap,
+                            "expected ']' to close this index expression!".to_string(),
+                            CompileMessageType::Error
+                        ))
+                    };
+                    
+                    if index.len() != 1 {
+                        return Outcome::Err(CompileMessage::new(
+                            emap,
+                            "Expected exactly 1 item in indexing operator!".to_string(),
+                            CompileMessageType::Error,
+                        ))
+                    }
+                    
+
+
+                    lhs.data = Expr::Index(
+                        Box::new(IndexOperation{
+                            operand: ExprSyntax{ smap: lhs.smap.clone(), data: lhs.data },
+                            index: index.remove(0),
+                        })
+                    );
+                    lhs.smap.extend(emap);
+                }
                 ExpressionToken::CloseParentheses => {
+                    break;
+                }
+                ExpressionToken::CloseBracket => {
                     break;
                 }
                 ExpressionToken::AsKW => {

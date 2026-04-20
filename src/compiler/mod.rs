@@ -265,7 +265,6 @@ impl Compiler {
                             Type::Reference(t.clone()),
                             TypeInfo::new(
                                 TypeKind::Reference(id),
-                                TypeContext::SIZE_POINTER,
                                 self.llvm_context
                                     .ptr_type(AddressSpace::try_from(0u32).unwrap())
                                     .into()
@@ -281,7 +280,6 @@ impl Compiler {
                             Type::Pointer(t.clone()),
                             TypeInfo::new(
                                 TypeKind::Pointer(id),
-                                TypeContext::SIZE_POINTER,
                                 self.llvm_context
                                     .ptr_type(AddressSpace::try_from(0u32).unwrap())
                                     .into()
@@ -299,7 +297,6 @@ impl Compiler {
                             Type::Slice(t.clone()),
                             TypeInfo::new(
                                 TypeKind::Slice(id),
-                                TypeContext::SIZE_POINTER * 2,
                                 slice_struct
                             )
                         ))
@@ -310,17 +307,15 @@ impl Compiler {
                 Type::Array { ty: t, size } => {
                     if let Some(id) = self.resolve_type(t) {
                         let ray_typ;
-                        let ray_size;
 
                         let ti = &self.type_context.types[id as usize];
-                        ray_size = ti.size * size;
                         let typ: BasicTypeEnum = ti.llvm_type.try_into().unwrap();
                         ray_typ = typ.array_type(*size as u32);
 
 
                         let res = self.type_context.add(t.deref().clone(), TypeInfo::new(
                             TypeKind::Array { ty: id, size: *size },
-                            ray_size, ray_typ.into()
+                            ray_typ.into()
                         ));
 
                         Some(res)

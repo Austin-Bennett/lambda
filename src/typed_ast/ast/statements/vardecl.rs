@@ -3,7 +3,7 @@ use crate::common::sourcemap::SourceMap;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::typed_ast::ast::statements::expression::TypedExpr;
 use crate::typed_ast::typing::scope::AvailableContext;
-use crate::typed_ast::typing::ty::TypeId;
+use crate::typed_ast::typing::ty::{TypeId, TypeKind};
 
 pub struct TypedVarDecl {
     pub name: String,
@@ -33,13 +33,18 @@ impl TypedVarDecl {
             Some(e) => {
                 let mut e = TypedExpr::from_ast(e, compiler, context)?;
 
-                let info = &compiler.type_context.types[e.ty as usize];
-                if compiler.type_context.is_int(ty) && e.ty == compiler.type_context.int_literal {
-                    e.ty = ty;
-                }
-                
 
-                if e.ty != ty && !info.ops.conversion_ops.contains_key(&ty) {
+
+
+                e = TypedExpr::coerce_int_array(
+                    TypedExpr::coerce_int(&compiler.type_context, TypedExpr::coerce_ref(e, &compiler.type_context), ty),
+                    &mut compiler.type_context, ty
+                );
+
+
+
+
+                if e.ty != ty {
                     compiler.emit_compile_message(
                         CompileMessage::new(
                             e.smap.clone(),
