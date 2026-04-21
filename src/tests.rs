@@ -1,8 +1,5 @@
-use std::fs;
 use inkwell::context::Context;
 use crate::ast::structure::StructureSyntax;
-#[cfg(test)]
-
 use crate::ast::ty::TypeSyntax;
 use crate::ast::Syntax;
 use crate::common::source_owner::{SourceDescriptor, SourceOwner};
@@ -63,7 +60,7 @@ pub fn test_struct_make() {
     ");
 
     let mut tks = tokens.filter(|t|
-        if let TokenType::User(u) = &t.typ
+        if let TokenType::User(_) = &t.typ
         { false } else { true }).collect();
 
     let Some(structure) = StructureSyntax::parse(&mut tks, &mut compiler) else {

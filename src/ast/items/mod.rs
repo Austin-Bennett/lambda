@@ -1,13 +1,10 @@
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
-use std::iter::Fuse;
 use crate::ast::{GenericSyntax, Syntax};
-use crate::ast::items::function::{Function, FunctionSyntax};
-use crate::ast::items::structure::{lstruct::Structure, StructureSyntax};
+use crate::ast::items::function::FunctionSyntax;
+use crate::ast::items::structure::StructureSyntax;
 use crate::common::sourcemap::SourceMap;
-use crate::common::utils::modulepath::ModulePath;
-use crate::common::utils::outcome::Outcome;
-use crate::compiler::{CompileMessage, Compiler};
+use crate::compiler::Compiler;
 use crate::lexer::token::Token;
 
 pub mod structure;

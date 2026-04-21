@@ -1,13 +1,11 @@
 use std::collections::VecDeque;
-use std::fmt::{write, Debug, Formatter};
+use std::fmt::{Debug, Formatter};
 use std::process::abort;
 use std::ptr;
 use crate::ast::{GenericSyntax, Syntax};
-use crate::ast::statements::expressions::{Expr, ExprSyntax};
+use crate::ast::statements::expressions::ExprSyntax;
 use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
-use crate::common::utils::modulepath::ModulePath;
-use crate::common::utils::outcome::Outcome;
 use crate::compiler::{CompileMessage, Compiler};
 use crate::lexer::token::{ExpressionToken, Token, TokenType};
 use crate::{unpack_opt_tk, unpack_tk};
@@ -174,7 +172,7 @@ impl Syntax for TypeSyntax {
 
         //always starts with the type identifier
         let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Identifier(s)), smap) = tokens
-            .pop_front_if(|tk| if let unpack_tk!(TokenType::Expression(ExpressionToken::Identifier(s)), _) = tk {
+            .pop_front_if(|tk| if let unpack_tk!(TokenType::Expression(ExpressionToken::Identifier(_)), _) = tk {
                 true
             } else {
                 false

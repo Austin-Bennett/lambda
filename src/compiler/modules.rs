@@ -1,14 +1,11 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use crate::ast;
 use crate::ast::Syntax;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
-use crate::common::utils::outcome::Outcome;
-use crate::common::utils::progress::Progress;
-use crate::common::utils::Todo;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{FeatureToken, Token, TokenType};
-use crate::typed_ast::ast::items::function::{Function, FunctionSignature};
+use crate::typed_ast::ast::items::function::Function;
 use crate::typed_ast::typing::scope::AvailableContext;
 
 pub struct LModule {
@@ -19,12 +16,12 @@ pub struct LModule {
 
 
 impl LModule {
-    pub fn parse_untyped(path: ModulePath, mut tokens: VecDeque<Token>, smap: SourceMap, dependencies: Vec<ModulePath>, compiler: &mut Compiler) -> Self {
+    pub fn parse_untyped(_path: ModulePath, mut tokens: VecDeque<Token>, smap: SourceMap, dependencies: Vec<ModulePath>, compiler: &mut Compiler) -> Self {
         let mut items = Vec::new();
 
         while !tokens.is_empty() {
 
-            let Some(mut item) = ast::ItemSyntax::parse(&mut tokens, compiler) else {
+            let Some(item) = ast::ItemSyntax::parse(&mut tokens, compiler) else {
                 if let Some(Token{ typ: TokenType::Feature(FeatureToken::StatementEnd), smap: _ }) = tokens.get(0) {
                     tokens.pop_front();
                     continue;

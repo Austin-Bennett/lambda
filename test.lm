@@ -17,11 +17,12 @@ fn sub(a: int32, b: int32) = int32 {
 }
 
 //main function- this is where code starts executing
-fn main() = int32 {
+fn main() = int8 {
 
+    a: int8* = malloc(1) as int8*;
+    a_ref: int8& = *a;
+    *a_ref = 30;
+    *a_ref = 3(*a_ref / 2)
 
-    d: int32[5] = [1, 2, 3, 4, 5];
-
-
-    return d[2]; //should return 3
+    return *a_ref;
 }

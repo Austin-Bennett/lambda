@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::Path;
 use crate::lexer::token::{ExpressionToken, FeatureToken, Token, TokenType};
-use crate::lexer::token_parsers::expression_parsers::{IdentifierParser, IntLiteralParser, OperatorParser};
+use crate::lexer::token_parsers::expression_parsers::{BoolLiteralParser, FloatLiteralParser, IdentifierParser, IntLiteralParser, OperatorParser};
 use crate::lexer::token_parsers::misc_parsers::*;
 use crate::lexer::token_parsers::Parser;
 use anyhow::Result;
@@ -35,6 +35,8 @@ impl Tokens {
         &ColonParser::new(TokenType::Feature(FeatureToken::Colon)),
         &UseParser,
         &KeywordParser,
+        &BoolLiteralParser,   // before IdentifierParser — "true"/"false" are also valid identifiers
+        &FloatLiteralParser,  // before IntLiteralParser — "3.14" must not be tokenized as "3" then ".14"
         &IntLiteralParser,
         &IdentifierParser,
     ];

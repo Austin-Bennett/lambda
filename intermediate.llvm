@@ -1,6 +1,18 @@
 ; ModuleID = 'lambda_program'
 source_filename = "lambda_program"
 
+define i32 @add(i32 %0, i32 %1) {
+entry:
+  %a = alloca i32, align 4
+  store i32 %0, ptr %a, align 4
+  %b = alloca i32, align 4
+  store i32 %1, ptr %b, align 4
+  %a1 = load i32, ptr %a, align 4
+  %b2 = load i32, ptr %b, align 4
+  %iadd = add i32 %a1, %b2
+  ret i32 %iadd
+}
+
 declare ptr @malloc(i64)
 
 declare void @free(ptr)
@@ -17,35 +29,23 @@ entry:
   ret i32 %isub
 }
 
-define i32 @main() {
+define i8 @main() {
 entry:
-  %d = alloca ptr, align 8
-  %array_ptr = alloca i32, i64 5, align 4
-  %elem = getelementptr i32, ptr %array_ptr, i64 0
-  store i32 1, ptr %elem, align 4
-  %elem1 = getelementptr i32, ptr %array_ptr, i64 1
-  store i32 2, ptr %elem1, align 4
-  %elem2 = getelementptr i32, ptr %array_ptr, i64 2
-  store i32 3, ptr %elem2, align 4
-  %elem3 = getelementptr i32, ptr %array_ptr, i64 3
-  store i32 4, ptr %elem3, align 4
-  %elem4 = getelementptr i32, ptr %array_ptr, i64 4
-  store i32 5, ptr %elem4, align 4
-  store ptr %array_ptr, ptr %d, align 8
-  %d5 = load ptr, ptr %d, align 8
-  %array_element_ptr = getelementptr i32, ptr %d5, i64 2
-  %array_element = load i32, ptr %array_element_ptr, align 4
-  ret i32 %array_element
-}
-
-define i32 @add(i32 %0, i32 %1) {
-entry:
-  %a = alloca i32, align 4
-  store i32 %0, ptr %a, align 4
-  %b = alloca i32, align 4
-  store i32 %1, ptr %b, align 4
-  %a1 = load i32, ptr %a, align 4
-  %b2 = load i32, ptr %b, align 4
-  %iadd = add i32 %a1, %b2
-  ret i32 %iadd
+  %a = alloca ptr, align 8
+  %call = call ptr @malloc(i64 1)
+  store ptr %call, ptr %a, align 8
+  %a_ref = alloca ptr, align 8
+  %a1 = load ptr, ptr %a, align 8
+  store ptr %a1, ptr %a_ref, align 8
+  %a_ref2 = load ptr, ptr %a_ref, align 8
+  store i8 30, ptr %a_ref2, align 1
+  %a_ref3 = load ptr, ptr %a_ref, align 8
+  %refread = load i8, ptr %a_ref3, align 1
+  %idiv = sdiv i8 %refread, 2
+  %imul = mul i8 3, %idiv
+  %a_ref4 = load ptr, ptr %a_ref, align 8
+  store i8 %imul, ptr %a_ref4, align 1
+  %a_ref5 = load ptr, ptr %a_ref, align 8
+  %refread6 = load i8, ptr %a_ref5, align 1
+  ret i8 %refread6
 }

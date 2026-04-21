@@ -1,17 +1,15 @@
 
 use crate::lexer::iter::TokenIterator;
-use std::ptr;
 use std::collections::VecDeque;
-use std::fmt::{Debug, Formatter, Write};
+use std::fmt::{Debug, Formatter};
 use std::mem::discriminant;
 use crate::ast::{GenericSyntax, Syntax};
 use crate::ast::ty::{Type, TypeSyntax};
 use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
-use crate::common::utils::modulepath::ModulePath;
 use crate::common::utils::outcome::Outcome;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
-use crate::lexer::literal::IntegerLiteral;
+use crate::lexer::literal::LiteralValue;
 use crate::lexer::token::{ExpressionToken, FeatureToken, Token, TokenType};
 
 #[derive(Hash, Clone)]
@@ -48,7 +46,7 @@ pub struct CastOperation {
 #[derive(Hash, Clone)]
 pub enum Expr {
     Identifier(String),
-    IntLiteral(IntegerLiteral),
+    Literal(LiteralValue),
 
     Tuple(Vec<ExprSyntax>),
     
@@ -71,8 +69,8 @@ impl Debug for Expr {
             Expr::Identifier(ident) => {
                 write!(f, "{}", ident)?;
             }
-            Expr::IntLiteral(int) => {
-                write!(f, "{:?}", int)?;
+            Expr::Literal(lit) => {
+                write!(f, "{:?}", lit)?;
             }
             Expr::Tuple(tuple) => {
                 f.write_str("(")?;
@@ -211,15 +209,17 @@ impl ExprSyntax {
 
                 smap.extend(emap);
             } else if let Some(tk) = tokens.pop_front() {
+                let close = match close_token { ExpressionToken::CloseBracket => ']', _ => ')' };
                 return Outcome::Err(
-                    CompileMessage::new(tk.smap, format!("Expected ')', got token: {:?}", tk.typ), CompileMessageType::Error)
+                    CompileMessage::new(tk.smap, format!("Expected '{}', got token: {:?}", close, tk.typ), CompileMessageType::Error)
                         .add_note(
-                            CompileMessage::note(smap, "Note: to end this tuple expression".into())
+                            CompileMessage::note(smap, format!("Note: to end this expression starting with '{}'", match close_token { ExpressionToken::CloseBracket => '[', _ => '(' }))
                         )
                 )
             } else {
+                let close = match close_token { ExpressionToken::CloseBracket => ']', _ => ')' };
                 return Outcome::Err(
-                    CompileMessage::new(smap, "Expected ')' to end this tuple expression".into(), CompileMessageType::Error)
+                    CompileMessage::new(smap, format!("Expected '{}' to end this expression", close), CompileMessageType::Error)
                 )
             }
         }
@@ -244,10 +244,13 @@ impl ExprSyntax {
                 }
             }
             ExpressionToken::IntegerLiteral(i) => {
-                ExprSyntax{
-                    data: Expr::IntLiteral(i),
-                    smap
-                }
+                ExprSyntax{ data: Expr::Literal(LiteralValue::Integer(i)), smap }
+            }
+            ExpressionToken::FloatLiteral(f) => {
+                ExprSyntax{ data: Expr::Literal(LiteralValue::Float(f)), smap }
+            }
+            ExpressionToken::BoolLiteral(b) => {
+                ExprSyntax{ data: Expr::Literal(LiteralValue::Bool(b)), smap }
             }
             ExpressionToken::Operator(op) => {
 
@@ -336,7 +339,7 @@ impl ExprSyntax {
             };
 
             match rhs {
-                ExpressionToken::Identifier(_) | ExpressionToken::IntegerLiteral(_) => {
+                ExpressionToken::Identifier(_) | ExpressionToken::IntegerLiteral(_) | ExpressionToken::FloatLiteral(_) => {
                     //expressions such as 2a will go here, this is multiplication, so we will inline the
                     //multiplication parse operation here
                     if Operator::MUL.bp.effective_lbp() < minbp { break }

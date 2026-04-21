@@ -1,10 +1,8 @@
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::fmt::Debug;
 use std::mem;
 use std::ops::Deref;
-use std::process::abort;
 use inkwell::AddressSpace;
-use inkwell::types::{ArrayType, BasicType, BasicTypeEnum};
+use inkwell::types::{BasicType, BasicTypeEnum};
 use crate::common::source_owner::SourceOwner;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
@@ -15,6 +13,7 @@ pub use compile_message::CompileMessage;
 pub mod modules;
 pub mod compile_message;
 pub mod codegen;
+pub mod intrinsic;
 
 use modules::*;
 use crate::ast::Item;
@@ -22,7 +21,6 @@ use crate::ast::statements::vardecl::VarDecl;
 use crate::ast::structure::lstruct;
 use crate::ast::ty::Type;
 use crate::typed_ast::ast::items::function::FunctionSignature;
-use crate::typed_ast::ast::statements::vardecl::TypedVarDecl;
 use crate::typed_ast::typing::scope::AvailableContext;
 use crate::typed_ast::typing::tcontext::TypeContext;
 use crate::typed_ast::typing::ty::{StructId, StructInfo, StructMember, TypeId, TypeInfo, TypeKind};
@@ -48,6 +46,7 @@ pub struct Compiler {
 
     _findset: HashSet<String>,
 
+    pub intrinsics: HashMap<String, intrinsic::IntrinsicMaker>,
 
     pub llvm_context: &'static inkwell::context::Context,
     pub type_context: TypeContext,
@@ -67,7 +66,13 @@ impl Compiler {
             type_context:    TypeContext::new(llvm_context),
             llvm_context,
             _findset:        HashSet::new(),
+            intrinsics:      HashMap::new(),
         }
+    }
+
+    pub fn register_intrinsic(&mut self, name: &str, ret: TypeId, maker: intrinsic::IntrinsicMaker) {
+        self.type_context.register_intrinsic(name, ret);
+        self.intrinsics.insert(name.to_string(), maker);
     }
 
     pub fn get_untyped_modules(&self) -> &HashMap<ModulePath, LModule> {
@@ -86,7 +91,7 @@ impl Compiler {
 
         //loop through all functions, create their identifiers ahead of time
         //add to the global scope
-        for (p, m) in &modules {
+        for (_, m) in &modules {
             for item in &m.ast {
                 if let Item::Func(func) = item {
                     //create its signature
@@ -365,7 +370,6 @@ impl Compiler {
                  msg.source.line + 1,
                  msg.source.char + 1,
         );
-        let end = msg.source.offset + msg.source.len;
         println!("{}\n", msg.message);
         for i in &msg.notes {
             self.print_message(&i, "note")

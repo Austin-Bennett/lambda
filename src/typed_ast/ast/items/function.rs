@@ -101,7 +101,7 @@ impl Function {
             params: params.iter().map(|v| v.ty).collect()
         };
 
-        if sig.name == "main" && sig.ret != compiler.type_context.int32 {
+        if sig.name == "main" && sig.ret != compiler.type_context.int8 {
             compiler.emit_compile_message(
                 CompileMessage::new(
                     func.smap.clone(),

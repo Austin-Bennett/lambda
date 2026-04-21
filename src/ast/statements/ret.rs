@@ -1,8 +1,8 @@
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, DerefPure};
 use std::process::abort;
-use crate::ast::{GenericSyntax, Syntax};
-use crate::ast::statements::expressions::{Expr, ExprSyntax};
+use crate::ast::Syntax;
+use crate::ast::statements::expressions::ExprSyntax;
 use crate::common::sourcemap::SourceMap;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{StatementToken, Token, TokenType};

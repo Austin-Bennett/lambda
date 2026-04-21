@@ -8,7 +8,7 @@ use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{ExpressionToken, FeatureToken, StatementToken, Token, TokenType};
 use crate::unpack_opt_tk;
 use std::collections::VecDeque;
-use std::fmt::{Debug, Formatter, Write};
+use std::fmt::{Debug, Formatter};
 
 
 //todo: return value
@@ -76,10 +76,10 @@ impl Syntax for FunctionSyntax {
         };
         let ind = if is_extern { 1 } else { 0 };
 
-        let unpack_opt_tk!( TokenType::Statement(StatementToken::FnKW), smap ) = tokens.get(ind) else { return None };
+        let unpack_opt_tk!( TokenType::Statement(StatementToken::FnKW), _ ) = tokens.get(ind) else { return None };
 
         let smap = if is_extern {
-            let unpack_opt_tk!( TokenType::Statement(StatementToken::ExternKW), mut smap ) = tokens.pop_front()
+            let unpack_opt_tk!( TokenType::Statement(StatementToken::ExternKW), smap ) = tokens.pop_front()
             else { unreachable!() };
             Some(smap)
         } else {
@@ -171,9 +171,7 @@ impl Syntax for FunctionSyntax {
         if !ended {
             let next = tokens.pop_front();
             if let unpack_opt_tk!(TokenType::Expression(ExpressionToken::CloseParentheses), imap) = next {
-                smap.extend(imap.clone());
-                ended = true;
-                last_smap = imap;
+                smap.extend(imap);
             } else {
                 compiler.emit_compile_message(
                     CompileMessage::expected_token_error(

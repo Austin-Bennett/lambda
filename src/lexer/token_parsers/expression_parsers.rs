@@ -137,26 +137,28 @@ impl Parser for BoolLiteralParser {
 
 impl Parser for FloatLiteralParser {
     fn parse(&self, s: &str) -> Option<(TokenType, usize)> {
-        //parse in all numbers and exactly 1 period, if the next character is an e, parse in that aswell
-        let mut num = String::new();
+        let mut len = 0;
         let mut found_period = false;
-        
-        let mut chars = s.chars();
-        while let Some(c) = chars.next() {
-            if c.is_numeric() {
-                num.push(c)
-            } else if c == '.' && !found_period {
+        let mut has_digits_before = false;
+        let mut has_digits_after = false;
+
+        for c in s.chars() {
+            if c.is_ascii_digit() {
+                if found_period { has_digits_after = true; } else { has_digits_before = true; }
+                len += 1;
+            } else if c == '.' && !found_period && has_digits_before {
                 found_period = true;
-                num.push('.')
+                len += 1;
             } else {
-                return Some((TokenType::CompileError("Extraneous '.'".to_string()), num.len()))
+                break;
             }
         }
-        
-        if let Some('e') = chars.next() {
-            
+
+        if !found_period || !has_digits_before || !has_digits_after {
+            return None;
         }
-        
-        todo!()
+
+        let val: f64 = s[..len].parse().ok()?;
+        Some((TokenType::Expression(ExpressionToken::FloatLiteral(val)), len))
     }
 }

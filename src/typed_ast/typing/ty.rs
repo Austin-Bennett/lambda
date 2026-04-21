@@ -1,8 +1,5 @@
-use crate::lexer::literal::IntegerLiteral;
 use crate::typed_ast::typing::operator::{BinaryOperatorMaker, OperatorOverloads, UnaryOperatorMaker};
-use inkwell::context::Context;
 use inkwell::types::{AnyTypeEnum, StructType};
-use inkwell::values::AnyValueEnum;
 use std::fmt::{Debug, Formatter};
 
 pub type TypeId = u32;
@@ -40,18 +37,6 @@ impl TypeInfo {
         }
     }
 
-    pub fn enable_from_int_literal(mut self, width: u32, signed: bool) -> Self {
-        self.ops.from_int_literal = Some(Box::new(
-            move |context: &'static Context, literal: IntegerLiteral| -> AnyValueEnum<'static> {
-                context
-                    .custom_width_int_type(width)
-                    .const_int(literal.as_u64_lossy(), signed)
-                    .into()
-            },
-        ));
-        self
-    }
-
     pub fn enable_index_operator(&mut self, index: TypeId, result: TypeId, maker: BinaryOperatorMaker) {
         self.ops.index.insert(
             index, (result, maker)
@@ -86,6 +71,7 @@ impl TypeInfo {
 #[derive(Clone)]
 pub enum TypeKind {
     IntLiteral,
+    FloatLiteral,
     Int(u32),
     UInt(u32),
 
@@ -101,6 +87,7 @@ pub enum TypeKind {
     Slice(TypeId),
     Array { ty: TypeId, size: usize }, // size is const-evaluated
     Function { params: Vec<TypeId>, ret: TypeId },
+    Intrinsic { ret: TypeId },
 }
 
 // Truly only for debug
@@ -108,6 +95,7 @@ impl Debug for TypeKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             TypeKind::IntLiteral => write!(f, "integer"),
+            TypeKind::FloatLiteral => write!(f, "float"),
             TypeKind::Int(w) => write!(f, "int{}", w),
             TypeKind::UInt(w) => write!(f, "uint{}", w),
             TypeKind::Float(w) => write!(f, "float{}", w),
@@ -120,6 +108,7 @@ impl Debug for TypeKind {
             TypeKind::Slice(_) => f.write_str("[]"),
             TypeKind::Array { .. } => f.write_str("[N]"),
             TypeKind::Function { .. } => f.write_str("functor"),
+            TypeKind::Intrinsic { .. } => f.write_str("intrinsic"),
         }
     }
 }

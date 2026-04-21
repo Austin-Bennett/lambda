@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
-use crate::ast::{GenericSyntax, Syntax};
+use crate::ast::Syntax;
 use crate::ast::statements::vardecl::*;
 use crate::ast::statements::expressions::*;
 use crate::ast::statements::ret::{Return};

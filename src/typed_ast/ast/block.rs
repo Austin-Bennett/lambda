@@ -1,4 +1,4 @@
-use crate::ast::block::{Block, BlockSyntax};
+use crate::ast::block::BlockSyntax;
 use crate::ast::GenericSyntax;
 use crate::compiler::Compiler;
 use crate::typed_ast::ast::statements::TypedStatement;

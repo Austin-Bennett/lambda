@@ -1,5 +1,3 @@
-use std::ptr;
-
 pub mod hashtable;
 pub mod modulepath;
 pub mod outcome;

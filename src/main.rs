@@ -16,6 +16,7 @@ pub mod lexer;
 pub mod common;
 pub mod compiler;
 pub mod ast;
+#[cfg(test)]
 pub mod tests;
 pub mod typed_ast;
 pub mod consteval;

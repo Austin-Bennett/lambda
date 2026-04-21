@@ -3,7 +3,7 @@ use crate::common::sourcemap::SourceMap;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::typed_ast::ast::statements::expression::TypedExpr;
 use crate::typed_ast::typing::scope::AvailableContext;
-use crate::typed_ast::typing::ty::{TypeId, TypeKind};
+use crate::typed_ast::typing::ty::TypeId;
 
 pub struct TypedVarDecl {
     pub name: String,
@@ -36,8 +36,8 @@ impl TypedVarDecl {
 
 
 
-                e = TypedExpr::coerce_int_array(
-                    TypedExpr::coerce_int(&compiler.type_context, TypedExpr::coerce_ref(e, &compiler.type_context), ty),
+                e = TypedExpr::coerce_literal_array(
+                    TypedExpr::coerce_literal(&compiler.type_context, e, ty),
                     &mut compiler.type_context, ty
                 );
 

@@ -1,13 +1,13 @@
-use crate::lexer::literal::IntegerLiteral;
+use crate::lexer::literal::LiteralValue;
 use crate::typed_ast::typing::ty::TypeId;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::values::{AnyValueEnum, PointerValue};
 use std::collections::HashMap;
 
-// Produces an LLVM constant from an integer literal token.
-// The context must be `'static` because all generated values are `'static`.
-pub type IntLiteralMaker = Box<dyn Fn(&'static Context, IntegerLiteral) -> AnyValueEnum<'static>>;
+// Produces an LLVM constant from a literal value.
+// Key in `from_literal` is the literal pseudo-type's TypeId (e.g. int_literal, float_literal).
+pub type LiteralMaker = Box<dyn Fn(&'static Context, &LiteralValue) -> AnyValueEnum<'static>>;
 
 // Binary operator: (builder, lhs_value, rhs_value) -> result_value
 pub type BinaryOperatorMaker = Box<dyn Fn(&Builder<'static>, AnyValueEnum<'static>, AnyValueEnum<'static>) -> AnyValueEnum<'static>>;
@@ -36,10 +36,9 @@ pub struct OperatorOverloads {
 
     // assign: rhs TypeId -> store callback
     pub assign: HashMap<TypeId, AssignmentMaker>,
-    
-    
-    
-    pub from_int_literal: Option<IntLiteralMaker>,
+
+    // literal_pseudo_type_id -> codegen callback; keyed by the literal's TypeId
+    pub from_literal: HashMap<TypeId, LiteralMaker>,
 
     // call: parameter type list -> result TypeId
     // (codegen for call is handled separately in compile_expression)
@@ -62,7 +61,7 @@ impl OperatorOverloads {
             div: HashMap::new(),
 
             assign: HashMap::new(),
-            from_int_literal: None,
+            from_literal: HashMap::new(),
 
             call: HashMap::new(),
             

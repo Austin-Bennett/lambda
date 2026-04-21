@@ -1,7 +1,6 @@
 use crate::ast::statements::expressions::{Expr, ExprSyntax};
-use crate::common::sourcemap::SourceMap;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
-use crate::typed_ast::typing::ty::TypeInfo;
+use crate::lexer::literal::LiteralValue;
 
 
 
@@ -10,6 +9,27 @@ use crate::typed_ast::typing::ty::TypeInfo;
 //only numbers are allowed in these const expressions
 pub fn eval_array_len_expr_uint(expr: &ExprSyntax, compiler: &mut Compiler) -> Option<u128> {
     match &expr.data {
+        Expr::Literal(lit) => match lit {
+            LiteralValue::Integer(i) => {
+                match i.as_u128() {
+                    Ok(v) => Some(v),
+                    Err(e) => {
+                        compiler.emit_compile_message(CompileMessage::new(
+                            expr.smap.clone(), e.to_string(), CompileMessageType::Error,
+                        ));
+                        None
+                    }
+                }
+            }
+            LiteralValue::Float(_) | LiteralValue::Bool(_) => {
+                compiler.emit_compile_message(CompileMessage::new(
+                    expr.smap.clone(),
+                    "only integer literals are allowed in constant expressions".into(),
+                    CompileMessageType::Error,
+                ));
+                None
+            }
+        },
         Expr::Identifier(ident) => {
             compiler.emit_compile_message(
                 CompileMessage::new(
@@ -21,23 +41,14 @@ pub fn eval_array_len_expr_uint(expr: &ExprSyntax, compiler: &mut Compiler) -> O
             
             None
         },
-        Expr::IntLiteral(i) => {
-            match i.as_u128() { 
-                Ok(v) => Some(v),
-                Err(e) => {
-                    compiler.emit_compile_message(
-                        CompileMessage::new(
-                            expr.smap.clone(),
-                            e.to_string(),
-                            CompileMessageType::Error,
-                        )
-                    );
-                    None
-                }
-            }
+        Expr::Array(_) | Expr::Index(_) => {
+            compiler.emit_compile_message(CompileMessage::new(
+                expr.smap.clone(),
+                "array expressions are not allowed in constant expressions".into(),
+                CompileMessageType::Error,
+            ));
+            None
         }
-        Expr::Array(_) => panic!(),
-        Expr::Index(_) => panic!(),
         Expr::Tuple(values) => {
             if values.len() != 1 {
                 compiler.emit_compile_message(
@@ -75,7 +86,7 @@ pub fn eval_array_len_expr_uint(expr: &ExprSyntax, compiler: &mut Compiler) -> O
             
         }
         Expr::UnaryOp(op) => {
-            let v = eval_array_len_expr_uint(&op.operand, compiler)?;
+            let _v = eval_array_len_expr_uint(&op.operand, compiler)?;
 
             match op.op.tk {
                 "-" => {

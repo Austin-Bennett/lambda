@@ -10,7 +10,7 @@ pub mod items;
 pub mod ty;
 pub mod statements;
 
-pub use {items::*, items::*};
+pub use items::*;
 pub trait Syntax {
     fn parse(tokens: &mut VecDeque<Token>, context: &mut Compiler) -> Option<Self> where Self: Sized;
 

@@ -4,9 +4,7 @@ use std::process::abort;
 use crate::ast::{GenericSyntax, Syntax};
 use crate::ast::statements::vardecl::{VarDecl, VarDeclSyntax};
 use crate::common::sourcemap::SourceMap;
-use crate::common::utils::modulepath::ModulePath;
-use crate::common::utils::outcome::Outcome;
-use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
+use crate::compiler::{CompileMessage, Compiler};
 use crate::lexer::token::{ExpressionToken, FeatureToken, StatementToken, Token, TokenType};
 use crate::unpack_opt_tk;
 
@@ -39,7 +37,7 @@ impl Syntax for StructureSyntax {
     where
         Self: Sized
     {
-        let unpack_opt_tk!( TokenType::Statement(StatementToken::StructKW), smap ) = tokens.get(0) else { return None };
+        let unpack_opt_tk!( TokenType::Statement(StatementToken::StructKW), _ ) = tokens.get(0) else { return None };
         let unpack_opt_tk!( TokenType::Statement(StatementToken::StructKW), mut smap ) = tokens.pop_front() else { abort(); };
 
 

@@ -5,7 +5,7 @@ use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{FeatureToken, Token, TokenType};
 use crate::{token_match, unpack_opt_tk};
 use std::collections::VecDeque;
-use std::fmt::{Debug, Formatter, Pointer, Write};
+use std::fmt::{Debug, Formatter};
 use std::process::abort;
 
 pub type Block = Vec<Statement>;

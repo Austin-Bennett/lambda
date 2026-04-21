@@ -1,7 +1,8 @@
 use crate::ast::ty::Type;
+use crate::lexer::literal::LiteralValue;
 use crate::typed_ast::ast::items::function::FunctionSignature;
 use crate::typed_ast::typing::operator::{AssignmentMaker, BinaryOperatorMaker, ConversionMaker, OperatorOverloads, UnaryOperatorMaker};
-use inkwell::values::{ArrayValue, BasicValueEnum, PointerValue};
+use inkwell::values::BasicValueEnum;
 use crate::typed_ast::typing::ty::{StructId, StructInfo, TypeId, TypeInfo, TypeKind};
 use inkwell::builder::Builder;
 use inkwell::types::{BasicType, BasicTypeEnum, StructType};
@@ -19,8 +20,12 @@ pub struct TypeContext {
     pub struct_lookup: HashMap<String, StructId>,
 
     pub none: TypeId,
-    
+
     pub int_literal: TypeId,
+    pub float_literal: TypeId,
+
+    // default concrete type for each literal pseudo-type (used when both sides are literals)
+    pub literal_defaults: std::collections::HashMap<TypeId, TypeId>,
 
     pub int8: TypeId,
     pub int16: TypeId,
@@ -38,6 +43,8 @@ pub struct TypeContext {
 
     pub float32: TypeId,
     pub float64: TypeId,
+
+    pub intrinsics: HashMap<String, TypeId>,
 }
 
 
@@ -60,6 +67,8 @@ impl TypeContext {
             struct_lookup: Default::default(),
             none: 0,
             int_literal: 0,
+            float_literal: 0,
+            literal_defaults: std::collections::HashMap::new(),
             int8: 0,
             int16: 0,
             int32: 0,
@@ -72,6 +81,7 @@ impl TypeContext {
             usize: 0,
             float32: 0,
             float64: 0,
+            intrinsics: HashMap::new(),
         };
 
         types.setup_types();
@@ -146,8 +156,8 @@ impl TypeContext {
                 self.types[id as usize].enable_neg_operator(id, neg);
             }
 
-            // Floating-point types
-            TypeKind::Float(_) => {
+            // Floating-point types (including the float_literal pseudo-type)
+            TypeKind::Float(_) | TypeKind::FloatLiteral => {
                 let add: BinaryOperatorMaker = Box::new(|b, l, r| {
                     b.build_float_add(l.into_float_value(), r.into_float_value(), "fadd")
                         .unwrap()
@@ -182,9 +192,7 @@ impl TypeContext {
     }
 
     fn enable_array_operator(&mut self, id: TypeId) {
-
-        let usize_info = self.types[self.usize as usize].llvm_type.into_int_type();
-        let TypeKind::Array { ty: array_ty, size: usize } = self.types[id as usize].kind.clone() else { return; };
+        let TypeKind::Array { ty: array_ty, .. } = self.types[id as usize].kind.clone() else { return; };
         let inner_info = self.types[array_ty as usize].llvm_type;
 
 
@@ -217,6 +225,25 @@ impl TypeContext {
 
     }
 
+    fn enable_from_int_literal(&mut self, id: TypeId, width: u32, signed: bool) {
+        let int_lit = self.int_literal;
+        self.types[id as usize].ops.from_literal.insert(int_lit, Box::new(move |ctx, val| {
+            let LiteralValue::Integer(i) = val else { panic!("expected integer literal") };
+            ctx.custom_width_int_type(width).const_int(i.as_u64_lossy(), signed).into()
+        }));
+    }
+
+    fn enable_from_float_literal(&mut self, id: TypeId, width: u32) {
+        let float_lit = self.float_literal;
+        self.types[id as usize].ops.from_literal.insert(float_lit, Box::new(move |ctx, val| {
+            let LiteralValue::Float(f) = val else { panic!("expected float literal") };
+            match width {
+                32 => ctx.f32_type().const_float(*f).into(),
+                _  => ctx.f64_type().const_float(*f).into(),
+            }
+        }));
+    }
+
     pub fn enable_assignment(&mut self, id: TypeId) {
         let maker: AssignmentMaker = Box::new(|b, ptr, val| {
             b.build_store(ptr, BasicValueEnum::try_from(val).unwrap()).unwrap();
@@ -242,6 +269,7 @@ impl TypeContext {
                     TypeKind::IntLiteral => 32,
                     _ => unreachable!(),
                 };
+
                 let dst_bits: u32 = match &to_kind {
                     TypeKind::Int(w) | TypeKind::UInt(w) => *w,
                     _ => unreachable!(),
@@ -276,13 +304,13 @@ impl TypeContext {
                     b.build_unsigned_int_to_float(v.into_int_value(), dst_float_ty, "uitofp").unwrap().into()
                 })
             }
-            (TypeKind::Float(_), TypeKind::Int(_)) => {
+            (TypeKind::Float(_) | TypeKind::FloatLiteral, TypeKind::Int(_)) => {
                 let dst_int_ty = to_llvm.into_int_type();
                 Box::new(move |b: &Builder<'static>, v: inkwell::values::AnyValueEnum<'static>| {
                     b.build_float_to_signed_int(v.into_float_value(), dst_int_ty, "fptosi").unwrap().into()
                 })
             }
-            (TypeKind::Float(_), TypeKind::UInt(_)) => {
+            (TypeKind::Float(_) | TypeKind::FloatLiteral, TypeKind::UInt(_)) => {
                 let dst_int_ty = to_llvm.into_int_type();
                 Box::new(move |b: &Builder<'static>, v: inkwell::values::AnyValueEnum<'static>| {
                     b.build_float_to_unsigned_int(v.into_float_value(), dst_int_ty, "fptoui").unwrap().into()
@@ -291,6 +319,19 @@ impl TypeContext {
             (TypeKind::Float(sw), TypeKind::Float(dw)) => {
                 let dst_float_ty = to_llvm.into_float_type();
                 if dw > sw {
+                    Box::new(move |b: &Builder<'static>, v: inkwell::values::AnyValueEnum<'static>| {
+                        b.build_float_ext(v.into_float_value(), dst_float_ty, "fpext").unwrap().into()
+                    })
+                } else {
+                    Box::new(move |b: &Builder<'static>, v: inkwell::values::AnyValueEnum<'static>| {
+                        b.build_float_trunc(v.into_float_value(), dst_float_ty, "fptrunc").unwrap().into()
+                    })
+                }
+            }
+            (TypeKind::FloatLiteral, TypeKind::Float(dw)) => {
+                let dst_float_ty = to_llvm.into_float_type();
+                // float_literal is f64 internally; extend or truncate as needed
+                if *dw >= 64 {
                     Box::new(move |b: &Builder<'static>, v: inkwell::values::AnyValueEnum<'static>| {
                         b.build_float_ext(v.into_float_value(), dst_float_ty, "fpext").unwrap().into()
                     })
@@ -320,139 +361,70 @@ impl TypeContext {
         
 
         let id = self.add(Type::Typename("#int_literal".into()),
-              TypeInfo::new(
-                  TypeKind::IntLiteral,
-                  self.llvm_context.i32_type().into()
-              )
+            TypeInfo::new(TypeKind::IntLiteral, self.llvm_context.i32_type().into())
         );
         self.int_literal = id;
         self.enable_arithmetic_neg(id);
 
-        
-        
+        let id = self.add(Type::Typename("#float_literal".into()),
+            TypeInfo::new(TypeKind::FloatLiteral, self.llvm_context.f64_type().into())
+        );
+        self.float_literal = id;
+        self.enable_arithmetic_neg(id);
+
         //SIGNED INTEGERS
-        
 
-        let id = self.add(Type::Typename("int8".into()),
-                          TypeInfo::new(
-                              TypeKind::Int(8),
-                              self.llvm_context.i8_type().into()
-                          ).enable_from_int_literal(8, true)
-        );
-        self.int8 = id;
-        self.enable_arithmetic_neg(id);
+        let id = self.add(Type::Typename("int8".into()),  TypeInfo::new(TypeKind::Int(8),  self.llvm_context.i8_type().into()));
+        self.int8 = id; self.enable_arithmetic_neg(id); self.enable_from_int_literal(id, 8, true);
 
-        let id = self.add(Type::Typename("int16".into()),
-                          TypeInfo::new(
-                              TypeKind::Int(16),
-                              self.llvm_context.i16_type().into()
-                          ).enable_from_int_literal(16, true)
-        );
-        self.int16 = id;
-        self.enable_arithmetic_neg(id);
+        let id = self.add(Type::Typename("int16".into()), TypeInfo::new(TypeKind::Int(16), self.llvm_context.i16_type().into()));
+        self.int16 = id; self.enable_arithmetic_neg(id); self.enable_from_int_literal(id, 16, true);
 
-        let id = self.add(Type::Typename("int32".into()),
-                          TypeInfo::new(
-                              TypeKind::Int(32),
-                              self.llvm_context.i32_type().into()
-                          ).enable_from_int_literal(32, true)
-        );
-        self.int32 = id;
-        self.enable_arithmetic_neg(id);
+        let id = self.add(Type::Typename("int32".into()), TypeInfo::new(TypeKind::Int(32), self.llvm_context.i32_type().into()));
+        self.int32 = id; self.enable_arithmetic_neg(id); self.enable_from_int_literal(id, 32, true);
 
-        let id = self.add(Type::Typename("int64".into()),
-                          TypeInfo::new(
-                              TypeKind::Int(64),
-                              self.llvm_context.i64_type().into()
-                          ).enable_from_int_literal(64, true)
-        );
-        self.int64 = id;
-        self.enable_arithmetic_neg(id);
+        let id = self.add(Type::Typename("int64".into()), TypeInfo::new(TypeKind::Int(64), self.llvm_context.i64_type().into()));
+        self.int64 = id; self.enable_arithmetic_neg(id); self.enable_from_int_literal(id, 64, true);
 
+        //UNSIGNED INTEGERS
 
-        
-        //UNSIGNED INTEGER
+        let id = self.add(Type::Typename("uint8".into()),  TypeInfo::new(TypeKind::UInt(8),  self.llvm_context.i8_type().into()));
+        self.uint8 = id; self.enable_arithmetic_neg(id); self.enable_from_int_literal(id, 8, false);
 
-        let id = self.add(Type::Typename("uint8".into()),
-                          TypeInfo::new(
-                              TypeKind::UInt(8),
-                              self.llvm_context.i8_type().into()
-                          ).enable_from_int_literal(8, false)
-        );
-        self.uint8 = id;
-        self.enable_arithmetic_neg(id);
+        let id = self.add(Type::Typename("uint16".into()), TypeInfo::new(TypeKind::UInt(16), self.llvm_context.i16_type().into()));
+        self.uint16 = id; self.enable_arithmetic_neg(id); self.enable_from_int_literal(id, 16, false);
 
-        let id = self.add(Type::Typename("uint16".into()),
-                          TypeInfo::new(
-                              TypeKind::UInt(16),
-                              self.llvm_context.i16_type().into()
-                          ).enable_from_int_literal(16, false)
-        );
-        self.uint16 = id;
-        self.enable_arithmetic_neg(id);
+        let id = self.add(Type::Typename("uint32".into()), TypeInfo::new(TypeKind::UInt(32), self.llvm_context.i32_type().into()));
+        self.uint32 = id; self.enable_arithmetic_neg(id); self.enable_from_int_literal(id, 32, false);
 
-        let id = self.add(Type::Typename("uint32".into()),
-                          TypeInfo::new(
-                              TypeKind::UInt(32),
-                              self.llvm_context.i32_type().into()
-                          ).enable_from_int_literal(32, false)
-        );
-        self.uint32 = id;
-        self.enable_arithmetic_neg(id);
+        let id = self.add(Type::Typename("uint64".into()), TypeInfo::new(TypeKind::UInt(64), self.llvm_context.i64_type().into()));
+        self.uint64 = id; self.enable_arithmetic_neg(id); self.enable_from_int_literal(id, 64, false);
 
-        let id = self.add(Type::Typename("uint64".into()),
-                          TypeInfo::new(
-                              TypeKind::UInt(64),
-                              self.llvm_context.i64_type().into()
-                          ).enable_from_int_literal(64, false)
-        );
-
-
-        self.uint64 = id;
-        self.enable_arithmetic_neg(id);
-
-        let id = self.add(Type::Typename("usize".into()),
-        TypeInfo::new(
+        let id = self.add(Type::Typename("usize".into()), TypeInfo::new(
             TypeKind::UInt(Self::SIZE_POINTER as u32 * 8),
             self.llvm_context.custom_width_int_type(Self::SIZE_POINTER as u32 * 8).into(),
-        ).enable_from_int_literal(Self::SIZE_POINTER as u32 * 8, false));
-
-        self.usize = id;
-        self.enable_arithmetic_neg(id);
-
+        ));
+        self.usize = id; self.enable_arithmetic_neg(id);
+        self.enable_from_int_literal(id, Self::SIZE_POINTER as u32 * 8, false);
 
         let id = self.add(Type::Typename("bool".into()),
-                          TypeInfo::new(
-                              TypeKind::Boolean,
-                              self.llvm_context.i8_type().into()
-                          )
+            TypeInfo::new(TypeKind::Boolean, self.llvm_context.i8_type().into())
         );
         self.bool = id;
-        
-        
-        
-        //FLOATING NUMBERS
 
-        let id = self.add(Type::Typename("float32".into()),
-                          TypeInfo::new(
-                              TypeKind::Float(32),
-                              self.llvm_context.f32_type().into()
-                          )
-        );
-        self.float32 = id;
-        self.enable_arithmetic_neg(id);
+        //FLOATING-POINT
 
-        let id = self.add(Type::Typename("float64".into()),
-                          TypeInfo::new(
-                              TypeKind::Float(64),
-                              self.llvm_context.f64_type().into()
-                          )
-        );
-        self.float64 = id;
-        self.enable_arithmetic_neg(id);
+        let id = self.add(Type::Typename("float32".into()), TypeInfo::new(TypeKind::Float(32), self.llvm_context.f32_type().into()));
+        self.float32 = id; self.enable_arithmetic_neg(id); self.enable_from_float_literal(id, 32);
+
+        let id = self.add(Type::Typename("float64".into()), TypeInfo::new(TypeKind::Float(64), self.llvm_context.f64_type().into()));
+        self.float64 = id; self.enable_arithmetic_neg(id); self.enable_from_float_literal(id, 64);
+
+        self.literal_defaults.insert(self.int_literal, self.int32);
+        self.literal_defaults.insert(self.float_literal, self.float64);
 
         let numeric = [
-            self.int_literal,
+            self.int_literal, self.float_literal,
             self.int8, self.int16, self.int32, self.int64,
             self.uint8, self.uint16, self.uint32, self.uint64, self.usize,
             self.float32, self.float64,
@@ -468,20 +440,24 @@ impl TypeContext {
         self.enable_assignment(self.bool);
     }
 
-    pub fn is_int(&self, id: TypeId) -> bool {
-        id == self.uint8 ||
-        id == self.uint16 ||
-        id == self.uint32 ||
-        id == self.uint64 ||
-        id == self.usize ||
-
-        id == self.int8 ||
-        id == self.int16 ||
-        id == self.int32 ||
-        id == self.int64 ||
-        id == self.int_literal
+    /// Returns true for the literal pseudo-types (int_literal, float_literal) —
+    /// i.e. types that need coercion before they can be used in codegen.
+    pub fn is_literal(&self, id: TypeId) -> bool {
+        matches!(
+            self.get_by_id(id).map(|i| &i.kind),
+            Some(TypeKind::IntLiteral | TypeKind::FloatLiteral)
+        )
     }
 
+
+    pub fn register_intrinsic(&mut self, name: &str, ret: TypeId) -> TypeId {
+        let id = self.add(
+            Type::Typename(format!("#intrinsic_{}", name)),
+            TypeInfo::new(TypeKind::Intrinsic { ret }, self.llvm_context.void_type().into()),
+        );
+        self.intrinsics.insert(name.to_string(), id);
+        id
+    }
 
     pub fn get_by_id(&self, id: TypeId) -> Option<&TypeInfo>
     {
@@ -511,7 +487,7 @@ impl TypeContext {
         } else {
 
             match ty {
-                Type::Typename(tn) => None,
+                Type::Typename(_) => None,
                 Type::Reference(r) => {
                     if let Some(id) = self.resolve_type(&r) {
 
@@ -565,13 +541,7 @@ impl TypeContext {
                 }
                 Type::Array { ty: aty, size } => {
                     if let Some(id) = self.resolve_type(&aty) {
-
-                        let r = ty;
-                        
-                        let ti = &self.types[id as usize];
-                        let ray_type: BasicTypeEnum = ti.llvm_type.try_into().unwrap();
-
-                        let res = self.add(r.clone(), TypeInfo::new(
+                        let res = self.add(ty.clone(), TypeInfo::new(
                             TypeKind::Array { ty: id, size: *size },
                             //arrays are just pointers
                             self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into()
@@ -674,9 +644,6 @@ impl TypeContext {
         let inner_ty = self.type_ids[&array_ty].clone();
         let ray_ty = Type::Array { ty: Box::new(inner_ty), size };
 
-        let ray_ty_info = self.get_by_id(array_ty).unwrap();
-        let ray_basic_ty: BasicTypeEnum = ray_ty_info.llvm_type.try_into().unwrap();
-
         if let Some(&id) = self.type_lookup.get(&ray_ty) {
             return id;
         }
@@ -746,7 +713,7 @@ impl TypeContext {
         
         
         
-        let (tid) = self.add(Type::Typename(name), TypeInfo::new(
+        let tid = self.add(Type::Typename(name), TypeInfo::new(
             TypeKind::Struct(id),
             info.llvm_struct.into()
         ));
@@ -762,7 +729,8 @@ impl TypeContext {
         let kind = &self.get_by_id(id)?.kind;
 
         Some(match kind {
-            TypeKind::IntLiteral => "integer".to_string(),
+            TypeKind::IntLiteral => "integer literal".to_string(),
+            TypeKind::FloatLiteral => "float literal".to_string(),
             TypeKind::Int(w) => format!("int{}", w),
             TypeKind::UInt(w) => format!("uint{}", w),
             TypeKind::Float(w) => format!("float{}", w),
@@ -775,6 +743,7 @@ impl TypeContext {
             TypeKind::Reference(ty) => format!("{}&", self.name_of(*ty)?),
             TypeKind::Slice(ty) => format!("{}[]", self.name_of(*ty)?),
             TypeKind::Array { ty, size } => format!("{}[{}]", self.name_of(*ty)?, size),
+            TypeKind::Intrinsic { .. } => "<intrinsic>".to_string(),
             TypeKind::Function { ret, params } => {
                 let mut res = String::new();
                 let _ = write!(res, "{}(", self.name_of(*ret)?);

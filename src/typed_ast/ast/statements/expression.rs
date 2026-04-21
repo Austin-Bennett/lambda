@@ -1,14 +1,13 @@
-use crate::ast::statements::expressions::{Expr, ExprSyntax, CastOperation};
+use crate::ast::statements::expressions::{Expr, ExprSyntax};
 use crate::common::sourcemap::SourceMap;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
-use crate::lexer::literal::IntegerLiteral;
+use crate::lexer::literal::LiteralValue;
 use crate::typed_ast::typing::scope::AvailableContext;
 use crate::typed_ast::typing::tcontext::TypeContext;
 use crate::typed_ast::typing::ty::{TypeId, TypeKind};
 use std::collections::HashMap;
-use std::fmt::{write, Debug, Formatter, Pointer, Write};
+use std::fmt::{Debug, Formatter};
 use std::mem;
-use crate::ast::ty::Type;
 use crate::typed_ast::typing::operator::BinaryOperatorMaker;
 
 pub enum BinaryOperator {
@@ -75,8 +74,13 @@ pub struct TypedIndexOperation {
     pub index: TypedExpr,
 }
 
+pub struct TypedCompilerIntrinsic {
+    pub name: String,
+    pub args: Vec<TypedExpr>,
+}
+
 pub enum TypedExprNode {
-    IntLiteral(IntegerLiteral),
+    Literal(LiteralValue),
     Identifier(String),
     /// Transparent read through a reference. Inner expr has type `Reference(T)`; this node's `ty` is `T`.
     RefRead(Box<TypedExpr>),
@@ -89,21 +93,16 @@ pub enum TypedExprNode {
     UnaryOp(Box<TypedUnaryOperation>),
     CallOp(Box<TypedCallOperation>),
     Cast(Box<TypedCastOperation>),
+    CompilerIntrinsic(Box<TypedCompilerIntrinsic>),
 }
 
 impl TypedExprNode {
-    pub fn is_int_literal_expr(&self) -> bool {
+    pub fn is_literal_expr(&self) -> bool {
         match self {
-            TypedExprNode::IntLiteral(_) => { true }
-            TypedExprNode::Identifier(_) => { false }
-            TypedExprNode::RefRead(_) => { false }
-            TypedExprNode::Tuple(_) => { false }
-            TypedExprNode::BinaryOp(bop) => { bop.lhs.value.is_int_literal_expr() && bop.rhs.value.is_int_literal_expr() }
-            TypedExprNode::UnaryOp(uop) => { uop.operand.value.is_int_literal_expr() }
-            TypedExprNode::CallOp(call) => { false }
-            TypedExprNode::Cast(_) => { false }
-            TypedExprNode::Array(_) => { false },
-            TypedExprNode::Index(inner) => { todo!() },
+            TypedExprNode::Literal(_) => true,
+            TypedExprNode::BinaryOp(bop) => bop.lhs.value.is_literal_expr() && bop.rhs.value.is_literal_expr(),
+            TypedExprNode::UnaryOp(uop) => uop.operand.value.is_literal_expr(),
+            _ => false,
         }
     }
 }
@@ -116,8 +115,9 @@ pub struct TypedExpr {
 
 impl Default for TypedExpr {
     fn default() -> Self {
+        use crate::lexer::literal::IntegerLiteral;
         Self{
-            value: TypedExprNode::IntLiteral(IntegerLiteral{ value: 0, negative: false }),
+            value: TypedExprNode::Literal(LiteralValue::Integer(IntegerLiteral{ value: 0, negative: false })),
             ty: 0,
             smap: SourceMap::default(),
         }
@@ -133,12 +133,12 @@ impl Debug for TypedExpr {
 impl Debug for TypedExprNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            TypedExprNode::IntLiteral(i) => { i.fmt(f) }
+            TypedExprNode::Literal(lit) => { lit.fmt(f) }
             TypedExprNode::Identifier(ident) => { write!(f, "{}", ident) }
             TypedExprNode::RefRead(inner) => { write!(f, "refread({:?})", inner) }
             TypedExprNode::Tuple(_) => { todo!() }
             TypedExprNode::Array(ray) => {
-                write!(f, "[");
+                write!(f, "[")?;
 
                 for i in 0..ray.len() {
                     if i != 0 {
@@ -151,10 +151,10 @@ impl Debug for TypedExprNode {
                 write!(f, "]")
             }
             TypedExprNode::Index(index) => {
-                todo!();
+                write!(f, "{:?}[{:?}]", index.operand, index.index)
             }
             TypedExprNode::BinaryOp(op) => {
-                write!(f, "({:?} {:?} {:?})", op.lhs, op.op, op.rhs)
+                write!(f, "({:?} {:?} {:?})", op.lhs.value, op.op, op.rhs.value)
             }
             TypedExprNode::UnaryOp(op) => {
                 write!(f, "{:?}{:?}", op.op, op.operand)}
@@ -163,6 +163,9 @@ impl Debug for TypedExprNode {
             }
             TypedExprNode::Cast(cast) => {
                 write!(f, "({:?} as {})", cast.expr, cast.target)
+            }
+            TypedExprNode::CompilerIntrinsic(ci) => {
+                write!(f, "{}({:?})", ci.name, ci.args)
             }
         }
     }
@@ -182,72 +185,83 @@ impl TypedExpr {
         }
     }
 
-    pub fn coerce_int_array(mut expr: TypedExpr, context: &mut TypeContext, ty: TypeId) -> TypedExpr {
-        let TypedExprNode::Array(ray) = &mut expr.value else { return expr; };
-        let info1 = context.get_by_id(ty).unwrap();
-        let expr_info = context.get_by_id(expr.ty).unwrap();
+    /// Coerce a literal-typed expression to a target type, if the target accepts that literal.
+    pub fn coerce_literal(context: &TypeContext, mut operand: TypedExpr, ty: TypeId) -> TypedExpr {
+        if context.get_by_id(ty).map_or(false, |i| i.ops.from_literal.contains_key(&operand.ty)) {
+            operand.ty = ty;
+        }
+        operand
+    }
 
-        let TypeKind::Array { ty: inner1, size: _ } = info1.kind else { return expr; };
-        let TypeKind::Array { ty: expr1, size: expr_size } = expr_info.kind else { return expr; };
+    /// Coerce an array of literals to a concrete array type, if the element types are compatible.
+    pub fn coerce_literal_array(mut expr: TypedExpr, context: &mut TypeContext, ty: TypeId) -> TypedExpr {
+        let TypedExprNode::Array(_) = &expr.value else { return expr; };
 
-        if context.is_int(inner1) && expr1 == context.int_literal {
-            let new_ty = context.array_of(inner1, expr_size);
+        // Extract all needed TypeIds inside a block so borrows are released before mutation.
+        let (inner_target, expr_inner, expr_size) = {
+            let Some(info1) = context.get_by_id(ty) else { return expr; };
+            let TypeKind::Array { ty: inner_target, .. } = &info1.kind else { return expr; };
+            let inner_target = *inner_target;
+
+            let Some(expr_info) = context.get_by_id(expr.ty) else { return expr; };
+            let TypeKind::Array { ty: expr_inner, size: expr_size } = &expr_info.kind else { return expr; };
+            (inner_target, *expr_inner, *expr_size)
+        };
+
+        let can_coerce = context.get_by_id(inner_target)
+            .map_or(false, |i| i.ops.from_literal.contains_key(&expr_inner));
+
+        if can_coerce {
+            let new_ty = context.array_of(inner_target, expr_size);
             expr.ty = new_ty;
-
-            for i in ray {
-                i.ty = inner1;
+            if let TypedExprNode::Array(ray) = &mut expr.value {
+                for elem in ray { elem.ty = inner_target; }
             }
         }
         expr
     }
 
-    pub fn infer_ints_binary(context: &TypeContext, lhs: &mut TypedExpr, rhs: &mut TypedExpr) -> bool {
+    /// Infer concrete types when one or both sides are literals. Returns true if types now match.
+    pub fn infer_literals_binary(context: &TypeContext, lhs: &mut TypedExpr, rhs: &mut TypedExpr) -> bool {
         if lhs.ty == rhs.ty { return true; }
-        else if lhs.ty == context.int_literal || rhs.ty == context.int_literal {
-            if lhs.ty == context.int_literal && context.is_int(rhs.ty) {
-
-                lhs.ty = rhs.ty;
-
-                return true;
-            }
+        if context.is_literal(lhs.ty) && context.get_by_id(rhs.ty).map_or(false, |i| i.ops.from_literal.contains_key(&lhs.ty)) {
+            lhs.ty = rhs.ty;
+            return true;
         }
-        if rhs.ty == context.int_literal && context.is_int(lhs.ty) {
+        if context.is_literal(rhs.ty) && context.get_by_id(lhs.ty).map_or(false, |i| i.ops.from_literal.contains_key(&rhs.ty)) {
             rhs.ty = lhs.ty;
-            true
-        } else {
-            false
+            return true;
         }
+        false
     }
-    
-    pub fn infer_int_index(context: &TypeContext, index: &mut TypedExpr, index_op: &HashMap<TypeId, (TypeId, BinaryOperatorMaker)>) -> Option<TypeId> {
-        if index.ty != context.int_literal {
+
+    /// Infer the result type for an index operation, coercing a literal index if needed.
+    pub fn infer_literal_index(context: &TypeContext, index: &mut TypedExpr, index_op: &HashMap<TypeId, (TypeId, BinaryOperatorMaker)>) -> Option<TypeId> {
+        if !context.is_literal(index.ty) {
             return index_op.get(&index.ty).map(|v| v.0);
         }
-
         for (index_type, (res, _)) in index_op {
-            if context.is_int(*index_type) {
+            if context.get_by_id(*index_type).map_or(false, |i| i.ops.from_literal.contains_key(&index.ty)) {
                 index.ty = *index_type;
                 return Some(*res);
             }
         }
-
         None
     }
 
-    pub fn infer_ints_call(context: &TypeContext, call_params: &mut Vec<TypedExpr>, call_op: &HashMap<Vec<TypeId>, TypeId>) -> Option<TypeId> {
+    /// Resolve a call overload, coercing any literal-typed parameters to concrete types.
+    pub fn infer_literals_call(context: &TypeContext, call_params: &mut Vec<TypedExpr>, call_op: &HashMap<Vec<TypeId>, TypeId>) -> Option<TypeId> {
         let mut tys: Vec<_> = call_params.iter().map(|p| p.ty).collect();
+        let mut resolved = false;
         let mut ret = None;
 
-        let mut resolved = false;
-
         'outer: for (params, res) in call_op {
-            if call_params.len() != params.len() {
-                continue;
-            }
-
+            if call_params.len() != params.len() { continue; }
             for (i, (p, actual)) in call_params.iter().zip(params).enumerate() {
                 if p.ty == *actual { continue; }
-                else if p.ty == context.int_literal && context.is_int(*actual) {
+                else if context.is_literal(p.ty) && context.get_by_id(*actual)
+                    .map_or(false, |i| i.ops.from_literal.contains_key(&p.ty))
+                {
                     tys[i] = *actual;
                 } else {
                     continue 'outer;
@@ -255,52 +269,39 @@ impl TypedExpr {
             }
             ret = Some(*res);
             resolved = true;
-            //getting here means the last check was a success
             break;
         }
         if resolved {
-            for (i, t) in tys.iter().enumerate() {
-                call_params[i].ty = *t;
-            }
+            for (i, t) in tys.iter().enumerate() { call_params[i].ty = *t; }
         }
-
         ret
-    }
-
-    pub fn coerce_int(context: &TypeContext, mut operand: TypedExpr, ty: TypeId) -> TypedExpr {
-
-        if context.is_int(ty) && operand.ty == context.int_literal {
-            operand.ty = ty;
-            operand
-        } else {
-            operand
-        }
     }
     
     pub fn from_node(expr: &ExprSyntax, compiler: &mut Compiler, context: &AvailableContext) -> Option<(TypedExprNode, TypeId)> {
         match &expr.data {
             Expr::Identifier(ident) => {
-                let Some(ty) = context.get_identifier_type(ident) else {
-                    compiler.emit_compile_message(
-                        CompileMessage::new(
-                            expr.smap.clone(),
-                            format!("unknown identifier: {:?}", ident),
-                            CompileMessageType::Error
-                        )
-                    );
-                    return None;
-                };
-
-                // If the declared type is a reference, transparently read through it.
-                if let TypeKind::Reference(inner_id) = compiler.type_context.get_by_id(ty).unwrap().kind {
-                    let ref_expr = TypedExpr { value: TypedExprNode::Identifier(ident.clone()), ty, smap: expr.smap.clone() };
-                    return Some((TypedExprNode::RefRead(Box::new(ref_expr)), inner_id));
+                if let Some(ty) = context.get_identifier_type(ident) {
+                    return Some((TypedExprNode::Identifier(ident.clone()), ty));
                 }
-
-                Some((TypedExprNode::Identifier(ident.clone()), ty))
+                if let Some(&ty) = compiler.type_context.intrinsics.get(ident) {
+                    return Some((TypedExprNode::Identifier(ident.clone()), ty));
+                }
+                compiler.emit_compile_message(
+                    CompileMessage::new(
+                        expr.smap.clone(),
+                        format!("unknown identifier: {:?}", ident),
+                        CompileMessageType::Error
+                    )
+                );
+                None
             }
-            Expr::IntLiteral(il) => {
-                Some((TypedExprNode::IntLiteral(*il), compiler.type_context.int_literal))
+            Expr::Literal(lit) => {
+                let ty = match lit {
+                    LiteralValue::Integer(_) => compiler.type_context.int_literal,
+                    LiteralValue::Float(_)   => compiler.type_context.float_literal,
+                    LiteralValue::Bool(_)    => compiler.type_context.bool,
+                };
+                Some((TypedExprNode::Literal(lit.clone()), ty))
             }
             Expr::Tuple(_) => { todo!() }
             Expr::Array(array) => {
@@ -308,7 +309,7 @@ impl TypedExpr {
                 let mut typed_array = Vec::new();
 
                 for e in array {
-                    let mut te = TypedExpr::from_ast(e, compiler, context)?;
+                    let te = TypedExpr::from_ast(e, compiler, context)?;
                     if te.ty != compiler.type_context.int_literal {
                         first_known_type = Some(te.ty);
                     }
@@ -320,8 +321,7 @@ impl TypedExpr {
                     for i in 0..typed_array.len() {
 
 
-                        typed_array[i] = Self::coerce_ref(mem::take(&mut typed_array[i]), &compiler.type_context);
-                        typed_array[i] = Self::coerce_int(&compiler.type_context, mem::take(&mut typed_array[i]), ty);
+                        typed_array[i] = Self::coerce_literal(&compiler.type_context, mem::take(&mut typed_array[i]), ty);
 
                         //if it STILL doesnt equal types, throw an error
                         if ty != typed_array[i].ty {
@@ -361,7 +361,7 @@ impl TypedExpr {
                 let mut index = TypedExpr::from_ast(&index.index, compiler, context)?;
                 let op_type = compiler.type_context.get_by_id(operand.ty).unwrap();
 
-                if let Some(id) = Self::infer_int_index(&compiler.type_context, &mut index, &op_type.ops.index) {
+                if let Some(id) = Self::infer_literal_index(&compiler.type_context, &mut index, &op_type.ops.index) {
 
                     Some((
                         TypedExprNode::Index(Box::new(
@@ -387,13 +387,7 @@ impl TypedExpr {
                 let mut lhs = TypedExpr::from_ast(&bin.lhs, compiler, context)?;
                 let mut rhs = TypedExpr::from_ast(&bin.rhs, compiler, context)?;
 
-                // Coerce references on both sides (except `=` LHS which is handled separately).
-                if bin.op.tk != "=" {
-                    lhs = Self::coerce_ref(lhs, &compiler.type_context);
-                }
-                rhs = Self::coerce_ref(rhs, &compiler.type_context);
-
-                if bin.op.tk != "=" && !Self::infer_ints_binary(&compiler.type_context, &mut lhs, &mut rhs) {
+                if bin.op.tk != "=" && !Self::infer_literals_binary(&compiler.type_context, &mut lhs, &mut rhs) {
                     let mut smap = lhs.smap.clone();
                     smap.extend(&rhs.smap);
                     compiler.emit_compile_message(
@@ -412,7 +406,6 @@ impl TypedExpr {
                 //lhs must have an operator overload that accepts rhs
 
                 let lhs_inf = compiler.type_context.get_by_id(lhs.ty).unwrap();
-                let rhs_inf = compiler.type_context.get_by_id(rhs.ty).unwrap();
 
                 match bin.op.tk {
                     "+" => {
@@ -547,10 +540,8 @@ impl TypedExpr {
                             }
                         };
 
-                        // Coerce int_literal RHS to target type.
-                        if rhs.ty == compiler.type_context.int_literal && compiler.type_context.is_int(target_ty) {
-                            rhs.ty = target_ty;
-                        }
+                        // Coerce any literal RHS to the target type if the target accepts it.
+                        rhs = Self::coerce_literal(&compiler.type_context, rhs, target_ty);
 
                         if lhs_is_deref {
                             if rhs.ty != target_ty {
@@ -592,12 +583,8 @@ impl TypedExpr {
             }
             Expr::UnaryOp(op) => {
                 let (lhs, lhs_ty) = TypedExpr::from_node(&op.operand, compiler, context)?;
-                let mut lhs_expr = TypedExpr { value: lhs, ty: lhs_ty, smap: op.operand.smap.clone() };
+                let lhs_expr = TypedExpr { value: lhs, ty: lhs_ty, smap: op.operand.smap.clone() };
 
-                // Coerce references for arithmetic ops; `&` and `*` need the raw type.
-                if op.op.tk == "-" {
-                    lhs_expr = Self::coerce_ref(lhs_expr, &compiler.type_context);
-                }
                 let lhs_ty = lhs_expr.ty;
                 let lhs = lhs_expr.value;
 
@@ -660,31 +647,32 @@ impl TypedExpr {
                         ), ref_type))
                     },
                     "*" => {
-                        //can be any POINTER type
-                        let result = match &lhs_inf.kind {
-                            TypeKind::Pointer(i) => compiler.type_context.reference_to(*i),
-                            ty => {
-                                compiler.emit_compile_message(
-                                    CompileMessage::new(
-                                        expr.smap.clone(),
-                                        format!("Cannot dereference type {}", compiler.type_context.name_of(lhs_ty).unwrap()),
-                                        CompileMessageType::Error
-                                    )
-                                );
-                                return None;
+                        match &lhs_inf.kind {
+                            TypeKind::Pointer(i) => {
+                                let result = compiler.type_context.reference_to(*i);
+                                Some((TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
+                                    op: UnaryOperator::Dereference,
+                                    operand: TypedExpr { value: lhs, ty: result, smap: expr.smap.clone() }
+                                })), result))
                             }
-                        };
-
-                        Some(
-                            (TypedExprNode::UnaryOp(
-                                Box::new(
-                                    TypedUnaryOperation{
-                                        op: UnaryOperator::Dereference,
-                                        operand: TypedExpr{ value: lhs, ty: result, smap: expr.smap.clone() }
-                                    }
-                                )
-                            ), result)
-                        )
+                            TypeKind::Reference(inner) => {
+                                let inner = *inner;
+                                Some((
+                                    TypedExprNode::RefRead(Box::new(
+                                        TypedExpr { value: lhs, ty: lhs_ty, smap: expr.smap.clone() }
+                                    )),
+                                    inner
+                                ))
+                            }
+                            _ => {
+                                compiler.emit_compile_message(CompileMessage::new(
+                                    expr.smap.clone(),
+                                    format!("Cannot dereference type {}", compiler.type_context.name_of(lhs_ty).unwrap()),
+                                    CompileMessageType::Error
+                                ));
+                                None
+                            }
+                        }
                     }
                     _ => {
                         panic!("Unknown unary op: {}", op.op.tk)
@@ -707,8 +695,26 @@ impl TypedExpr {
                 let (caller, caller_ty) = TypedExpr::from_node(&call.caller, compiler, context)?;
                 let expr_call = call;
 
-
-
+                // Intercept compiler intrinsics before any other call handling.
+                if let Some(TypeKind::Intrinsic { ret }) = compiler.type_context.get_by_id(caller_ty).map(|i| i.kind.clone()) {
+                    let TypedExprNode::Identifier(name) = &caller else {
+                        compiler.emit_compile_message(CompileMessage::new(
+                            expr.smap.clone(),
+                            "compiler intrinsic must be called by name".into(),
+                            CompileMessageType::Error,
+                        ));
+                        return None;
+                    };
+                    let name = name.clone();
+                    let mut args = Vec::new();
+                    for p in &call.arguments {
+                        args.push(TypedExpr::from_ast(p, compiler, context)?);
+                    }
+                    return Some((
+                        TypedExprNode::CompilerIntrinsic(Box::new(TypedCompilerIntrinsic { name, args })),
+                        ret,
+                    ));
+                }
 
                 let mut params = Vec::new();
 
@@ -721,10 +727,30 @@ impl TypedExpr {
                     });
                 }
 
+                // literal(single_expr) → implicit multiplication; fall back to the literal's default type
+                if compiler.type_context.is_literal(caller_ty) && params.len() == 1 {
+                    let mut lhs = TypedExpr { value: caller, ty: caller_ty, smap: expr_call.caller.smap.clone() };
+                    let mut rhs = params.remove(0);
+                    Self::infer_literals_binary(&compiler.type_context, &mut lhs, &mut rhs);
+                    for side in [&mut lhs, &mut rhs] {
+                        if compiler.type_context.is_literal(side.ty) {
+                            if let Some(&default) = compiler.type_context.literal_defaults.get(&side.ty) {
+                                side.ty = default;
+                            }
+                        }
+                    }
+                    let result_ty = lhs.ty;
+                    return Some((TypedExprNode::BinaryOp(Box::new(TypedBinaryOperation {
+                        op: BinaryOperator::Mul,
+                        lhs,
+                        rhs,
+                    })), result_ty));
+                }
+
                 let caller_inf = compiler.type_context.get_by_id(caller_ty).unwrap();
 
                 //caller must have a call overload accepting params
-                let Some(call) = Self::infer_ints_call(&compiler.type_context, &mut params, &caller_inf.ops.call) else {
+                let Some(call) = Self::infer_literals_call(&compiler.type_context, &mut params, &caller_inf.ops.call) else {
                     compiler.emit_compile_message(
                         CompileMessage::new(
                             expr.smap.clone(),

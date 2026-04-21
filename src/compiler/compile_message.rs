@@ -1,6 +1,5 @@
 use std::fmt::{Debug, Formatter};
 use crate::common::sourcemap::SourceMap;
-use crate::common::utils::outcome::Outcome;
 use crate::compiler::CompileMessageType;
 use crate::lexer::token::Token;
 

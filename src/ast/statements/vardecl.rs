@@ -2,12 +2,10 @@ use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::process::abort;
 use crate::ast::{GenericSyntax, Syntax};
-use crate::ast::statements::expressions::{Expr, ExprSyntax};
+use crate::ast::statements::expressions::ExprSyntax;
 use crate::ast::ty::{Type, TypeSyntax};
 use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
-use crate::common::utils::modulepath::ModulePath;
-use crate::common::utils::outcome::Outcome;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{ExpressionToken, FeatureToken, Token, TokenType};
 use crate::token_match;
@@ -63,7 +61,7 @@ impl Syntax for VarDeclSyntax {
             //check for an expression
             let expr = if let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Operator(
                 Operator{ tk: "=", .. }
-            )), opmap) = tokens.get(0) {
+            )), _) = tokens.get(0) {
                 let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Operator(Operator{ tk: "=", .. })), opmap) = tokens.pop_front() else { abort() };
 
 
