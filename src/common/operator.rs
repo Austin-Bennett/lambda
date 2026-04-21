@@ -65,8 +65,7 @@ impl Operator {
     pub const ADDITIVE_BP: BindingPower = BindingPower::Binary(4, 3);
     pub const MULTIPLICATIVE_BP: BindingPower = BindingPower::Binary(6, 5);
     pub const BITWISE_AND_BP: BindingPower = BindingPower::Binary(2, 1);
-
-
+    pub const COMPARISON_BP: BindingPower = BindingPower::Binary(2, 3);
 
     pub const ASSIGN: Self = Operator{ tk: "=", bp: Operator::MIN_BINARY_BP };
 
@@ -76,4 +75,11 @@ impl Operator {
     pub const DIV: Self = Operator{ tk: "/", bp: Operator::MULTIPLICATIVE_BP };
 
     pub const BITWISE_AND: Self = Operator{ tk: "&", bp: Operator::BITWISE_AND_BP.to_binary_or_unary() };
+
+    pub const EQ: Self = Operator{ tk: "==", bp: Operator::COMPARISON_BP };
+    pub const NE: Self = Operator{ tk: "!=", bp: Operator::COMPARISON_BP };
+    pub const LT: Self = Operator{ tk: "<",  bp: Operator::COMPARISON_BP };
+    pub const GT: Self = Operator{ tk: ">",  bp: Operator::COMPARISON_BP };
+    pub const LE: Self = Operator{ tk: "<=", bp: Operator::COMPARISON_BP };
+    pub const GE: Self = Operator{ tk: ">=", bp: Operator::COMPARISON_BP };
 }

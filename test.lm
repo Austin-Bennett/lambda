@@ -18,11 +18,18 @@ fn sub(a: int32, b: int32) = int32 {
 
 //main function- this is where code starts executing
 fn main() = int8 {
+    b: bool = true;
+    f: float64 = 3.14;
 
-    a: int8* = malloc(1) as int8*;
-    a_ref: int8& = *a;
-    *a_ref = 30;
-    *a_ref = 3(*a_ref / 2)
+    x: int32 = 10;
+    y: int32 = 20;
 
-    return *a_ref;
+    eq: bool = x == y;
+    ne: bool = x != y;
+    lt: bool = x < y;
+    gt: bool = x > y;
+    le: bool = x <= y;
+    ge: bool = x >= y;
+
+    return b as uint8;
 }

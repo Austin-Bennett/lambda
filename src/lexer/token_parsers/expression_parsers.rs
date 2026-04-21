@@ -10,6 +10,12 @@ lazy_static!{
             Operator::MUL,
             Operator::DIV,
             Operator::BITWISE_AND,
+            Operator::EQ,
+            Operator::NE,
+            Operator::LT,
+            Operator::GT,
+            Operator::LE,
+            Operator::GE,
         ];
 
         res.sort_by(|f, s| s.tk.len().cmp(&f.tk.len()));

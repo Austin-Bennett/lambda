@@ -11,6 +11,7 @@ use inkwell::OptimizationLevel;
 use std::fs;
 use std::path::Path;
 use std::process::abort;
+use std::sync::Arc;
 
 pub mod lexer;
 pub mod common;
@@ -57,6 +58,12 @@ fn main() -> Result<()> {
 
     let context = RuntimeStatic::new(inkwell::context::Context::create());
     let mut compiler = Compiler::new(RuntimeStatic::static_ref(&context));
+
+    compiler.register_intrinsic(
+        "noop",
+        compiler.type_context.none,
+        Arc::new(|_, _, _, _, _, _| None)
+    );
 
     for file in &args.files {
         match fs::read_to_string(file) {

@@ -22,6 +22,15 @@ pub type ConversionMaker = Box<dyn Fn(&Builder<'static>, AnyValueEnum<'static>) 
 pub type AssignmentMaker = Box<dyn Fn(&Builder<'static>, PointerValue<'static>, AnyValueEnum<'static>)>;
 
 
+pub struct ComparisonMakers {
+    pub eq: BinaryOperatorMaker,
+    pub ne: BinaryOperatorMaker,
+    pub lt: BinaryOperatorMaker,
+    pub gt: BinaryOperatorMaker,
+    pub le: BinaryOperatorMaker,
+    pub ge: BinaryOperatorMaker,
+}
+
 // Each operator overload maps its rhs type (or call parameter list) to
 // (result TypeId, codegen callback).
 pub struct OperatorOverloads {
@@ -48,6 +57,9 @@ pub struct OperatorOverloads {
 
     // explicit `as` casts: target TypeId -> codegen callback
     pub conversion_ops: HashMap<TypeId, ConversionMaker>,
+
+    // comparison: rhs TypeId -> all six comparison makers; result type is always bool
+    pub cmp: HashMap<TypeId, ComparisonMakers>,
 }
 
 impl OperatorOverloads {
@@ -64,10 +76,12 @@ impl OperatorOverloads {
             from_literal: HashMap::new(),
 
             call: HashMap::new(),
-            
+
             index: HashMap::new(),
 
             conversion_ops: HashMap::new(),
+
+            cmp: HashMap::new(),
         }
     }
 }

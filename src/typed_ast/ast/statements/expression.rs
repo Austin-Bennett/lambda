@@ -16,6 +16,12 @@ pub enum BinaryOperator {
     Mul,
     Div,
     Assign,
+    Eq,
+    Ne,
+    Lt,
+    Gt,
+    Le,
+    Ge,
 }
 
 impl Debug for BinaryOperator {
@@ -25,7 +31,13 @@ impl Debug for BinaryOperator {
             BinaryOperator::Sub => f.write_str("-"),
             BinaryOperator::Mul => f.write_str("*"),
             BinaryOperator::Div => f.write_str("/"),
-            BinaryOperator::Assign => f.write_str("=")
+            BinaryOperator::Assign => f.write_str("="),
+            BinaryOperator::Eq => f.write_str("=="),
+            BinaryOperator::Ne => f.write_str("!="),
+            BinaryOperator::Lt => f.write_str("<"),
+            BinaryOperator::Gt => f.write_str(">"),
+            BinaryOperator::Le => f.write_str("<="),
+            BinaryOperator::Ge => f.write_str(">="),
         }
     }
 }
@@ -511,6 +523,36 @@ impl TypedExpr {
                                 }
                             )
                         ), *div_res))
+                    }
+
+                    "==" | "!=" | "<" | ">" | "<=" | ">=" => {
+                        let op_variant = match bin.op.tk {
+                            "==" => BinaryOperator::Eq,
+                            "!=" => BinaryOperator::Ne,
+                            "<"  => BinaryOperator::Lt,
+                            ">"  => BinaryOperator::Gt,
+                            "<=" => BinaryOperator::Le,
+                            ">=" => BinaryOperator::Ge,
+                            _    => unreachable!(),
+                        };
+
+                        let bool_id = compiler.type_context.bool;
+                        let lhs_inf = compiler.type_context.get_by_id(lhs.ty).unwrap();
+
+                        if lhs_inf.ops.cmp.contains_key(&rhs.ty) {
+                            Some((TypedExprNode::BinaryOp(Box::new(TypedBinaryOperation {
+                                op: op_variant, lhs, rhs,
+                            })), bool_id))
+                        } else {
+                            compiler.emit_compile_message(CompileMessage::new(
+                                expr.smap.clone(),
+                                format!("Cannot compare {} with {}",
+                                    compiler.type_context.name_of(lhs.ty).unwrap_or_default(),
+                                    compiler.type_context.name_of(rhs.ty).unwrap_or_default()),
+                                CompileMessageType::Error,
+                            ));
+                            None
+                        }
                     }
 
                     "=" => {

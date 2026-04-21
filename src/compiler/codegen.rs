@@ -292,14 +292,19 @@ impl Compiler {
                 // before the next compile_expression call, so no conflict.
                 let result = {
                     let ops = &self.type_context.get_by_id(bop.lhs.ty)?.ops;
-                    let entry = match &bop.op {
-                        BinaryOperator::Add => ops.add.get(&bop.rhs.ty),
-                        BinaryOperator::Sub => ops.sub.get(&bop.rhs.ty),
-                        BinaryOperator::Mul => ops.mul.get(&bop.rhs.ty),
-                        BinaryOperator::Div => ops.div.get(&bop.rhs.ty),
+                    match &bop.op {
+                        BinaryOperator::Add => ops.add.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
+                        BinaryOperator::Sub => ops.sub.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
+                        BinaryOperator::Mul => ops.mul.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
+                        BinaryOperator::Div => ops.div.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
                         BinaryOperator::Assign => unreachable!("assign handled above"),
-                    };
-                    entry.map(|(_, maker)| maker(builder, lhs_val, rhs_val))
+                        BinaryOperator::Eq => ops.cmp.get(&bop.rhs.ty).map(|c| (c.eq)(builder, lhs_val, rhs_val)),
+                        BinaryOperator::Ne => ops.cmp.get(&bop.rhs.ty).map(|c| (c.ne)(builder, lhs_val, rhs_val)),
+                        BinaryOperator::Lt => ops.cmp.get(&bop.rhs.ty).map(|c| (c.lt)(builder, lhs_val, rhs_val)),
+                        BinaryOperator::Gt => ops.cmp.get(&bop.rhs.ty).map(|c| (c.gt)(builder, lhs_val, rhs_val)),
+                        BinaryOperator::Le => ops.cmp.get(&bop.rhs.ty).map(|c| (c.le)(builder, lhs_val, rhs_val)),
+                        BinaryOperator::Ge => ops.cmp.get(&bop.rhs.ty).map(|c| (c.ge)(builder, lhs_val, rhs_val)),
+                    }
                 };
                 result
             }

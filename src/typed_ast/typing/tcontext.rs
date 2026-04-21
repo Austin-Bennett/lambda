@@ -1,7 +1,7 @@
 use crate::ast::ty::Type;
 use crate::lexer::literal::LiteralValue;
 use crate::typed_ast::ast::items::function::FunctionSignature;
-use crate::typed_ast::typing::operator::{AssignmentMaker, BinaryOperatorMaker, ConversionMaker, OperatorOverloads, UnaryOperatorMaker};
+use crate::typed_ast::typing::operator::{AssignmentMaker, BinaryOperatorMaker, ComparisonMakers, ConversionMaker, OperatorOverloads, UnaryOperatorMaker};
 use inkwell::values::BasicValueEnum;
 use crate::typed_ast::typing::ty::{StructId, StructInfo, TypeId, TypeInfo, TypeKind};
 use inkwell::builder::Builder;
@@ -244,6 +244,52 @@ impl TypeContext {
         }));
     }
 
+    fn enable_comparison_operators(&mut self, id: TypeId, bool_id: TypeId) {
+        use inkwell::IntPredicate;
+        use inkwell::FloatPredicate;
+
+        let kind = self.types[id as usize].kind.clone();
+        let bool_llvm = self.types[bool_id as usize].llvm_type.into_int_type();
+
+        let makers: ComparisonMakers = match &kind {
+            TypeKind::Int(_) | TypeKind::IntLiteral => ComparisonMakers {
+                eq: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::EQ,  l.into_int_value(), r.into_int_value(), "ieq").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                ne: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::NE,  l.into_int_value(), r.into_int_value(), "ine").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                lt: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::SLT, l.into_int_value(), r.into_int_value(), "ilt").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                gt: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::SGT, l.into_int_value(), r.into_int_value(), "igt").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                le: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::SLE, l.into_int_value(), r.into_int_value(), "ile").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                ge: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::SGE, l.into_int_value(), r.into_int_value(), "ige").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+            },
+            TypeKind::UInt(_) => ComparisonMakers {
+                eq: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::EQ,  l.into_int_value(), r.into_int_value(), "ueq").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                ne: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::NE,  l.into_int_value(), r.into_int_value(), "une").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                lt: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::ULT, l.into_int_value(), r.into_int_value(), "ult").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                gt: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::UGT, l.into_int_value(), r.into_int_value(), "ugt").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                le: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::ULE, l.into_int_value(), r.into_int_value(), "ule").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                ge: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::UGE, l.into_int_value(), r.into_int_value(), "uge").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+            },
+            TypeKind::Float(_) | TypeKind::FloatLiteral => ComparisonMakers {
+                eq: Box::new(move |b, l, r| b.build_int_z_extend(b.build_float_compare(FloatPredicate::OEQ, l.into_float_value(), r.into_float_value(), "feq").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                ne: Box::new(move |b, l, r| b.build_int_z_extend(b.build_float_compare(FloatPredicate::ONE, l.into_float_value(), r.into_float_value(), "fne").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                lt: Box::new(move |b, l, r| b.build_int_z_extend(b.build_float_compare(FloatPredicate::OLT, l.into_float_value(), r.into_float_value(), "flt").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                gt: Box::new(move |b, l, r| b.build_int_z_extend(b.build_float_compare(FloatPredicate::OGT, l.into_float_value(), r.into_float_value(), "fgt").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                le: Box::new(move |b, l, r| b.build_int_z_extend(b.build_float_compare(FloatPredicate::OLE, l.into_float_value(), r.into_float_value(), "fle").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                ge: Box::new(move |b, l, r| b.build_int_z_extend(b.build_float_compare(FloatPredicate::OGE, l.into_float_value(), r.into_float_value(), "fge").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+            },
+            TypeKind::Boolean => ComparisonMakers {
+                eq: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::EQ, l.into_int_value(), r.into_int_value(), "beq").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                ne: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::NE, l.into_int_value(), r.into_int_value(), "bne").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                lt: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::ULT, l.into_int_value(), r.into_int_value(), "blt").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                gt: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::UGT, l.into_int_value(), r.into_int_value(), "bgt").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                le: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::ULE, l.into_int_value(), r.into_int_value(), "ble").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+                ge: Box::new(move |b, l, r| b.build_int_z_extend(b.build_int_compare(IntPredicate::UGE, l.into_int_value(), r.into_int_value(), "bge").unwrap(), bool_llvm, "bcmp").unwrap().into()),
+            },
+            _ => return,
+        };
+
+        self.types[id as usize].ops.cmp.insert(id, makers);
+    }
+
     pub fn enable_assignment(&mut self, id: TypeId) {
         let maker: AssignmentMaker = Box::new(|b, ptr, val| {
             b.build_store(ptr, BasicValueEnum::try_from(val).unwrap()).unwrap();
@@ -423,6 +469,18 @@ impl TypeContext {
         self.literal_defaults.insert(self.int_literal, self.int32);
         self.literal_defaults.insert(self.float_literal, self.float64);
 
+        let bool_id = self.bool;
+        let comparable = [
+            self.int_literal, self.float_literal,
+            self.int8, self.int16, self.int32, self.int64,
+            self.uint8, self.uint16, self.uint32, self.uint64, self.usize,
+            self.float32, self.float64,
+            self.bool,
+        ];
+        for &id in &comparable {
+            self.enable_comparison_operators(id, bool_id);
+        }
+
         let numeric = [
             self.int_literal, self.float_literal,
             self.int8, self.int16, self.int32, self.int64,
@@ -438,6 +496,9 @@ impl TypeContext {
             self.enable_assignment(from_id);
         }
         self.enable_assignment(self.bool);
+
+        let (bool_id, uint8_id) = (self.bool, self.uint8);
+        self.types[bool_id as usize].ops.conversion_ops.insert(uint8_id, Box::new(|_b, v| v));
     }
 
     /// Returns true for the literal pseudo-types (int_literal, float_literal) —
