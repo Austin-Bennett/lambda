@@ -7,6 +7,7 @@ use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{FeatureToken, Token, TokenType};
 use crate::typed_ast::ast::items::function::Function;
 use crate::typed_ast::typing::scope::AvailableContext;
+use crate::typed_ast::typing::ty::TypeId;
 
 pub struct LModule {
     pub smap: SourceMap,
@@ -60,7 +61,7 @@ pub struct LTypedModule {
 }
 
 impl LTypedModule {
-    pub fn from_ast(module: &LModule, compiler: &mut Compiler, context: &mut AvailableContext) -> Self {
+    pub fn from_ast(module: &LModule, compiler: &mut Compiler, context: &mut AvailableContext<TypeId>) -> Self {
 
 
         let mut functions = Vec::new();

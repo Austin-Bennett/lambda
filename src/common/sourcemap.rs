@@ -40,6 +40,18 @@ impl SourceMap {
     pub fn end(&self) -> usize {
         self.offset + self.len
     }
+    
+    pub fn end_source(&self) -> SourceMap {
+        SourceMap{
+            owner: self.owner.clone(),
+            offset: self.end(),
+            //the line may be wrong, that's just how it is
+            //this is only really used for niche things that wont show as errors anywhere
+            line: self.line,
+            char: self.char + self.offset,
+            len: 0
+        }
+    }
 
     pub fn extend(&mut self, other: impl AsRef<SourceMap>) {
         let other = other.as_ref();

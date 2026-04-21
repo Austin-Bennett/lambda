@@ -96,24 +96,47 @@ the structure is:
 `VALUE as TYPE`
 
 **Notes:**
-any primitive (floatN, intN, uintN) can be casted between eachother
+any primitive (floatN, intN, uintN) can be cast between each-other
 any pointer can be cast to a usize, and any integer to a pointer
+and a boolean can be cast as a uint8 but not vice-versa
 
 #### Pointer arithmetic
 
 `&ident` gives a reference to an identifier
+
 `ref as *type` casts a reference to a pointer
+
 `*ptr` turns the pointer into a reference again
+
+`*ref` reads the reference
 
 ```lambda
 a: i32 = 10;
 a_ref: i32& = &a;
 a_ptr = a_ref as i32*;
 a_ref_2 = *a_ptr;
+a_clone: i32 = *a_ref_2;
+a_clone = 3;
+*a_ref = a_clone;
 ```
 
 
 
+#### if statements
+```lambda
+if [boolean] {
+    ...code
+} else <if [boolean]> {
+    ...code
+} ...
+```
+
+#### while statements
+```lambda
+while boolean {
+    ...code
+}
+```
 
 
 

@@ -454,7 +454,7 @@ impl TypeContext {
         self.enable_from_int_literal(id, Self::SIZE_POINTER as u32 * 8, false);
 
         let id = self.add(Type::Typename("bool".into()),
-            TypeInfo::new(TypeKind::Boolean, self.llvm_context.i8_type().into())
+            TypeInfo::new(TypeKind::Boolean, self.llvm_context.custom_width_int_type(1).into())
         );
         self.bool = id;
 

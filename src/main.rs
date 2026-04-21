@@ -126,6 +126,8 @@ fn main() -> Result<()> {
     if compiler.raise_compile_errors(true) {
         abort();
     }
+    
+    llvm_mod.print_to_file("intermediate.llvm").unwrap();
 
     if let Err(err) = llvm_mod.verify() {
         eprintln!("LLVM IR Verification Error: {}", err.to_string());
@@ -133,7 +135,6 @@ fn main() -> Result<()> {
         abort();
     }
 
-    llvm_mod.print_to_file("intermediate.llvm").unwrap();
 
     // --- Codegen: LLVM IR -> native object file -> executable ---
 
@@ -151,7 +152,7 @@ fn main() -> Result<()> {
             &triple,
             "generic",
             "",
-            OptimizationLevel::Default,
+            OptimizationLevel::None,
             reloc_mode,
             CodeModel::Default,
         )

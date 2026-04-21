@@ -69,11 +69,13 @@ impl Operator {
 
     pub const ASSIGN: Self = Operator{ tk: "=", bp: Operator::MIN_BINARY_BP };
 
+    //basic arithmetic
     pub const ADD: Self = Operator{ tk: "+", bp: Operator::ADDITIVE_BP };
     pub const SUB: Self = Operator{ tk: "-", bp: Self::ADDITIVE_BP.to_binary_or_unary() };
     pub const MUL: Self = Operator{ tk: "*", bp: Operator::MULTIPLICATIVE_BP.to_binary_or_unary() };
     pub const DIV: Self = Operator{ tk: "/", bp: Operator::MULTIPLICATIVE_BP };
 
+    //bitwise operators
     pub const BITWISE_AND: Self = Operator{ tk: "&", bp: Operator::BITWISE_AND_BP.to_binary_or_unary() };
 
     pub const EQ: Self = Operator{ tk: "==", bp: Operator::COMPARISON_BP };

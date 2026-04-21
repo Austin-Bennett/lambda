@@ -8,6 +8,7 @@ use crate::typed_ast::typing::ty::{TypeId, TypeKind};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::mem;
+use crate::ast::statements::if_stmt::IfSyntax;
 use crate::typed_ast::typing::operator::BinaryOperatorMaker;
 
 pub enum BinaryOperator {
@@ -289,11 +290,11 @@ impl TypedExpr {
         ret
     }
     
-    pub fn from_node(expr: &ExprSyntax, compiler: &mut Compiler, context: &AvailableContext) -> Option<(TypedExprNode, TypeId)> {
+    pub fn from_node(expr: &ExprSyntax, compiler: &mut Compiler, context: &AvailableContext<TypeId>) -> Option<(TypedExprNode, TypeId)> {
         match &expr.data {
             Expr::Identifier(ident) => {
-                if let Some(ty) = context.get_identifier_type(ident) {
-                    return Some((TypedExprNode::Identifier(ident.clone()), ty));
+                if let Some(ty) = context.get_identifier(ident) {
+                    return Some((TypedExprNode::Identifier(ident.clone()), *ty));
                 }
                 if let Some(&ty) = compiler.type_context.intrinsics.get(ident) {
                     return Some((TypedExprNode::Identifier(ident.clone()), ty));
@@ -832,7 +833,7 @@ impl TypedExpr {
         }
     }
     
-    pub fn from_ast(expr: &ExprSyntax, compiler: &mut Compiler, context: &AvailableContext) -> Option<Self> {
+    pub fn from_ast(expr: &ExprSyntax, compiler: &mut Compiler, context: &AvailableContext<TypeId>) -> Option<Self> {
         let (value, ty) = TypedExpr::from_node(expr, compiler, context)?;
         
 

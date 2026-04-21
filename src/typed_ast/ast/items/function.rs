@@ -64,7 +64,7 @@ impl Function {
 
 
 impl Function {
-    pub fn from_ast(func: &FunctionSyntax, compiler: &mut Compiler, context: &mut AvailableContext) -> Option<Self> {
+    pub fn from_ast(func: &FunctionSyntax, compiler: &mut Compiler, context: &mut AvailableContext<TypeId>) -> Option<Self> {
         context.push_new_scope();
 
         let ret = match &func.data.ty {
@@ -113,7 +113,7 @@ impl Function {
         }
         
         let code = if let Some(body) = &func.data.body {
-            Some(TypedBlockSyntax::from_ast(body, compiler, context)?)
+            Some(TypedBlockSyntax::from_ast(body, ret, compiler, context)?)
         } else {
             None
         };

@@ -14,7 +14,7 @@ pub struct TypedVarDecl {
 
 
 impl TypedVarDecl {
-    pub fn from_ast(vd: &VarDeclSyntax, compiler: &mut Compiler, context: &mut AvailableContext) -> Option<Self> {
+    pub fn from_ast(vd: &VarDeclSyntax, compiler: &mut Compiler, context: &mut AvailableContext<TypeId>) -> Option<Self> {
         let ty = match compiler.resolve_type(&vd.data.ty) {
             Some(v) => v,
             None => {

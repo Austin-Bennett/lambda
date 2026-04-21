@@ -46,6 +46,9 @@ pub enum StatementToken {
     ExternKW,
     FnKW,
     ReturnKW,
+    IfKW,
+    ElseKW,
+    WhileKW,
 }
 
 #[derive(Clone, Debug)]

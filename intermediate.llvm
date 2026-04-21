@@ -1,80 +1,57 @@
 ; ModuleID = 'lambda_program'
 source_filename = "lambda_program"
 
-declare ptr @malloc(i64)
-
-declare void @free(ptr)
-
-define i32 @sub(i32 %0, i32 %1) {
+define i32 @fib(i32 %0) {
 entry:
-  %a = alloca i32, align 4
-  store i32 %0, ptr %a, align 4
-  %b = alloca i32, align 4
-  store i32 %1, ptr %b, align 4
-  %a1 = load i32, ptr %a, align 4
-  %b2 = load i32, ptr %b, align 4
-  %isub = sub i32 %a1, %b2
-  ret i32 %isub
+  %n = alloca i32, align 4
+  store i32 %0, ptr %n, align 4
+  %n1 = load i32, ptr %n, align 4
+  %ile = icmp sle i32 %n1, 1
+  br i1 %ile, label %then, label %else
+
+then:                                             ; preds = %entry
+  ret i32 1
+
+else:                                             ; preds = %entry
+  %n2 = load i32, ptr %n, align 4
+  %isub = sub i32 %n2, 1
+  %call = call i32 @fib(i32 %isub)
+  %n3 = load i32, ptr %n, align 4
+  %isub4 = sub i32 %n3, 2
+  %call5 = call i32 @fib(i32 %isub4)
+  %iadd = add i32 %call, %call5
+  ret i32 %iadd
+
+if_merge:                                         ; No predecessors!
+  unreachable
+}
+
+define i8 @count(i8 %0) {
+entry:
+  %n = alloca i8, align 1
+  store i8 %0, ptr %n, align 1
+  %i = alloca i8, align 1
+  store i8 0, ptr %i, align 1
+  %i1 = load i8, ptr %i, align 1
+  %n2 = load i8, ptr %n, align 1
+  %ilt = icmp slt i8 %i1, %n2
+  br i1 %ilt, label %loop, label %loop_end
+  %i3 = load i8, ptr %i, align 1
+  %iadd = add i8 %i3, 1
+  store i8 %iadd, ptr %i, align 1
+  br label %loop_start
+
+loop_start:                                       ; preds = %entry
+
+loop:                                             ; preds = %entry
+
+loop_end:                                         ; preds = %entry
+  %i4 = load i8, ptr %i, align 1
+  ret i8 %i4
 }
 
 define i8 @main() {
 entry:
-  %b = alloca i8, align 1
-  store i8 1, ptr %b, align 1
-  %f = alloca double, align 8
-  store double 3.140000e+00, ptr %f, align 8
-  %x = alloca i32, align 4
-  store i32 10, ptr %x, align 4
-  %y = alloca i32, align 4
-  store i32 20, ptr %y, align 4
-  %eq = alloca i8, align 1
-  %x1 = load i32, ptr %x, align 4
-  %y2 = load i32, ptr %y, align 4
-  %ieq = icmp eq i32 %x1, %y2
-  %bcmp = zext i1 %ieq to i8
-  store i8 %bcmp, ptr %eq, align 1
-  %ne = alloca i8, align 1
-  %x3 = load i32, ptr %x, align 4
-  %y4 = load i32, ptr %y, align 4
-  %ine = icmp ne i32 %x3, %y4
-  %bcmp5 = zext i1 %ine to i8
-  store i8 %bcmp5, ptr %ne, align 1
-  %lt = alloca i8, align 1
-  %x6 = load i32, ptr %x, align 4
-  %y7 = load i32, ptr %y, align 4
-  %ilt = icmp slt i32 %x6, %y7
-  %bcmp8 = zext i1 %ilt to i8
-  store i8 %bcmp8, ptr %lt, align 1
-  %gt = alloca i8, align 1
-  %x9 = load i32, ptr %x, align 4
-  %y10 = load i32, ptr %y, align 4
-  %igt = icmp sgt i32 %x9, %y10
-  %bcmp11 = zext i1 %igt to i8
-  store i8 %bcmp11, ptr %gt, align 1
-  %le = alloca i8, align 1
-  %x12 = load i32, ptr %x, align 4
-  %y13 = load i32, ptr %y, align 4
-  %ile = icmp sle i32 %x12, %y13
-  %bcmp14 = zext i1 %ile to i8
-  store i8 %bcmp14, ptr %le, align 1
-  %ge = alloca i8, align 1
-  %x15 = load i32, ptr %x, align 4
-  %y16 = load i32, ptr %y, align 4
-  %ige = icmp sge i32 %x15, %y16
-  %bcmp17 = zext i1 %ige to i8
-  store i8 %bcmp17, ptr %ge, align 1
-  %b18 = load i8, ptr %b, align 1
-  ret i8 %b18
-}
-
-define i32 @add(i32 %0, i32 %1) {
-entry:
-  %a = alloca i32, align 4
-  store i32 %0, ptr %a, align 4
-  %b = alloca i32, align 4
-  store i32 %1, ptr %b, align 4
-  %a1 = load i32, ptr %a, align 4
-  %b2 = load i32, ptr %b, align 4
-  %iadd = add i32 %a1, %b2
-  ret i32 %iadd
+  %call = call i8 @count(i8 5)
+  ret i8 %call
 }

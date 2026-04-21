@@ -9,8 +9,12 @@ use inkwell::types::{AnyTypeEnum, BasicMetadataTypeEnum, BasicTypeEnum};
 use inkwell::values::{AnyValueEnum, BasicMetadataValueEnum, BasicValueEnum, FunctionValue};
 use std::collections::HashMap;
 use std::mem;
+use std::ops::Deref;
 use std::process::abort;
+use inkwell::basic_block::BasicBlock;
 use inkwell::module::Linkage;
+use crate::typed_ast::ast::statements::if_stmt::{TypedElseStatement, TypedIfStatement, TypedIfSyntax};
+use crate::typed_ast::typing::scope::AvailableContext;
 
 impl Compiler {
 
@@ -79,47 +83,59 @@ impl Compiler {
             return;
         }
 
+
+
         let entry = self.llvm_context.append_basic_block(fn_val, "entry");
+
         builder.position_at_end(entry);
 
-        let mut locals: HashMap<String, AnyValueEnum<'static>> = HashMap::new();
+        let mut locals = AvailableContext::new();
+        locals.push_new_scope();
 
         // Allocate stack slots for each parameter and store the incoming value.
         // All locals in the `locals` map are alloca pointers; we always load on read.
         for (name, param) in func.params.iter().zip(fn_val.get_param_iter()) {
             let alloca = builder.build_alloca(param.get_type(), name).unwrap();
             builder.build_store(alloca, param).unwrap();
-            locals.insert(name.clone(), alloca.into());
+            locals.declare_identifier_in_scope(name.clone(), alloca.into());
         }
 
         if let Some(code) = &func.code {
             for statement in &code.data {
-                self.compile_statement(builder, module, globals, &mut locals, statement);
+                self.compile_statement(builder, module, fn_val, globals, &mut locals, statement);
             }
         }
 
 
         // If the current block still has no terminator (e.g. a void function with
         // no explicit return statement), emit an implicit `ret void`.
-        let ret_is_void = matches!(
-            self.type_context.get_by_id(func.signature.ret).map(|i| &i.kind),
-            Some(TypeKind::None)
-        );
-        if ret_is_void {
-            if let Some(block) = builder.get_insert_block() {
-                if block.get_terminator().is_none() {
-                    builder.build_return(None).unwrap();
+        if let Some(current_block) = builder.get_insert_block() {
+            if current_block.get_terminator().is_none() {
+                let ret_info = self.type_context.get_by_id(func.signature.ret).unwrap();
+
+                match &ret_info.kind {
+                    TypeKind::None => {
+                        // It's a void function, just emit ret void
+                        builder.build_return(None).unwrap();
+                    }
+                    _ => {
+                        builder.build_unreachable().unwrap();
+                    }
                 }
             }
         }
+        locals.pop_last_scope();
     }
+
+
 
     pub fn compile_statement(
         &mut self,
         builder: &mut Builder<'static>,
         module: &mut inkwell::module::Module<'static>,
+        function: FunctionValue<'static>,
         globals: &HashMap<String, AnyValueEnum<'static>>,
-        locals: &mut HashMap<String, AnyValueEnum<'static>>,
+        locals: &mut AvailableContext<AnyValueEnum<'static>>,
         s: &TypedStatement,
     ) {
         match s {
@@ -136,7 +152,7 @@ impl Compiler {
                     .unwrap();
 
                 let alloca = builder.build_alloca(basic_ty, &vd.name).unwrap();
-                locals.insert(vd.name.clone(), alloca.into());
+                locals.declare_identifier_in_scope(vd.name.clone(), alloca.into());
 
                 if let Some(val_expr) = &vd.val {
                     if let Some(val) = self.compile_expression(builder, module, globals, locals, val_expr) {
@@ -155,8 +171,96 @@ impl Compiler {
                     }
                 }
                 builder.build_return(None).unwrap();
+            },
+
+            TypedStatement::If(i4) => {
+
+                self.compile_if_statement(
+                    builder, module, function, globals, locals, i4
+                );
+
+            }
+            TypedStatement::While(wh1le) => {
+                let condition = self.compile_expression(
+                    builder,
+                    module,
+                    globals,
+                    locals,
+                    &wh1le.data.condition
+                ).unwrap().into_int_value();
+
+                let loop_start_block = self.llvm_context.append_basic_block(function, "loop_start");
+                let loop_block = self.llvm_context.append_basic_block(function, "loop");
+                let loop_done_block = self.llvm_context.append_basic_block(function, "loop_end");
+
+                builder.build_conditional_branch(condition, loop_block, loop_done_block).unwrap();
+
+                for s in &wh1le.data.code.data {
+                    self.compile_statement(builder, module, function, globals, locals, s);
+                }
+
+                builder.build_unconditional_branch(loop_start_block).unwrap();
+
+                builder.position_at_end(loop_done_block);
             }
         }
+    }
+
+    pub fn compile_if_statement(
+        &mut self,
+        builder: &mut Builder<'static>,
+        module: &mut inkwell::module::Module<'static>,
+        function: FunctionValue<'static>,
+        globals: &HashMap<String, AnyValueEnum<'static>>,
+        locals: &mut AvailableContext<AnyValueEnum<'static>>,
+        i4: &TypedIfSyntax,
+    ) {
+
+        let then_block = self.llvm_context.append_basic_block(function, "then");
+        let else_block = self.llvm_context.append_basic_block(function, "else");
+
+        let pred =
+            self.compile_expression(
+                builder,
+                module,
+                globals,
+                locals,
+                &i4.data.predicate
+            ).unwrap().into_int_value();
+
+        builder.build_conditional_branch(pred, then_block, else_block).unwrap();
+
+        builder.position_at_end(then_block);
+        locals.push_new_scope();
+        for s in &i4.data.code.data {
+            self.compile_statement(builder, module, function, globals, locals, s);
+        }
+        locals.pop_last_scope();
+
+
+        builder.position_at_end(else_block);
+        if let Some(e1se) = &i4.data.otherwise {
+            match e1se.deref() {
+                TypedElseStatement::If(if_statement) => {
+                    self.compile_if_statement(builder, module, function, globals, locals, if_statement);
+                }
+                TypedElseStatement::Else(block) => {
+
+                    let merge_block = self.llvm_context.append_basic_block(function, "if_merge");
+                    locals.push_new_scope();
+                    for s in &block.data {
+                        self.compile_statement(builder, module, function, globals, locals, s);
+                    }
+                    locals.pop_last_scope();
+                    builder.position_at_end(merge_block);
+                }
+            }
+        } else {
+            let merge_block = self.llvm_context.append_basic_block(function, "if_merge");
+            builder.position_at_end(merge_block);
+        }
+
+
     }
 
     pub fn compile_expression(
@@ -164,7 +268,7 @@ impl Compiler {
         builder: &mut Builder<'static>,
         module: &mut inkwell::module::Module<'static>,
         globals: &HashMap<String, AnyValueEnum<'static>>,
-        locals: &mut HashMap<String, AnyValueEnum<'static>>,
+        locals: &mut AvailableContext<AnyValueEnum<'static>>,
         e: &TypedExpr,
     ) -> Option<AnyValueEnum<'static>> {
         match &e.value {
@@ -172,7 +276,7 @@ impl Compiler {
                 let ctx = self.llvm_context;
                 match lit {
                     LiteralValue::Bool(b) => {
-                        Some(ctx.i8_type().const_int(*b as u64, false).into())
+                        Some(ctx.custom_width_int_type(1).const_int(*b as u64, false).into())
                     }
                     LiteralValue::Integer(_) | LiteralValue::Float(_) => {
                         let literal_key = match lit {
@@ -198,7 +302,7 @@ impl Compiler {
             }
 
             TypedExprNode::Identifier(ident) => {
-                if let Some(alloca_val) = locals.get(ident) {
+                if let Some(alloca_val) = locals.get_identifier(ident) {
                     // Local variable: load from its alloca slot.
                     let ptr = alloca_val.into_pointer_value();
                     let basic_ty: BasicTypeEnum<'static> = self
@@ -269,7 +373,7 @@ impl Compiler {
                             builder.build_store(ref_ptr.into_pointer_value(), basic).unwrap();
                         }
                         TypedExprNode::Identifier(name) => {
-                            let alloca = locals.get(name)?.into_pointer_value();
+                            let alloca = locals.get_identifier(name)?.into_pointer_value();
                             let ops = &self.type_context.get_by_id(bop.lhs.ty)?.ops;
                             let maker = ops.assign.get(&bop.rhs.ty)?;
                             maker(builder, alloca, rhs_val);
@@ -313,7 +417,7 @@ impl Compiler {
                 match &uop.op {
                     UnaryOperator::Reference => {
                         let TypedExprNode::Identifier(name) = &uop.operand.value else { return None; };
-                        if let Some(alloca) = locals.get(name) {
+                        if let Some(alloca) = locals.get_identifier(name) {
                             return Some(alloca.into_pointer_value().into());
                         }
                         // functions are already pointers in LLVM's opaque pointer model
@@ -389,9 +493,11 @@ impl Compiler {
                     let m = self.intrinsics.get(&ci.name)?;
                     m.clone()
                 };
+
                 let compiled_args: Vec<Option<AnyValueEnum<'static>>> = ci.args.iter()
                     .map(|arg| self.compile_expression(builder, module, globals, locals, arg))
                     .collect();
+
                 maker(builder, module, globals, locals, &ci.args, compiled_args)
             }
         }

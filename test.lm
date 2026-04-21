@@ -1,35 +1,26 @@
-use test_import
 
 
-extern fn malloc(size: usize) = uint8*;
-extern fn free(ptr: uint8*);
 
-
-//2d integer vector
-struct ivec2 {
-    x: int32,
-    y: int32,
+fn fib(n: int32) = int32 {
+    if n <= 1 {
+        return 1;
+    } else {
+        return fib(n - 1) + fib(n-2);
+    }
 }
 
-//functions that return values use the = type syntax
-fn sub(a: int32, b: int32) = int32 {
-    return a - b;
+fn count(n: int8) = int8 {
+    i: int8 = 0;
+
+    while i < n {
+        i = i + 1;
+    }
+    return i;
 }
 
 //main function- this is where code starts executing
 fn main() = int8 {
-    b: bool = true;
-    f: float64 = 3.14;
 
-    x: int32 = 10;
-    y: int32 = 20;
+    return count(5);
 
-    eq: bool = x == y;
-    ne: bool = x != y;
-    lt: bool = x < y;
-    gt: bool = x > y;
-    le: bool = x <= y;
-    ge: bool = x >= y;
-
-    return b as uint8;
 }

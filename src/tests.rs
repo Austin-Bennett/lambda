@@ -8,6 +8,20 @@ use crate::compiler::Compiler;
 use crate::lexer::token::TokenType;
 use crate::lexer::tokenizer::Tokens;
 
+#[macro_export]
+macro_rules! time {
+    {$($body:tt)*} => {{
+
+        let start = std::time::Instant::now();
+
+        {
+            $($body)*
+        }
+
+        std::time::Instant::now() - start
+    }};
+}
+
 pub fn make_tokens(s: &str) -> Tokens {
     Tokens::tokenize_string(
         SourceOwner::new(
@@ -78,3 +92,4 @@ pub fn test_struct_make() {
         println!("{}: {}", m.name, compiler.type_context.name_of(m.ty).unwrap())
     }
 }
+
