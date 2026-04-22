@@ -10,7 +10,6 @@ impl TypedReturn {
     pub fn from_ast(ast: &Return, function_return: TypeId, compiler: &mut Compiler, context: &AvailableContext<TypeId>) -> Option<Self> {
         
         let expr = TypedExpr::from_ast(&ast.0, compiler, context)?;
-        let expr = TypedExpr::coerce_ref(expr, &compiler.type_context);
         let expr = TypedExpr::coerce_literal(&compiler.type_context, expr, function_return);
         
         if expr.ty != function_return {

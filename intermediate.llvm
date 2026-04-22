@@ -1,41 +1,11 @@
 ; ModuleID = 'lambda_program'
 source_filename = "lambda_program"
 
-define i32 @Point_sum(ptr %0) {
-entry:
-  %self = alloca ptr, align 8
-  store ptr %0, ptr %self, align 8
-  %self1 = load ptr, ptr %self, align 8
-  %deref_struct = load { i32, i32 }, ptr %self1, align 4
-  %member = extractvalue { i32, i32 } %deref_struct, 0
-  %self2 = load ptr, ptr %self, align 8
-  %deref_struct3 = load { i32, i32 }, ptr %self2, align 4
-  %member4 = extractvalue { i32, i32 } %deref_struct3, 1
-  %iadd = add i32 %member, %member4
-  ret i32 %iadd
-}
+declare ptr @malloc(i64)
 
-define i32 @Point_length2(ptr %0) {
-entry:
-  %self = alloca ptr, align 8
-  store ptr %0, ptr %self, align 8
-  %self1 = load ptr, ptr %self, align 8
-  %deref_struct = load { i32, i32 }, ptr %self1, align 4
-  %member = extractvalue { i32, i32 } %deref_struct, 0
-  %self2 = load ptr, ptr %self, align 8
-  %deref_struct3 = load { i32, i32 }, ptr %self2, align 4
-  %member4 = extractvalue { i32, i32 } %deref_struct3, 0
-  %imul = mul i32 %member, %member4
-  %self5 = load ptr, ptr %self, align 8
-  %deref_struct6 = load { i32, i32 }, ptr %self5, align 4
-  %member7 = extractvalue { i32, i32 } %deref_struct6, 1
-  %self8 = load ptr, ptr %self, align 8
-  %deref_struct9 = load { i32, i32 }, ptr %self8, align 4
-  %member10 = extractvalue { i32, i32 } %deref_struct9, 1
-  %imul11 = mul i32 %member7, %member10
-  %iadd = add i32 %imul, %imul11
-  ret i32 %iadd
-}
+declare void @free(ptr)
+
+declare ptr @realloc(ptr, i64)
 
 define i32 @int32_max(ptr %0, i32 %1) {
 entry:
@@ -43,42 +13,169 @@ entry:
   store ptr %0, ptr %self, align 8
   %other = alloca i32, align 4
   store i32 %1, ptr %other, align 4
-  %self1 = load ptr, ptr %self, align 8
-  %refread = load i32, ptr %self1, align 4
-  %other2 = load i32, ptr %other, align 4
-  %igt = icmp sgt i32 %refread, %other2
+  %other1 = load i32, ptr %other, align 4
+  %self2 = load ptr, ptr %self, align 8
+  %refread = load i32, ptr %self2, align 4
+  %igt = icmp sgt i32 %other1, %refread
   br i1 %igt, label %then, label %else
 
 then:                                             ; preds = %entry
-  %self3 = load ptr, ptr %self, align 8
-  %refread4 = load i32, ptr %self3, align 4
-  ret i32 %refread4
+  %other3 = load i32, ptr %other, align 4
+  ret i32 %other3
+
+else:                                             ; preds = %entry
+  %self4 = load ptr, ptr %self, align 8
+  %refread5 = load i32, ptr %self4, align 4
+  ret i32 %refread5
+
+if_merge:                                         ; No predecessors!
+  unreachable
+}
+
+define { ptr, i64, i64 } @IntList_new() {
+entry:
+  %call = call ptr @malloc(i64 4)
+  %sf = insertvalue { ptr, i64, i64 } undef, ptr %call, 0
+  %sf1 = insertvalue { ptr, i64, i64 } %sf, i64 1, 1
+  %sf2 = insertvalue { ptr, i64, i64 } %sf1, i64 0, 2
+  ret { ptr, i64, i64 } %sf2
+}
+
+define { ptr, i64, i64 } @IntList_with_capacity(i64 %0) {
+entry:
+  %cap = alloca i64, align 8
+  store i64 %0, ptr %cap, align 4
+  %cap1 = load i64, ptr %cap, align 4
+  %umul = mul i64 %cap1, 4
+  %call = call ptr @malloc(i64 %umul)
+  %sf = insertvalue { ptr, i64, i64 } undef, ptr %call, 0
+  %cap2 = load i64, ptr %cap, align 4
+  %sf3 = insertvalue { ptr, i64, i64 } %sf, i64 %cap2, 1
+  %sf4 = insertvalue { ptr, i64, i64 } %sf3, i64 0, 2
+  ret { ptr, i64, i64 } %sf4
+}
+
+define ptr @IntList_get(ptr %0, i64 %1) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %ind = alloca i64, align 8
+  store i64 %1, ptr %ind, align 4
+  %self1 = load ptr, ptr %self, align 8
+  %struct_element_reference = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self1, i32 0, i32 0
+  %refread = load ptr, ptr %struct_element_reference, align 8
+  %ind2 = load i64, ptr %ind, align 4
+  %pointer_add = getelementptr i32, ptr %refread, i64 %ind2
+  ret ptr %pointer_add
+}
+
+define void @IntList_add(ptr %0, i32 %1) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %v = alloca i32, align 4
+  store i32 %1, ptr %v, align 4
+  %self1 = load ptr, ptr %self, align 8
+  %struct_element_reference = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self1, i32 0, i32 2
+  %refread = load i64, ptr %struct_element_reference, align 4
+  %self2 = load ptr, ptr %self, align 8
+  %struct_element_reference3 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self2, i32 0, i32 1
+  %refread4 = load i64, ptr %struct_element_reference3, align 4
+  %uge = icmp uge i64 %refread, %refread4
+  br i1 %uge, label %then, label %else
+
+then:                                             ; preds = %entry
+  %new_size = alloca i64, align 8
+  %self5 = load ptr, ptr %self, align 8
+  %struct_element_reference6 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self5, i32 0, i32 2
+  %refread7 = load i64, ptr %struct_element_reference6, align 4
+  %umul = mul i64 %refread7, 2
+  %uadd = add i64 %umul, 1
+  store i64 %uadd, ptr %new_size, align 4
+  %self8 = load ptr, ptr %self, align 8
+  %struct_element_reference9 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self8, i32 0, i32 0
+  %refread10 = load ptr, ptr %struct_element_reference9, align 8
+  %new_size11 = load i64, ptr %new_size, align 4
+  %umul12 = mul i64 %new_size11, 4
+  %call = call ptr @realloc(ptr %refread10, i64 %umul12)
+  %self13 = load ptr, ptr %self, align 8
+  %struct_element_reference14 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self13, i32 0, i32 0
+  store ptr %call, ptr %struct_element_reference14, align 8
+  %new_size15 = load i64, ptr %new_size, align 4
+  %self16 = load ptr, ptr %self, align 8
+  %struct_element_reference17 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self16, i32 0, i32 1
+  store i64 %new_size15, ptr %struct_element_reference17, align 4
+  br label %if_merge
 
 else:                                             ; preds = %entry
   br label %if_merge
 
-if_merge:                                         ; preds = %else
-  %other5 = load i32, ptr %other, align 4
-  ret i32 %other5
+if_merge:                                         ; preds = %else, %then
+  %v18 = load i32, ptr %v, align 4
+  %self19 = load ptr, ptr %self, align 8
+  %struct_element_reference20 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self19, i32 0, i32 0
+  %refread21 = load ptr, ptr %struct_element_reference20, align 8
+  %self22 = load ptr, ptr %self, align 8
+  %struct_element_reference23 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self22, i32 0, i32 2
+  %refread24 = load i64, ptr %struct_element_reference23, align 4
+  %pointer_add = getelementptr i32, ptr %refread21, i64 %refread24
+  store i32 %v18, ptr %pointer_add, align 4
+  %self25 = load ptr, ptr %self, align 8
+  %struct_element_reference26 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self25, i32 0, i32 2
+  %refread27 = load i64, ptr %struct_element_reference26, align 4
+  %uadd28 = add i64 %refread27, 1
+  %self29 = load ptr, ptr %self, align 8
+  %struct_element_reference30 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self29, i32 0, i32 2
+  store i64 %uadd28, ptr %struct_element_reference30, align 4
+  ret void
+}
+
+define void @IntList_drop(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %self1 = load ptr, ptr %self, align 8
+  %struct_element_reference = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self1, i32 0, i32 0
+  %refread = load ptr, ptr %struct_element_reference, align 8
+  call void @free(ptr %refread)
+  %self2 = load ptr, ptr %self, align 8
+  %struct_element_reference3 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self2, i32 0, i32 2
+  store i64 0, ptr %struct_element_reference3, align 4
+  %self4 = load ptr, ptr %self, align 8
+  %struct_element_reference5 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self4, i32 0, i32 1
+  store i64 0, ptr %struct_element_reference5, align 4
+  ret void
 }
 
 define i8 @main() {
 entry:
-  %p = alloca { i32, i32 }, align 8
-  store { i32, i32 } { i32 3, i32 4 }, ptr %p, align 4
-  %s = alloca i32, align 4
-  %call = call i32 @Point_sum(ptr %p)
-  store i32 %call, ptr %s, align 4
-  %s2 = alloca i32, align 4
-  %call1 = call i32 @Point_length2(ptr %p)
-  store i32 %call1, ptr %s2, align 4
-  %a = alloca i32, align 4
-  store i32 10, ptr %a, align 4
-  %b = alloca i32, align 4
-  %s3 = load i32, ptr %s, align 4
-  %call4 = call i32 @int32_max(ptr %a, i32 %s3)
-  store i32 %call4, ptr %b, align 4
-  %s25 = load i32, ptr %s2, align 4
-  %trunc = trunc i32 %s25 to i8
+  %list = alloca { ptr, i64, i64 }, align 8
+  %call = call { ptr, i64, i64 } @IntList_new()
+  store { ptr, i64, i64 } %call, ptr %list, align 8
+  call void @IntList_add(ptr %list, i32 10)
+  call void @IntList_add(ptr %list, i32 20)
+  call void @IntList_add(ptr %list, i32 30)
+  call void @IntList_add(ptr %list, i32 40)
+  %res = alloca i32, align 4
+  %call1 = call ptr @IntList_get(ptr %list, i64 2)
+  %refread = load i32, ptr %call1, align 4
+  store i32 %refread, ptr %res, align 4
+  store i32 40, ptr %res, align 4
+  call void @IntList_drop(ptr %list)
+  %array = alloca ptr, align 8
+  %array_ptr = alloca i32, i64 5, align 4
+  %elem = getelementptr i32, ptr %array_ptr, i64 0
+  store i32 1, ptr %elem, align 4
+  %elem2 = getelementptr i32, ptr %array_ptr, i64 1
+  store i32 2, ptr %elem2, align 4
+  %elem3 = getelementptr i32, ptr %array_ptr, i64 2
+  store i32 3, ptr %elem3, align 4
+  %elem4 = getelementptr i32, ptr %array_ptr, i64 3
+  store i32 4, ptr %elem4, align 4
+  %elem5 = getelementptr i32, ptr %array_ptr, i64 4
+  store i32 5, ptr %elem5, align 4
+  store ptr %array_ptr, ptr %array, align 8
+  %res6 = load i32, ptr %res, align 4
+  %trunc = trunc i32 %res6 to i8
   ret i8 %trunc
 }

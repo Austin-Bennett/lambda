@@ -173,11 +173,18 @@ struct Point {
 }
 
 modify Point {
+    public new(float32 x, float32 y) = Point {
+        return Point(x, y);
+    }
+
     public length2(self) = float32 {
         //self is a reference to this object
-        return self.x * self.x + self.y * self.y;
+        //self.x is a reference aswell
+        return *self.x * *self.x + *self.y * *self.y;
     }
 }
+
+
 
 //modify primitive types too- you can modify any valid type
 modify int32 {
@@ -189,3 +196,26 @@ modify int32 {
     }
 }
 ```
+
+*Operator overloading is done inside modify blocks aswell*
+```lambda
+modify Point {
+    //fn is replaced with operator, and the name of the operand
+    public operator add(self, other: Point) = Point {
+        return Point(*self.x + *other.x, *self.y + *other.y);
+    }
+}
+```
+
+*Operators*
+
+
+| Operator |         Signature          | Description |
+|:--------:|:--------------------------:|-------------|
+|    +     |  add(self, other: T) = R   | a + b       |
+|    -     |  sub(self, other: T) = R   | a - b       |
+|    *     |  mul(self, other: T) = R   | a * b       |
+|    /     |  div(self, other: T) = R   | a / b       |
+|    =     | assign(self, other: T) = R | a = b       |
+|   as T   |     convert(self) = T      | a as T      |
+|   drop   |         drop(self)         | destructor  |

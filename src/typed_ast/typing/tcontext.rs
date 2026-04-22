@@ -40,6 +40,7 @@ pub struct TypeContext {
     pub uint64: TypeId,
 
     pub usize: TypeId,
+    pub isize: TypeId,
 
     pub float32: TypeId,
     pub float64: TypeId,
@@ -79,6 +80,7 @@ impl TypeContext {
             uint32: 0,
             uint64: 0,
             usize: 0,
+            isize: 0,
             float32: 0,
             float64: 0,
             intrinsics: HashMap::new(),
@@ -185,43 +187,99 @@ impl TypeContext {
                 self.types[id as usize].enable_neg_operator(id, neg);
             }
 
+            TypeKind::Pointer(inner_ty) => {
+                let inner_info: BasicTypeEnum<'static> = self.types[inner_ty as usize].llvm_type.try_into().unwrap();
+                let add: BinaryOperatorMaker = Box::new(move |b, l, r| unsafe {
+
+                    b.build_gep(
+                        inner_info,
+                        l.into_pointer_value(),
+                        &[
+                            r.into_int_value()
+                        ],
+                        "pointer_add"
+                    ).unwrap().into()
+                });
+                let sub: BinaryOperatorMaker = Box::new(move |b, l, r| unsafe {
+                    let neg = b.build_int_neg(r.into_int_value(), "neg").unwrap();
+                    b.build_gep(
+                        inner_info,
+                        l.into_pointer_value(),
+                        &[
+                            neg
+                        ],
+                        "pointer_sub"
+                    ).unwrap().into()
+                });
+
+                self.types[id as usize].ops.add.insert(self.isize, (id, add));
+                self.types[id as usize].ops.sub.insert(self.isize, (id, sub));
+            }
+
             _ => {
                 // Non-numeric types that somehow ended up here – no-op.
             }
         }
     }
 
-    fn enable_array_operator(&mut self, id: TypeId) {
-        let TypeKind::Array { ty: array_ty, .. } = self.types[id as usize].kind.clone() else { return; };
-        let inner_info = self.types[array_ty as usize].llvm_type;
+    fn enable_index_operator(&mut self, id: TypeId) {
+        if let TypeKind::Array { ty: array_ty, .. } = self.types[id as usize].kind.clone() {
+            let inner_info = self.types[array_ty as usize].llvm_type;
 
 
+            self.types[id as usize].enable_index_operator(
+                self.usize,
+                array_ty,
+                Box::new(
+                    move |b, array, index| unsafe {
+                        //todo: enforcing basic type access
+                        let basic: BasicTypeEnum = inner_info.try_into().unwrap();
 
 
-        self.types[id as usize].enable_index_operator(
-            self.usize,
-            array_ty,
-            Box::new(
-                move |b, array, index| unsafe {
+                        let elem_ptr = b.build_gep(basic,
+                                                   array.into_pointer_value(),
+                                                   &[
+                                                       index.try_into().unwrap()
+                                                   ],
+                                                   "array_element_ptr",
+                        ).unwrap();
 
-                    let basic: BasicTypeEnum = inner_info.try_into().unwrap();
+                        b.build_load(basic, elem_ptr, "array_element")
+                            .unwrap()
+                            .into()
+                    }
+                ),
+            );
+        } else if let TypeKind::Slice( inner ) = self.types[id as usize].kind.clone() {
+            let inner_info = self.types[inner as usize].llvm_type;
+
+            self.types[id as usize].enable_index_operator(
+                self.usize,
+                inner,
+                Box::new(
+                    move |builder, slice, index| unsafe {
+                        let basic_inner: BasicTypeEnum = inner_info.try_into().unwrap();
+                        let slice_struct = slice.into_struct_value();
+                        let pointer = builder.build_extract_value(slice_struct, 1, "slice_array_pointer")
+                            .unwrap().try_into().unwrap();
 
 
+                        let elem_ptr = builder.build_gep(
+                            basic_inner,
+                            pointer,
+                            &[
+                                index.try_into().unwrap()
+                            ],
+                            "slice_element_ptr"
+                        ).unwrap();
 
-                    let elem_ptr = b.build_gep(basic,
-                                array.into_pointer_value(),
-                                &[
-                                    index.try_into().unwrap()
-                                ],
-                                "array_element_ptr"
-                    ).unwrap();
-
-                    b.build_load(basic, elem_ptr, "array_element")
-                        .unwrap()
-                        .into()
-                }
-            )
-        );
+                        builder.build_load(basic_inner, elem_ptr, "slice_element")
+                            .unwrap()
+                            .into()
+                    }
+                )
+            );
+        }
 
     }
 
@@ -432,6 +490,14 @@ impl TypeContext {
         let id = self.add(Type::Typename("int64".into()), TypeInfo::new(TypeKind::Int(64), self.llvm_context.i64_type().into()));
         self.int64 = id; self.enable_arithmetic_neg(id); self.enable_from_int_literal(id, 64, true);
 
+        let id = self.add(Type::Typename("isize".into()), TypeInfo::new(
+            TypeKind::Int(Self::SIZE_POINTER as u32 * 8),
+            self.llvm_context.custom_width_int_type(Self::SIZE_POINTER as u32 * 8).into(),
+        ));
+        self.isize = id; self.enable_arithmetic_neg(id);
+        self.enable_from_int_literal(id, Self::SIZE_POINTER as u32 * 8, true);
+
+
         //UNSIGNED INTEGERS
 
         let id = self.add(Type::Typename("uint8".into()),  TypeInfo::new(TypeKind::UInt(8),  self.llvm_context.i8_type().into()));
@@ -453,6 +519,8 @@ impl TypeContext {
         self.usize = id; self.enable_arithmetic_neg(id);
         self.enable_from_int_literal(id, Self::SIZE_POINTER as u32 * 8, false);
 
+
+
         let id = self.add(Type::Typename("bool".into()),
             TypeInfo::new(TypeKind::Boolean, self.llvm_context.custom_width_int_type(1).into())
         );
@@ -472,7 +540,7 @@ impl TypeContext {
         let bool_id = self.bool;
         let comparable = [
             self.int_literal, self.float_literal,
-            self.int8, self.int16, self.int32, self.int64,
+            self.int8, self.int16, self.int32, self.int64, self.isize,
             self.uint8, self.uint16, self.uint32, self.uint64, self.usize,
             self.float32, self.float64,
             self.bool,
@@ -483,7 +551,7 @@ impl TypeContext {
 
         let numeric = [
             self.int_literal, self.float_literal,
-            self.int8, self.int16, self.int32, self.int64,
+            self.int8, self.int16, self.int32, self.int64, self.isize,
             self.uint8, self.uint16, self.uint32, self.uint64, self.usize,
             self.float32, self.float64,
         ];
@@ -532,7 +600,9 @@ impl TypeContext {
     pub fn create_slice_llvm_structure(&self) -> StructType<'static> {
         self.llvm_context.struct_type(
             &[
+                //size of the slice (0)
                 self.get_by_id(self.usize).unwrap().llvm_type.try_into().unwrap(),
+                //the actual array (1)
                 self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into(),
             ],
             true
@@ -666,13 +736,21 @@ impl TypeContext {
         self.type_ids.insert(id, ty);
         self.types.push(info);
 
+
+        if matches!(self.types[id as usize].kind, TypeKind::Pointer(_)) {
+            self.enable_arithmetic_neg(id)
+        }
+
         if matches!(self.types[id as usize].kind, TypeKind::Pointer(_) | TypeKind::Reference(_))
             && self.usize != 0
         {
             self.enable_ptr_conversions(id);
-        } else if matches!(self.types[id as usize].kind, TypeKind::Array { .. }) {
-            self.enable_array_operator(id)
+        } else if matches!(self.types[id as usize].kind, TypeKind::Array { .. }) ||
+            matches!(self.types[id as usize].kind, TypeKind::Slice(_)) {
+            self.enable_index_operator(id)
         }
+
+        self.enable_assignment(id);
 
         id
     }

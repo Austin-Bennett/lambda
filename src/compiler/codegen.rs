@@ -1,11 +1,11 @@
-use crate::compiler::Compiler;
+use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::typed_ast::ast::items::function::Function;
 use crate::lexer::literal::LiteralValue;
 use crate::typed_ast::ast::statements::expression::{BinaryOperator, TypedExpr, TypedExprNode, UnaryOperator};
 use crate::typed_ast::ast::statements::TypedStatement;
 use crate::typed_ast::typing::ty::TypeKind;
 use inkwell::builder::Builder;
-use inkwell::types::{AnyTypeEnum, BasicMetadataTypeEnum, BasicTypeEnum};
+use inkwell::types::{AnyTypeEnum, BasicMetadataTypeEnum, BasicTypeEnum, StructType};
 use inkwell::values::{AnyValueEnum, BasicMetadataValueEnum, BasicValueEnum, FunctionValue};
 use std::collections::HashMap;
 use std::mem;
@@ -379,6 +379,35 @@ impl Compiler {
                 if let BinaryOperator::Assign = &bop.op {
                     let rhs_val = self.compile_expression(builder, module, globals, locals, &bop.rhs)?;
                     match &bop.lhs.value {
+                        TypedExprNode::MemberAccess(ma) => {
+                            let obj_val = self.compile_expression(
+                                builder, module, globals, locals, &ma.object
+                            ).unwrap();
+
+                            let (sv, s_ty) = if let AnyValueEnum::PointerValue(ptr) = obj_val {
+                                let TypeKind::Reference(inner_id) = self.type_context.get_by_id(ma.object.ty).unwrap().kind.clone() else {
+                                    return None;
+                                };
+                                (ptr, inner_id)
+                            } else {
+                                self.emit_compile_message(CompileMessage::new(
+                                    e.smap.clone(),
+                                    "cannot assign to a rvalue!".to_string(),
+                                    CompileMessageType::Error
+                                ));
+                                return None;
+                            };
+                            let s_ty = self.type_context.get_by_id(ma.object.ty).unwrap().llvm_type
+                                .into_struct_type();
+
+                            let ref_ptr = builder.build_struct_gep(s_ty, sv, ma.member_index as u32,
+                                                                   format!("s_{}_ref", ma.member_index).as_ref()).unwrap();
+
+                            let basic: BasicValueEnum = rhs_val.try_into().ok()?;
+
+                            builder.build_store(ref_ptr, basic).unwrap();
+
+                        }
                         TypedExprNode::RefRead(ref_inner) => {
                             // Store through the reference pointer.
                             let ref_ptr = self.compile_expression(builder, module, globals, locals, ref_inner)?;
@@ -534,7 +563,6 @@ impl Compiler {
             TypedExprNode::BoundMethod(bm) => {
                 globals.get(&bm.mangled_name).copied()
             }
-
             TypedExprNode::CompilerIntrinsic(ci) => {
                 let maker = {
                     let m = self.intrinsics.get(&ci.name)?;

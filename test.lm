@@ -1,35 +1,68 @@
+extern fn malloc(n_bytes: usize) = uint8*;
+extern fn free(ptr: uint8*);
+extern fn realloc(ptr: uint8*, n_bytes: usize) = uint8*;
 
-struct Point {
-    public x: int32,
-    public y: int32,
-}
-
-modify Point {
-    public sum(self) = int32 {
-        return self.x + self.y;
-    }
-
-    public length2(self) = int32 {
-        return self.x * self.x + self.y * self.y;
-    }
+struct IntList {
+    array: int32*,
+    //the actual array size
+    size: usize,
+    //the length of the array
+    length: usize,
 }
 
 modify int32 {
-    public max(self, other: int32) = int32 {
-        if self > other {
-            return self;
+    public fn max(self, other: int32) = int32 {
+        if other > *self {
+            return other;
+        } else {
+            return *self;
         }
-        return other;
     }
 }
 
+modify IntList {
+    public fn new() = IntList {
+        return IntList(malloc(4) as int32*, 1, 0);
+    }
+
+    public fn with_capacity(cap: usize) = IntList {
+        return IntList(malloc(cap * 4) as int32*, cap, 0);
+    }
+
+
+    public fn get(self, ind: usize) = int32& {
+        return *(*self.array + ind as isize);
+    }
+
+    public fn add(self, v: int32) {
+        if *self.length >= *self.size {
+            new_size: usize = (*self.length * 2) + 1;
+            self.array = realloc((*self.array) as uint8*, new_size * 4) as int32*;
+            self.size = new_size;
+        }
+        **(self.array + self.length as isize) = v;
+        self.length = *self.length + 1;
+    }
+
+    public fn drop(self) {
+        free(self.array as uint8*);
+        self.length = 0;
+        self.size = 0;
+        self.array = 0 as int32*;
+    }
+}
+
+
 fn main() = int8 {
-    p: Point = Point(3, 4);
-    s: int32 = p.sum();
-    s2: int32 = p.length2();
+    list: IntList = IntList.with_capacity(30);
+    list.add(10);
+    list.add(20);
+    list.add(30);
+    list.add(40);
 
-    a: int32 = 10;
-    b: int32 = a.max(s);
+    res: int32 = *list.get(2);
 
-    return s2 as int8;
+    list.drop();
+
+    return res as int8;
 }

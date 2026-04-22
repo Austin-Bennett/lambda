@@ -15,6 +15,9 @@ use std::fmt::{Debug, Formatter};
 pub struct Function {
     pub name: String,
     pub parameters: Vec<VarDeclSyntax>,
+
+    //todo: vec of type parameters
+    //pub type_parameters: Vec<String>,
     pub body: Option<BlockSyntax>,
     pub ty: Option<Type>, //None for void
 
@@ -112,8 +115,11 @@ impl Syntax for FunctionSyntax {
             return None;
         };
 
+
+        let mut next = tokens.pop_front();
+        
+
         //expect an open parentheses
-        let next = tokens.pop_front();
         let mut last_smap = if let unpack_opt_tk!(TokenType::Expression(ExpressionToken::OpenParentheses), imap) = next {
             smap.extend(imap.clone());
             imap

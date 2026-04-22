@@ -107,6 +107,7 @@ pub struct TypedStructConstruct {
 pub struct TypedBoundMethod {
     pub self_expr: TypedExpr,
     pub mangled_name: String,
+    pub stat1c: bool,
 }
 
 pub enum TypedExprNode {
@@ -270,9 +271,18 @@ impl TypedExpr {
         expr
     }
 
-    /// Infer concrete types when one or both sides are literals. Returns true if types now match.
+    /// Infer concrete types when one or both sides are literals. Returns true if types are now compatible
     pub fn infer_literals_binary(context: &TypeContext, lhs: &mut TypedExpr, rhs: &mut TypedExpr) -> bool {
-        if lhs.ty == rhs.ty { return true; }
+
+        if !context.is_literal(lhs.ty) && !context.is_literal(rhs.ty) {
+            //no literals to infer
+            return true;
+        }
+
+        if lhs.ty == rhs.ty {
+            return true;
+        }
+
         if context.is_literal(lhs.ty) && context.get_by_id(rhs.ty).map_or(false, |i| i.ops.from_literal.contains_key(&lhs.ty)) {
             lhs.ty = rhs.ty;
             return true;
@@ -283,6 +293,7 @@ impl TypedExpr {
         }
         false
     }
+
 
     /// Infer the result type for an index operation, coercing a literal index if needed.
     pub fn infer_literal_index(context: &TypeContext, index: &mut TypedExpr, index_op: &HashMap<TypeId, (TypeId, BinaryOperatorMaker)>) -> Option<TypeId> {
@@ -602,7 +613,7 @@ impl TypedExpr {
                     "=" => {
                         // Determine the target type and whether the LHS is a pointer dereference.
                         let (target_ty, lhs_is_deref) = match &lhs.value {
-                            TypedExprNode::Identifier(_) | TypedExprNode::RefRead(_) => (lhs.ty, false),
+                            TypedExprNode::Identifier(_) | TypedExprNode::RefRead(_) | TypedExprNode::MemberAccess(_) => (lhs.ty, false),
                             TypedExprNode::UnaryOp(uop) if matches!(uop.op, UnaryOperator::Dereference) => {
                                 match compiler.type_context.get_by_id(lhs.ty).map(|i| i.kind.clone()) {
                                     Some(TypeKind::Reference(inner)) => (inner, true),
@@ -669,13 +680,9 @@ impl TypedExpr {
             }
             Expr::UnaryOp(op) => {
                 let (lhs, lhs_ty) = TypedExpr::from_node(&op.operand, compiler, context)?;
-                let lhs_raw = TypedExpr { value: lhs, ty: lhs_ty, smap: op.operand.smap.clone() };
+                let lhs_expr = TypedExpr { value: lhs, ty: lhs_ty, smap: op.operand.smap.clone() };
                 // Auto-deref references for all unary ops except address-of
-                let lhs_expr = if op.op.tk != "&" {
-                    Self::coerce_ref(lhs_raw, &compiler.type_context)
-                } else {
-                    lhs_raw
-                };
+
 
                 let lhs_ty = lhs_expr.ty;
                 let lhs = lhs_expr.value;
@@ -797,7 +804,11 @@ impl TypedExpr {
                         return None;
                     };
 
-                    let mut args = vec![bm.self_expr];
+
+                    let mut args = vec![];
+                    if !bm.stat1c {
+                        args.push(bm.self_expr);
+                    }
                     for (i, arg_expr) in call.arguments.iter().enumerate() {
                         let mut typed = TypedExpr::from_ast(arg_expr, compiler, context)?;
                         if let Some(&expected) = params.get(i + 1) {
@@ -964,7 +975,7 @@ impl TypedExpr {
                 let object = TypedExpr::from_ast(&op.object, compiler, context)?;
 
                 // Check for a method on the object's type first
-                if let Some((mangled, fn_type_id, public)) = compiler.type_context
+                if let Some((mangled, fn_type_id, public, stat1c)) = compiler.type_context
                     .get_by_id(object.ty)
                     .and_then(|info| info.methods.get(&op.member))
                     .cloned()
@@ -978,7 +989,8 @@ impl TypedExpr {
                         return None;
                     }
                     // self must be an lvalue so we can take its address
-                    let TypedExprNode::Identifier(_) = &object.value else {
+                    //todo: accept an identifier or a reference
+                    if !matches!(&object.value, TypedExprNode::Identifier(_)) {
                         compiler.emit_compile_message(CompileMessage::new(
                             op.object.smap.clone(),
                             "method receiver must be a variable".into(),
@@ -998,6 +1010,7 @@ impl TypedExpr {
                     return Some((TypedExprNode::BoundMethod(Box::new(TypedBoundMethod {
                         self_expr: self_ref,
                         mangled_name: mangled,
+                        stat1c
                     })), fn_type_id));
                 }
 
@@ -1043,6 +1056,8 @@ impl TypedExpr {
                     return None;
                 };
                 let member_ty = member.ty;
+
+
                 Some((TypedExprNode::MemberAccess(Box::new(TypedMemberAccess { object, member_index })), member_ty))
             }
         }

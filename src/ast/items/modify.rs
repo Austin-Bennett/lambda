@@ -117,6 +117,22 @@ impl Syntax for ModifySyntax {
             } else {
                 (false, None)
             };
+            
+            //fn kw
+            let next = tokens.pop_front();
+            if let unpack_opt_tk!(TokenType::Statement(StatementToken::FnKW), fmap) = next {
+                smap.extend(fmap);
+            } else {
+                compiler.emit_compile_message(
+                    CompileMessage::expected_token_error(
+                        smap,
+                        "fn keyword",
+                        "modify block declaration",
+                        next
+                    )
+                );
+                return None;
+            }
 
             // Method name
             let next = tokens.pop_front();

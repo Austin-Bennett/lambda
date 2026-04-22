@@ -227,7 +227,7 @@ impl Compiler {
                         self.type_context.get_by_id_mut(type_id)
                             .unwrap()
                             .methods
-                            .insert(method.name.clone(), (mangled, fn_type_id, method.public));
+                            .insert(method.name.clone(), (mangled, fn_type_id, method.public, !method.has_self));
                     }
                 }
             }

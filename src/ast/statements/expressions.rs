@@ -115,7 +115,7 @@ impl Debug for Expr {
                 write!(f, "({:?} {} {:?})", bop.lhs.data, bop.op.tk, bop.rhs.data)?;
             }
             Expr::UnaryOp(uop) => {
-                write!(f, "{}{:?}", uop.op.tk, uop.operand.data)?;
+                write!(f, "{}({:?})", uop.op.tk, uop.operand.data)?;
             }
             Expr::CallOp(call) => {
 
