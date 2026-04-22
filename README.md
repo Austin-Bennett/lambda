@@ -138,6 +138,54 @@ while boolean {
 }
 ```
 
+#### structure initialization
+
+*Syntax:*
+```lambda
+struct myStruct {
+    //public makes this member usable outside the structures context
+    public a: int32,
+    b: int32,
+}
+
+//initializer is basically a function that takes 
+//input variables and returns the structure
+//like rust- custom constructors must be made as static methods
+my_struct: myStruct = myStruct(1, 2);
+
+//the . operator allows one to access a structures inner members
+a: int32 = myStruct.a;
+```
 
 
 
+
+#### modify blocks
+
+similar to a rust impl block, but can be added to any type even outside its defining module
+
+*Syntax*
+
+```lambda
+struct Point {
+    public float32 x;
+    public float32 y;
+}
+
+modify Point {
+    public length2(self) = float32 {
+        //self is a reference to this object
+        return self.x * self.x + self.y * self.y;
+    }
+}
+
+//modify primitive types too- you can modify any valid type
+modify int32 {
+    public max(self, other: int32) = int32 {
+        if *self > other {
+            return *self;
+        }
+        return other;
+    }
+}
+```

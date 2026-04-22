@@ -52,7 +52,7 @@ impl TypedWhileSyntax {
             return None;
         }
         
-        let code = TypedBlockSyntax::from_ast(&stmt.data.code, function_return, compiler, context).unwrap();
+        let code = TypedBlockSyntax::from_ast(&stmt.data.code, function_return, compiler, context)?;
         
         
         Some(

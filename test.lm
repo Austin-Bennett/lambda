@@ -1,26 +1,35 @@
 
+struct Point {
+    public x: int32,
+    public y: int32,
+}
 
+modify Point {
+    public sum(self) = int32 {
+        return self.x + self.y;
+    }
 
-fn fib(n: int32) = int32 {
-    if n <= 1 {
-        return 1;
-    } else {
-        return fib(n - 1) + fib(n-2);
+    public length2(self) = int32 {
+        return self.x * self.x + self.y * self.y;
     }
 }
 
-fn count(n: int8) = int8 {
-    i: int8 = 0;
-
-    while i < n {
-        i = i + 1;
+modify int32 {
+    public max(self, other: int32) = int32 {
+        if self > other {
+            return self;
+        }
+        return other;
     }
-    return i;
 }
 
-//main function- this is where code starts executing
 fn main() = int8 {
+    p: Point = Point(3, 4);
+    s: int32 = p.sum();
+    s2: int32 = p.length2();
 
-    return count(5);
+    a: int32 = 10;
+    b: int32 = a.max(s);
 
+    return s2 as int8;
 }

@@ -1,4 +1,5 @@
 use crate::ast::function::FunctionSyntax;
+use crate::ast::items::modify::MethodDecl;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::typed_ast::ast::block::TypedBlockSyntax;
 use crate::typed_ast::ast::statements::vardecl::TypedVarDecl;
@@ -64,6 +65,72 @@ impl Function {
 
 
 impl Function {
+    pub fn from_method(
+        method: &MethodDecl,
+        self_type_id: TypeId,
+        mangled_name: &str,
+        compiler: &mut Compiler,
+        context: &mut AvailableContext<TypeId>,
+    ) -> Option<Self> {
+        context.push_new_scope();
+
+        let ret = match &method.ret {
+            Some(ty) => {
+                let Some(id) = compiler.resolve_type(ty) else {
+                    compiler.emit_compile_message(crate::compiler::CompileMessage::new(
+                        method.body.as_ref().map(|b| b.smap.clone()).unwrap_or_default(),
+                        format!("Could not resolve return type {:?}", ty),
+                        crate::compiler::CompileMessageType::Error,
+                    ));
+                    context.pop_last_scope();
+                    return None;
+                };
+                id
+            }
+            None => compiler.type_context.none,
+        };
+
+        let mut param_names = Vec::new();
+        let mut param_types = Vec::new();
+
+        if method.has_self {
+            let self_ref_ty = compiler.type_context.reference_to(self_type_id);
+            context.declare_identifier_in_scope("self".to_string(), self_ref_ty);
+            param_names.push("self".to_string());
+            param_types.push(self_ref_ty);
+        }
+
+        for p in &method.params {
+            let Some(typed) = TypedVarDecl::from_ast(p, compiler, context) else {
+                context.pop_last_scope();
+                return None;
+            };
+            param_names.push(typed.name.clone());
+            param_types.push(typed.ty);
+        }
+
+        let sig = FunctionSignature {
+            name: mangled_name.to_string(),
+            ret,
+            params: param_types,
+        };
+
+        let code = if let Some(body) = &method.body {
+            Some(TypedBlockSyntax::from_ast(body, ret, compiler, context)?)
+        } else {
+            None
+        };
+
+        context.pop_last_scope();
+
+        Some(Self {
+            is_extern: false,
+            signature: sig,
+            code,
+            params: param_names,
+        })
+    }
+
     pub fn from_ast(func: &FunctionSyntax, compiler: &mut Compiler, context: &mut AvailableContext<TypeId>) -> Option<Self> {
         context.push_new_scope();
 

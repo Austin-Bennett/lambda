@@ -1,5 +1,6 @@
 use crate::typed_ast::typing::operator::{BinaryOperatorMaker, OperatorOverloads, UnaryOperatorMaker};
 use inkwell::types::{AnyTypeEnum, StructType};
+use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
 pub type TypeId = u32;
@@ -10,6 +11,7 @@ pub type StructId = u32;
 pub struct StructMember {
     pub name: String,
     pub ty: TypeId,
+    pub public: bool,
 }
 
 #[derive(Clone)]
@@ -26,6 +28,9 @@ pub struct TypeInfo {
     pub ops: OperatorOverloads,
 
     pub llvm_type: AnyTypeEnum<'static>,
+
+    /// method_name → (mangled_name, function_type_id, public)
+    pub methods: HashMap<String, (String, TypeId, bool)>,
 }
 
 impl TypeInfo {
@@ -34,6 +39,7 @@ impl TypeInfo {
             kind,
             ops: OperatorOverloads::new(),
             llvm_type,
+            methods: HashMap::new(),
         }
     }
 

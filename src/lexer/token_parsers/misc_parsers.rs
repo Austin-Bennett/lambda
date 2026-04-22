@@ -30,6 +30,7 @@ pub type CloseBracketParser = SingleCharParser<']'>;
 pub type OpenBraceParser = SingleCharParser<'{'>;
 pub type CloseBraceParser = SingleCharParser<'}'>;
 
+pub type DotParser = SingleCharParser<'.'>;
 pub type CommaParser = SingleCharParser<','>;
 pub type ColonParser = SingleCharParser<':'>;
 

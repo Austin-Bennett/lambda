@@ -119,6 +119,14 @@ pub fn eval_array_len_expr_uint(expr: &ExprSyntax, compiler: &mut Compiler) -> O
             ));
             None
         }
+        Expr::MemberAccess(_) => {
+            compiler.emit_compile_message(CompileMessage::new(
+                expr.smap.clone(),
+                "member access is not allowed in constant expressions".into(),
+                CompileMessageType::Error,
+            ));
+            None
+        }
         Expr::CallOp(op) => {
             let caller = eval_array_len_expr_uint(&op.caller, compiler)?;
             if op.arguments.len() != 1 {

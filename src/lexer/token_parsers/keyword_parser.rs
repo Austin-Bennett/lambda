@@ -18,7 +18,9 @@ lazy_static!{
             ("as", TokenType::Expression(ExpressionToken::AsKW)),
             ("if", TokenType::Statement(StatementToken::IfKW)),
             ("else", TokenType::Statement(StatementToken::ElseKW)),
-            ("while", TokenType::Statement(StatementToken::WhileKW))
+            ("while", TokenType::Statement(StatementToken::WhileKW)),
+            ("public", TokenType::Statement(StatementToken::PublicKW)),
+            ("modify", TokenType::Statement(StatementToken::ModifyKW))
         ];
 
         res.sort_by(|(s1, _), (s2, _)| s2.len().cmp(&s1.len()));

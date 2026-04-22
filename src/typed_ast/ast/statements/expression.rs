@@ -4,7 +4,7 @@ use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::literal::LiteralValue;
 use crate::typed_ast::typing::scope::AvailableContext;
 use crate::typed_ast::typing::tcontext::TypeContext;
-use crate::typed_ast::typing::ty::{TypeId, TypeKind};
+use crate::typed_ast::typing::ty::{StructId, TypeId, TypeKind};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::mem;
@@ -92,6 +92,23 @@ pub struct TypedCompilerIntrinsic {
     pub args: Vec<TypedExpr>,
 }
 
+pub struct TypedMemberAccess {
+    pub object: TypedExpr,
+    pub member_index: usize,
+}
+
+pub struct TypedStructConstruct {
+    pub struct_id: StructId,
+    pub fields: Vec<TypedExpr>,
+}
+
+/// A method with its receiver already attached: `p.length2` stores `&p` and the mangled name.
+/// When called, the receiver is prepended as the first argument automatically.
+pub struct TypedBoundMethod {
+    pub self_expr: TypedExpr,
+    pub mangled_name: String,
+}
+
 pub enum TypedExprNode {
     Literal(LiteralValue),
     Identifier(String),
@@ -107,6 +124,9 @@ pub enum TypedExprNode {
     CallOp(Box<TypedCallOperation>),
     Cast(Box<TypedCastOperation>),
     CompilerIntrinsic(Box<TypedCompilerIntrinsic>),
+    MemberAccess(Box<TypedMemberAccess>),
+    StructConstruct(Box<TypedStructConstruct>),
+    BoundMethod(Box<TypedBoundMethod>),
 }
 
 impl TypedExprNode {
@@ -116,6 +136,13 @@ impl TypedExprNode {
             TypedExprNode::BinaryOp(bop) => bop.lhs.value.is_literal_expr() && bop.rhs.value.is_literal_expr(),
             TypedExprNode::UnaryOp(uop) => uop.operand.value.is_literal_expr(),
             _ => false,
+        }
+    }
+
+    pub fn as_identifier(&self) -> Option<&str> {
+        match self {
+            TypedExprNode::Identifier(name) => Some(name),
+            _ => None,
         }
     }
 }
@@ -176,6 +203,15 @@ impl Debug for TypedExprNode {
             }
             TypedExprNode::Cast(cast) => {
                 write!(f, "({:?} as {})", cast.expr, cast.target)
+            }
+            TypedExprNode::MemberAccess(ma) => {
+                write!(f, "{:?}.{}", ma.object, ma.member_index)
+            }
+            TypedExprNode::StructConstruct(sc) => {
+                write!(f, "struct_construct({:?})", sc.fields)
+            }
+            TypedExprNode::BoundMethod(bm) => {
+                write!(f, "{:?}.{}", bm.self_expr, bm.mangled_name)
             }
             TypedExprNode::CompilerIntrinsic(ci) => {
                 write!(f, "{}({:?})", ci.name, ci.args)
@@ -299,6 +335,10 @@ impl TypedExpr {
                 if let Some(&ty) = compiler.type_context.intrinsics.get(ident) {
                     return Some((TypedExprNode::Identifier(ident.clone()), ty));
                 }
+                // allow struct type names to be used as constructors
+                if let Some(ty_id) = compiler.resolve_typename(ident) {
+                    return Some((TypedExprNode::Identifier(ident.clone()), ty_id));
+                }
                 compiler.emit_compile_message(
                     CompileMessage::new(
                         expr.smap.clone(),
@@ -397,8 +437,11 @@ impl TypedExpr {
                 }
             },
             Expr::BinaryOp(bin) => {
-                let mut lhs = TypedExpr::from_ast(&bin.lhs, compiler, context)?;
-                let mut rhs = TypedExpr::from_ast(&bin.rhs, compiler, context)?;
+                let lhs_raw = TypedExpr::from_ast(&bin.lhs, compiler, context)?;
+                let rhs_raw = TypedExpr::from_ast(&bin.rhs, compiler, context)?;
+                // Auto-deref references for non-assignment binary ops so that `self: T&` works naturally
+                let mut lhs = if bin.op.tk != "=" { Self::coerce_ref(lhs_raw, &compiler.type_context) } else { lhs_raw };
+                let mut rhs = Self::coerce_ref(rhs_raw, &compiler.type_context);
 
                 if bin.op.tk != "=" && !Self::infer_literals_binary(&compiler.type_context, &mut lhs, &mut rhs) {
                     let mut smap = lhs.smap.clone();
@@ -626,7 +669,13 @@ impl TypedExpr {
             }
             Expr::UnaryOp(op) => {
                 let (lhs, lhs_ty) = TypedExpr::from_node(&op.operand, compiler, context)?;
-                let lhs_expr = TypedExpr { value: lhs, ty: lhs_ty, smap: op.operand.smap.clone() };
+                let lhs_raw = TypedExpr { value: lhs, ty: lhs_ty, smap: op.operand.smap.clone() };
+                // Auto-deref references for all unary ops except address-of
+                let lhs_expr = if op.op.tk != "&" {
+                    Self::coerce_ref(lhs_raw, &compiler.type_context)
+                } else {
+                    lhs_raw
+                };
 
                 let lhs_ty = lhs_expr.ty;
                 let lhs = lhs_expr.value;
@@ -736,6 +785,52 @@ impl TypedExpr {
             }
             Expr::CallOp(call) => {
                 let (caller, caller_ty) = TypedExpr::from_node(&call.caller, compiler, context)?;
+
+                // Method call: MemberAccess already resolved this to a BoundMethod.
+                if let TypedExprNode::BoundMethod(bm) = caller {
+                    let TypeKind::Function { params, ret } = compiler.type_context
+                        .get_by_id(caller_ty)
+                        .unwrap()
+                        .kind
+                        .clone()
+                    else {
+                        return None;
+                    };
+
+                    let mut args = vec![bm.self_expr];
+                    for (i, arg_expr) in call.arguments.iter().enumerate() {
+                        let mut typed = TypedExpr::from_ast(arg_expr, compiler, context)?;
+                        if let Some(&expected) = params.get(i + 1) {
+                            typed = Self::coerce_literal(&compiler.type_context, typed, expected);
+                            if typed.ty != expected {
+                                compiler.emit_compile_message(CompileMessage::new(
+                                    arg_expr.smap.clone(),
+                                    format!(
+                                        "method argument type mismatch: expected {}, got {}",
+                                        compiler.type_context.name_of(expected).unwrap_or_default(),
+                                        compiler.type_context.name_of(typed.ty).unwrap_or_default()
+                                    ),
+                                    CompileMessageType::Error,
+                                ));
+                                return None;
+                            }
+                        }
+                        args.push(typed);
+                    }
+
+                    let caller_expr = TypedExpr {
+                        value: TypedExprNode::Identifier(bm.mangled_name),
+                        ty: caller_ty,
+                        smap: call.caller.smap.clone(),
+                    };
+                    return Some((
+                        TypedExprNode::CallOp(Box::new(TypedCallOperation {
+                            caller: caller_expr,
+                            arguments: args,
+                        })),
+                        ret,
+                    ));
+                }
                 let expr_call = call;
 
                 // Intercept compiler intrinsics before any other call handling.
@@ -757,6 +852,41 @@ impl TypedExpr {
                         TypedExprNode::CompilerIntrinsic(Box::new(TypedCompilerIntrinsic { name, args })),
                         ret,
                     ));
+                }
+
+                // struct construction: MyStruct(field0, field1, ...)
+                if let Some(TypeKind::Struct(sid)) = compiler.type_context.get_by_id(caller_ty).map(|i| i.kind.clone()) {
+                    let members: Vec<_> = compiler.type_context.structs[sid as usize].members.clone();
+                    if call.arguments.len() != members.len() {
+                        compiler.emit_compile_message(CompileMessage::new(
+                            expr.smap.clone(),
+                            format!("struct '{}' has {} fields but {} arguments were provided",
+                                compiler.type_context.structs[sid as usize].name,
+                                members.len(),
+                                call.arguments.len()),
+                            CompileMessageType::Error,
+                        ));
+                        return None;
+                    }
+                    let mut fields = Vec::new();
+                    for (arg, member) in call.arguments.iter().zip(members.iter()) {
+                        let mut typed = TypedExpr::from_ast(arg, compiler, context)?;
+                        typed = Self::coerce_literal(&compiler.type_context, typed, member.ty);
+                        if typed.ty != member.ty {
+                            compiler.emit_compile_message(CompileMessage::new(
+                                arg.smap.clone(),
+                                format!("field '{}' expects type {} but got {}",
+                                    member.name,
+                                    compiler.type_context.name_of(member.ty).unwrap_or_default(),
+                                    compiler.type_context.name_of(typed.ty).unwrap_or_default()),
+                                CompileMessageType::Error,
+                            ));
+                            return None;
+                        }
+                        fields.push(typed);
+                    }
+                    let struct_ty = caller_ty;
+                    return Some((TypedExprNode::StructConstruct(Box::new(TypedStructConstruct { struct_id: sid, fields })), struct_ty));
                 }
 
                 let mut params = Vec::new();
@@ -829,6 +959,91 @@ impl TypedExpr {
                     ),
                     call
                 ))
+            }
+            Expr::MemberAccess(op) => {
+                let object = TypedExpr::from_ast(&op.object, compiler, context)?;
+
+                // Check for a method on the object's type first
+                if let Some((mangled, fn_type_id, public)) = compiler.type_context
+                    .get_by_id(object.ty)
+                    .and_then(|info| info.methods.get(&op.member))
+                    .cloned()
+                {
+                    if !public {
+                        compiler.emit_compile_message(CompileMessage::new(
+                            expr.smap.clone(),
+                            format!("method '{}' is private", op.member),
+                            CompileMessageType::Error,
+                        ));
+                        return None;
+                    }
+                    // self must be an lvalue so we can take its address
+                    let TypedExprNode::Identifier(_) = &object.value else {
+                        compiler.emit_compile_message(CompileMessage::new(
+                            op.object.smap.clone(),
+                            "method receiver must be a variable".into(),
+                            CompileMessageType::Error,
+                        ));
+                        return None;
+                    };
+                    let self_ref_ty = compiler.type_context.reference_to(object.ty);
+                    let self_ref = TypedExpr {
+                        smap: object.smap.clone(),
+                        ty: self_ref_ty,
+                        value: TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
+                            op: UnaryOperator::Reference,
+                            operand: object,
+                        })),
+                    };
+                    return Some((TypedExprNode::BoundMethod(Box::new(TypedBoundMethod {
+                        self_expr: self_ref,
+                        mangled_name: mangled,
+                    })), fn_type_id));
+                }
+
+                // Resolve the struct id: accept both direct structs and references-to-structs
+                let sid = match compiler.type_context.get_by_id(object.ty).map(|i| i.kind.clone()).unwrap_or(TypeKind::None) {
+                    TypeKind::Struct(sid) => sid,
+                    TypeKind::Reference(inner) => {
+                        match compiler.type_context.get_by_id(inner).map(|i| i.kind.clone()).unwrap_or(TypeKind::None) {
+                            TypeKind::Struct(sid) => sid,
+                            _ => {
+                                compiler.emit_compile_message(CompileMessage::new(
+                                    expr.smap.clone(),
+                                    format!("cannot access member '{}' on non-struct type {}",
+                                        op.member,
+                                        compiler.type_context.name_of(object.ty).unwrap_or_default()),
+                                    CompileMessageType::Error,
+                                ));
+                                return None;
+                            }
+                        }
+                    }
+                    _ => {
+                        compiler.emit_compile_message(CompileMessage::new(
+                            expr.smap.clone(),
+                            format!("cannot access member '{}' on non-struct type {}",
+                                op.member,
+                                compiler.type_context.name_of(object.ty).unwrap_or_default()),
+                            CompileMessageType::Error,
+                        ));
+                        return None;
+                    }
+                };
+
+                let members = &compiler.type_context.structs[sid as usize].members;
+                let Some((member_index, member)) = members.iter().enumerate().find(|(_, m)| m.name == op.member) else {
+                    compiler.emit_compile_message(CompileMessage::new(
+                        expr.smap.clone(),
+                        format!("struct '{}' has no member '{}'",
+                            compiler.type_context.structs[sid as usize].name,
+                            op.member),
+                        CompileMessageType::Error,
+                    ));
+                    return None;
+                };
+                let member_ty = member.ty;
+                Some((TypedExprNode::MemberAccess(Box::new(TypedMemberAccess { object, member_index })), member_ty))
             }
         }
     }

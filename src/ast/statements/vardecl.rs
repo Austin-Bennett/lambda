@@ -7,7 +7,7 @@ use crate::ast::ty::{Type, TypeSyntax};
 use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
-use crate::lexer::token::{ExpressionToken, FeatureToken, Token, TokenType};
+use crate::lexer::token::{ExpressionToken, FeatureToken, StatementToken, Token, TokenType};
 use crate::token_match;
 use crate::unpack_opt_tk;
 
@@ -15,7 +15,8 @@ use crate::unpack_opt_tk;
 pub struct VarDecl {
     pub name: String,
     pub ty: Type,
-    pub value: Option<ExprSyntax>
+    pub value: Option<ExprSyntax>,
+    pub public: bool,
 }
 
 impl Debug for VarDecl {
@@ -37,14 +38,23 @@ impl Syntax for VarDeclSyntax {
     where
         Self: Sized
     {
-        //name : type
+        //[public] name : type
+
+        // consume optional 'public' keyword
+        let (public, public_smap) = if let Some(Token { typ: TokenType::Statement(StatementToken::PublicKW), .. }) = tokens.get(0) {
+            let tok = tokens.pop_front().unwrap();
+            (true, Some(tok.smap))
+        } else {
+            (false, None)
+        };
 
         if token_match!( tokens,
             TokenType::Expression(ExpressionToken::Identifier(_)),
             TokenType::Feature(FeatureToken::Colon),
         ) {
-            let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Identifier(name)), mut smap) = tokens.pop_front() else { abort() };
+            let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Identifier(name)), ident_smap) = tokens.pop_front() else { abort() };
             tokens.pop_front();
+            let mut smap = if let Some(mut psmap) = public_smap { psmap.extend(ident_smap); psmap } else { ident_smap };
             let ty = if let Some(ty) = TypeSyntax::parse(tokens, compiler) {
                 smap.extend(ty.smap);
                 ty.data
@@ -90,7 +100,8 @@ impl Syntax for VarDeclSyntax {
                     data: VarDecl{
                         name,
                         ty,
-                        value: expr
+                        value: expr,
+                        public,
                     }
                 }
             )

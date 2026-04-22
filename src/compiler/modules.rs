@@ -5,6 +5,7 @@ use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{FeatureToken, Token, TokenType};
+use crate::ast::ty::Type;
 use crate::typed_ast::ast::items::function::Function;
 use crate::typed_ast::typing::scope::AvailableContext;
 use crate::typed_ast::typing::ty::TypeId;
@@ -68,9 +69,22 @@ impl LTypedModule {
 
         //structures get managed by the compiler as we need them, so we only care about functions
         for item in &module.ast {
-            if let ast::Item::Func(function) = item {
-                let Some(func) = Function::from_ast(function, compiler, context) else { continue; };
-                functions.push(func);
+            match item {
+                ast::Item::Func(function) => {
+                    let Some(func) = Function::from_ast(function, compiler, context) else { continue; };
+                    functions.push(func);
+                }
+                ast::Item::Modify(modify) => {
+                    let Type::Typename(type_name) = &modify.data.ty else { continue; };
+                    let type_name = type_name.clone();
+                    let Some(type_id) = compiler.resolve_type(&modify.data.ty) else { continue; };
+                    for method in &modify.data.methods {
+                        let mangled = format!("{}_{}", type_name, method.name);
+                        let Some(func) = Function::from_method(method, type_id, &mangled, compiler, context) else { continue; };
+                        functions.push(func);
+                    }
+                }
+                _ => {}
             }
         }
 

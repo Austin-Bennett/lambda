@@ -9,7 +9,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 cargo build
 
 # Run (takes one or more .lm source files)
-cargo run -- test.lm test_import.lm
+# even though its a normal executable, output with the .lme to distinguish it as a lambda executable
+cargo run -- -o test.lme test.lm test_import.lm
 
 # Test
 cargo test

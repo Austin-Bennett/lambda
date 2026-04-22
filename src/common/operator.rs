@@ -5,6 +5,8 @@ pub enum BindingPower {
     Binary(u8, u8),
     BinaryOrUnary(u8, u8),
     Unary,
+    /// Post-fix operators (member access, call, index) — bind tighter than any prefix.
+    PostFix,
 }
 
 impl BindingPower {
@@ -12,8 +14,8 @@ impl BindingPower {
         match self {
             BindingPower::Binary(l, _r) => *l,
             BindingPower::BinaryOrUnary(l, _r) => *l,
-            //unary operator has no precedence to the left
             BindingPower::Unary => 0,
+            BindingPower::PostFix => 100,
         }
     }
 
@@ -21,8 +23,8 @@ impl BindingPower {
         match self {
             BindingPower::Binary(_l, r) => *r,
             BindingPower::BinaryOrUnary(_l, r) => *r,
-            //unary operator has max precedence to the right
             BindingPower::Unary => 255,
+            BindingPower::PostFix => 101,
         }
     }
 
@@ -31,6 +33,7 @@ impl BindingPower {
             BindingPower::Binary(_, _) => true,
             BindingPower::BinaryOrUnary(_, _) => true,
             BindingPower::Unary => false,
+            BindingPower::PostFix => false,
         }
     }
 
@@ -39,6 +42,7 @@ impl BindingPower {
             BindingPower::Unary => 255,
             BindingPower::BinaryOrUnary(_, _) => 255,
             BindingPower::Binary(_, _) => 0,
+            BindingPower::PostFix => 0,
         }
     }
 
@@ -47,6 +51,7 @@ impl BindingPower {
             BindingPower::Binary(_, _) => false,
             BindingPower::BinaryOrUnary(_, _) => true,
             BindingPower::Unary => true,
+            BindingPower::PostFix => false,
         }
     }
 

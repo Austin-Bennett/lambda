@@ -1,7 +1,7 @@
 use crate::compiler::Compiler;
 use crate::typed_ast::ast::items::function::Function;
 use crate::lexer::literal::LiteralValue;
-use crate::typed_ast::ast::statements::expression::{BinaryOperator, UnaryOperator, TypedExpr, TypedExprNode};
+use crate::typed_ast::ast::statements::expression::{BinaryOperator, TypedExpr, TypedExprNode, UnaryOperator};
 use crate::typed_ast::ast::statements::TypedStatement;
 use crate::typed_ast::typing::ty::TypeKind;
 use inkwell::builder::Builder;
@@ -181,6 +181,17 @@ impl Compiler {
 
             }
             TypedStatement::While(wh1le) => {
+
+
+                let loop_start_block = self.llvm_context.append_basic_block(function, "loop_start");
+                let loop_block = self.llvm_context.append_basic_block(function, "loop");
+                let loop_done_block = self.llvm_context.append_basic_block(function, "loop_end");
+
+                //to "terminate" the last block
+                builder.build_unconditional_branch(loop_start_block).unwrap();
+
+                builder.position_at_end(loop_start_block);
+
                 let condition = self.compile_expression(
                     builder,
                     module,
@@ -189,15 +200,15 @@ impl Compiler {
                     &wh1le.data.condition
                 ).unwrap().into_int_value();
 
-                let loop_start_block = self.llvm_context.append_basic_block(function, "loop_start");
-                let loop_block = self.llvm_context.append_basic_block(function, "loop");
-                let loop_done_block = self.llvm_context.append_basic_block(function, "loop_end");
-
                 builder.build_conditional_branch(condition, loop_block, loop_done_block).unwrap();
 
+                builder.position_at_end(loop_block);
+
+                locals.push_new_scope();
                 for s in &wh1le.data.code.data {
                     self.compile_statement(builder, module, function, globals, locals, s);
                 }
+                locals.pop_last_scope();
 
                 builder.build_unconditional_branch(loop_start_block).unwrap();
 
@@ -215,52 +226,54 @@ impl Compiler {
         locals: &mut AvailableContext<AnyValueEnum<'static>>,
         i4: &TypedIfSyntax,
     ) {
+        let then_block  = self.llvm_context.append_basic_block(function, "then");
+        let else_block  = self.llvm_context.append_basic_block(function, "else");
+        let merge_block = self.llvm_context.append_basic_block(function, "if_merge");
 
-        let then_block = self.llvm_context.append_basic_block(function, "then");
-        let else_block = self.llvm_context.append_basic_block(function, "else");
-
-        let pred =
-            self.compile_expression(
-                builder,
-                module,
-                globals,
-                locals,
-                &i4.data.predicate
-            ).unwrap().into_int_value();
+        let pred = self.compile_expression(builder, module, globals, locals, &i4.data.predicate)
+            .unwrap()
+            .into_int_value();
 
         builder.build_conditional_branch(pred, then_block, else_block).unwrap();
 
+        // Compile then branch.
         builder.position_at_end(then_block);
         locals.push_new_scope();
         for s in &i4.data.code.data {
             self.compile_statement(builder, module, function, globals, locals, s);
         }
         locals.pop_last_scope();
+        if builder.get_insert_block().unwrap().get_terminator().is_none() {
+            builder.build_unconditional_branch(merge_block).unwrap();
+        }
 
-
+        // Compile else branch.
         builder.position_at_end(else_block);
         if let Some(e1se) = &i4.data.otherwise {
             match e1se.deref() {
                 TypedElseStatement::If(if_statement) => {
                     self.compile_if_statement(builder, module, function, globals, locals, if_statement);
+                    // compile_if_statement leaves the builder at its own merge block; branch to ours.
+                    if builder.get_insert_block().unwrap().get_terminator().is_none() {
+                        builder.build_unconditional_branch(merge_block).unwrap();
+                    }
                 }
                 TypedElseStatement::Else(block) => {
-
-                    let merge_block = self.llvm_context.append_basic_block(function, "if_merge");
                     locals.push_new_scope();
                     for s in &block.data {
                         self.compile_statement(builder, module, function, globals, locals, s);
                     }
                     locals.pop_last_scope();
-                    builder.position_at_end(merge_block);
+                    if builder.get_insert_block().unwrap().get_terminator().is_none() {
+                        builder.build_unconditional_branch(merge_block).unwrap();
+                    }
                 }
             }
         } else {
-            let merge_block = self.llvm_context.append_basic_block(function, "if_merge");
-            builder.position_at_end(merge_block);
+            builder.build_unconditional_branch(merge_block).unwrap();
         }
 
-
+        builder.position_at_end(merge_block);
     }
 
     pub fn compile_expression(
@@ -488,6 +501,40 @@ impl Compiler {
                     None
                 }
             }
+            TypedExprNode::StructConstruct(sc) => {
+                let struct_ty = self.type_context.structs[sc.struct_id as usize].llvm_struct;
+                let mut agg: BasicValueEnum<'static> = struct_ty.get_undef().into();
+                for (i, field_expr) in sc.fields.iter().enumerate() {
+                    let val = self.compile_expression(builder, module, globals, locals, field_expr)?;
+                    let basic: BasicValueEnum<'static> = val.try_into().ok()?;
+                    agg = builder.build_insert_value(agg.into_struct_value(), basic, i as u32, "sf")
+                        .unwrap()
+                        .into_struct_value()
+                        .into();
+                }
+                Some(agg.into())
+            }
+            TypedExprNode::MemberAccess(ma) => {
+                let obj_val = self.compile_expression(builder, module, globals, locals, &ma.object)?;
+                // If the object is a reference (pointer), load the struct through it first
+                let sv = if let AnyValueEnum::PointerValue(ptr) = obj_val {
+                    let TypeKind::Reference(inner_id) = self.type_context.get_by_id(ma.object.ty).unwrap().kind.clone() else {
+                        return None;
+                    };
+                    let TypeKind::Struct(sid) = self.type_context.get_by_id(inner_id).unwrap().kind.clone() else {
+                        return None;
+                    };
+                    let struct_ty = self.type_context.structs[sid as usize].llvm_struct;
+                    builder.build_load(struct_ty, ptr, "deref_struct").unwrap().into_struct_value()
+                } else {
+                    BasicValueEnum::try_from(obj_val).ok()?.into_struct_value()
+                };
+                Some(builder.build_extract_value(sv, ma.member_index as u32, "member").unwrap().into())
+            }
+            TypedExprNode::BoundMethod(bm) => {
+                globals.get(&bm.mangled_name).copied()
+            }
+
             TypedExprNode::CompilerIntrinsic(ci) => {
                 let maker = {
                     let m = self.intrinsics.get(&ci.name)?;

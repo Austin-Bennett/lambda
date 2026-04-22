@@ -24,6 +24,8 @@ pub enum ExpressionToken {
     CloseBracket,
 
     AsKW,
+
+    Dot,
 }
 
 impl ExpressionToken {
@@ -49,6 +51,8 @@ pub enum StatementToken {
     IfKW,
     ElseKW,
     WhileKW,
+    PublicKW,
+    ModifyKW,
 }
 
 #[derive(Clone, Debug)]

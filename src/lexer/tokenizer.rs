@@ -37,6 +37,7 @@ impl Tokens {
         &KeywordParser,
         &BoolLiteralParser,   // before IdentifierParser — "true"/"false" are also valid identifiers
         &FloatLiteralParser,  // before IntLiteralParser — "3.14" must not be tokenized as "3" then ".14"
+        &DotParser::new(TokenType::Expression(ExpressionToken::Dot)),
         &IntLiteralParser,
         &IdentifierParser,
     ];

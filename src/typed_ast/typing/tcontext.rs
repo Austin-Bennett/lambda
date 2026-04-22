@@ -721,11 +721,10 @@ impl TypeContext {
         }
 
         //its type is a pointer to this function
-        let mut info = TypeInfo{
-            kind: TypeKind::Function { params: sig.params.clone(), ret: sig.ret },
-            ops: OperatorOverloads::new(),
-            llvm_type: self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into(),
-        };
+        let mut info = TypeInfo::new(
+            TypeKind::Function { params: sig.params.clone(), ret: sig.ret },
+            self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into(),
+        );
 
         info.ops.call.insert(sig.params.clone(), sig.ret);
 
@@ -779,9 +778,11 @@ impl TypeContext {
             info.llvm_struct.into()
         ));
         self.structs.push(info);
-        
+
         let info = self.structs.get_mut(id as usize).unwrap();
         info.type_id = tid;
+
+        self.enable_assignment(tid);
 
         id
     }

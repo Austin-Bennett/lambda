@@ -44,6 +44,12 @@ pub struct CastOperation {
 }
 
 #[derive(Hash, Clone)]
+pub struct MemberAccessOperation {
+    pub object: ExprSyntax,
+    pub member: String,
+}
+
+#[derive(Hash, Clone)]
 pub enum Expr {
     Identifier(String),
     Literal(LiteralValue),
@@ -57,6 +63,7 @@ pub enum Expr {
     UnaryOp(Box<UnaryOperation>),
     CallOp(Box<CallOperation>),
     CastOp(Box<CastOperation>),
+    MemberAccess(Box<MemberAccessOperation>),
 }
 
 
@@ -128,6 +135,9 @@ impl Debug for Expr {
             }
             Expr::CastOp(cast) => {
                 write!(f, "({:?} as {:?})", cast.expr.data, cast.ty)?;
+            }
+            Expr::MemberAccess(ma) => {
+                write!(f, "{:?}.{}", ma.object.data, ma.member)?;
             }
         }
 
@@ -437,6 +447,25 @@ impl ExprSyntax {
                         })
                     );
                     lhs.smap.extend(emap);
+                }
+                ExpressionToken::Dot => {
+                    // member access: consume dot, expect identifier
+                    let (_, dot_smap) = tokens.next_expression().unwrap();
+                    match tokens.next_expression() {
+                        Some((ExpressionToken::Identifier(member), msmap)) => {
+                            let old_lhs = lhs.clone();
+                            lhs.smap.extend(msmap);
+                            lhs.data = Expr::MemberAccess(Box::new(MemberAccessOperation {
+                                object: old_lhs,
+                                member,
+                            }));
+                        }
+                        _ => return Outcome::Err(CompileMessage::new(
+                            dot_smap,
+                            "expected member name after '.'".into(),
+                            CompileMessageType::Error,
+                        )),
+                    }
                 }
                 ExpressionToken::CloseParentheses => {
                     break;

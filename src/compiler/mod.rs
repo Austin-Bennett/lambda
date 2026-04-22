@@ -89,6 +89,17 @@ impl Compiler {
         let mut context = AvailableContext::new();
         context.push_new_scope();
 
+        // pre-register all struct types so they are available during type-checking
+        for (_, m) in &modules {
+            for item in &m.ast {
+                if let Item::Struct(s) = item {
+                    if let Some(info) = self.create_structure_from_ast(&s.data, &s.smap) {
+                        self.type_context.add_struct(info.name.clone(), info);
+                    }
+                }
+            }
+        }
+
         //loop through all functions, create their identifiers ahead of time
         //add to the global scope
         for (_, m) in &modules {
@@ -153,6 +164,75 @@ impl Compiler {
             }
         }
 
+        // pre-register all methods from modify blocks
+        for (_, m) in &modules {
+            for item in &m.ast {
+                if let Item::Modify(modify) = item {
+                    let crate::ast::ty::Type::Typename(type_name) = &modify.data.ty else {
+                        self.emit_compile_message(CompileMessage::new(
+                            modify.smap.clone(),
+                            "modify blocks only support named types (e.g. Point, int32)".into(),
+                            CompileMessageType::Error,
+                        ));
+                        continue;
+                    };
+                    let type_name = type_name.clone();
+                    let Some(type_id) = self.resolve_type(&modify.data.ty) else {
+                        self.emit_compile_message(CompileMessage::new(
+                            modify.smap.clone(),
+                            format!("Unknown type in modify block: {}", type_name),
+                            CompileMessageType::Error,
+                        ));
+                        continue;
+                    };
+
+                    for method in &modify.data.methods {
+                        let mangled = format!("{}_{}", type_name, method.name);
+
+                        if self.type_context.get_by_id(type_id)
+                            .map_or(false, |i| i.methods.contains_key(&method.name))
+                        {
+                            self.emit_compile_message(CompileMessage::new(
+                                modify.smap.clone(),
+                                format!("duplicate method '{}' on type '{}'", method.name, type_name),
+                                CompileMessageType::Error,
+                            ));
+                            continue;
+                        }
+
+                        let ret = match &method.ret {
+                            Some(ty) => self.resolve_type(ty).unwrap_or(self.type_context.none),
+                            None => self.type_context.none,
+                        };
+
+                        let mut params = Vec::new();
+                        if method.has_self {
+                            let self_ref_ty = self.type_context.reference_to(type_id);
+                            params.push(self_ref_ty);
+                        }
+                        for p in &method.params {
+                            if let Some(pid) = self.resolve_type(&p.data.ty) {
+                                params.push(pid);
+                            }
+                        }
+
+                        let fn_type_id = self.type_context.add_functional_type(&FunctionSignature {
+                            name: mangled.clone(),
+                            ret,
+                            params,
+                        });
+
+                        context.declare_identifier_in_scope(mangled.clone(), fn_type_id);
+
+                        self.type_context.get_by_id_mut(type_id)
+                            .unwrap()
+                            .methods
+                            .insert(method.name.clone(), (mangled, fn_type_id, method.public));
+                    }
+                }
+            }
+        }
+
         for (p, m) in &modules {
 
             let m = LTypedModule::from_ast(m, self, &mut context);
@@ -201,7 +281,7 @@ impl Compiler {
 
         let mut members = Vec::new();
 
-        for VarDecl{ name, ty, value: _ } in &ast.members {
+        for VarDecl{ name, ty, value: _, public } in &ast.members {
             //get the type
             let Some(id) = self.resolve_type(ty) else {
                 self.emit_compile_message(
@@ -217,6 +297,7 @@ impl Compiler {
             members.push(StructMember{
                 name: name.clone(),
                 ty: id,
+                public: *public,
             });
         }
 

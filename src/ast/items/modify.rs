@@ -1,0 +1,255 @@
+use std::collections::VecDeque;
+use std::fmt::{Debug, Formatter};
+use crate::ast::block::BlockSyntax;
+use crate::ast::statements::vardecl::VarDeclSyntax;
+use crate::ast::ty::{Type, TypeSyntax};
+use crate::ast::{GenericSyntax, Syntax};
+use crate::common::operator::Operator;
+use crate::common::sourcemap::SourceMap;
+use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
+use crate::lexer::token::{ExpressionToken, FeatureToken, StatementToken, Token, TokenType};
+use crate::unpack_opt_tk;
+
+pub struct MethodDecl {
+    pub name: String,
+    pub has_self: bool,
+    pub params: Vec<VarDeclSyntax>,
+    pub ret: Option<Type>,
+    pub body: Option<BlockSyntax>,
+    pub public: bool,
+}
+
+impl Debug for MethodDecl {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.public { write!(f, "public ")?; }
+        write!(f, "{}(", self.name)?;
+        if self.has_self { write!(f, "self")?; }
+        for p in &self.params {
+            write!(f, ", {:?}", p.data)?;
+        }
+        write!(f, ")")?;
+        if let Some(ret) = &self.ret { write!(f, " = {:?}", ret)?; }
+        Ok(())
+    }
+}
+
+pub struct ModifyBlock {
+    pub ty: Type,
+    pub methods: Vec<MethodDecl>,
+}
+
+impl Debug for ModifyBlock {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "modify {:?} {{ {} methods }}", self.ty, self.methods.len())
+    }
+}
+
+pub type ModifySyntax = GenericSyntax<ModifyBlock>;
+
+impl Syntax for ModifySyntax {
+    fn parse(tokens: &mut VecDeque<Token>, compiler: &mut Compiler) -> Option<Self>
+    where
+        Self: Sized
+    {
+        let unpack_opt_tk!(TokenType::Statement(StatementToken::ModifyKW), _) = tokens.get(0) else {
+            return None;
+        };
+        let unpack_opt_tk!(TokenType::Statement(StatementToken::ModifyKW), mut smap) = tokens.pop_front() else {
+            unreachable!()
+        };
+
+        // Parse the type being modified
+        let Some(ty_syntax) = TypeSyntax::parse(tokens, compiler) else {
+            compiler.emit_compile_message(CompileMessage::new(
+                smap,
+                "expected type after 'modify'".into(),
+                CompileMessageType::Error,
+            ));
+            return None;
+        };
+        smap.extend(&ty_syntax.smap);
+        let ty = ty_syntax.data;
+
+        // Consume '{'
+        let next = tokens.pop_front();
+        let unpack_opt_tk!(TokenType::Feature(FeatureToken::OpenBrace), bsmap) = next else {
+            compiler.emit_compile_message(CompileMessage::expected_token_error(
+                smap,
+                "{",
+                format!("modify {:?}", ty),
+                next,
+            ));
+            return None;
+        };
+        smap.extend(bsmap);
+
+        let mut methods = Vec::new();
+
+        loop {
+            // Skip semicolons
+            while let Some(Token { typ: TokenType::Feature(FeatureToken::StatementEnd), .. }) = tokens.get(0) {
+                tokens.pop_front();
+            }
+
+            // Check for closing brace
+            if let unpack_opt_tk!(TokenType::Feature(FeatureToken::CloseBrace), cbsmap) = tokens.get(0) {
+                smap.extend(cbsmap);
+                tokens.pop_front();
+                break;
+            }
+
+            // Check for EOF
+            if tokens.is_empty() {
+                compiler.emit_compile_message(CompileMessage::new(
+                    smap.clone(),
+                    "expected '}' to close modify block".into(),
+                    CompileMessageType::Error,
+                ));
+                break;
+            }
+
+            // Optional 'public'
+            let (public, pub_smap) = if let Some(Token {
+                typ: TokenType::Statement(StatementToken::PublicKW), ..
+            }) = tokens.get(0) {
+                let tok = tokens.pop_front().unwrap();
+                (true, Some(tok.smap))
+            } else {
+                (false, None)
+            };
+
+            // Method name
+            let next = tokens.pop_front();
+            let (method_name, mut msmap) = if let unpack_opt_tk!(
+                TokenType::Expression(ExpressionToken::Identifier(name)), imap
+            ) = next {
+                (name, imap)
+            } else {
+                compiler.emit_compile_message(CompileMessage::expected_token_error(
+                    smap.clone(),
+                    "method name",
+                    "modify block",
+                    next,
+                ));
+                continue;
+            };
+            if let Some(ps) = pub_smap { let mut ps2 = ps; ps2.extend(msmap.clone()); msmap = ps2; }
+
+            // Consume '('
+            let next = tokens.pop_front();
+            let unpack_opt_tk!(TokenType::Expression(ExpressionToken::OpenParentheses), _) = next else {
+                compiler.emit_compile_message(CompileMessage::expected_token_error(
+                    msmap,
+                    "('",
+                    format!("method '{}'", method_name),
+                    next,
+                ));
+                continue;
+            };
+
+            // Check for bare 'self' as first parameter
+            let has_self = if let Some(Token {
+                typ: TokenType::Expression(ExpressionToken::Identifier(s)), ..
+            }) = tokens.get(0)
+                && s == "self"
+            {
+                tokens.pop_front(); // consume 'self'
+
+                // If followed by ',', consume it and parse remaining params normally
+                if let Some(Token {
+                    typ: TokenType::Feature(FeatureToken::Comma), ..
+                }) = tokens.get(0)
+                {
+                    tokens.pop_front();
+                }
+                true
+            } else {
+                false
+            };
+
+            // Parse remaining parameters
+            let mut params = Vec::new();
+            let mut ended = false;
+            while let Some(vdecl) = VarDeclSyntax::parse(tokens, compiler) {
+                if vdecl.data.value.is_some() {
+                    compiler.emit_compile_message(CompileMessage::new(
+                        vdecl.smap.clone(),
+                        "default parameter values are not allowed in methods".into(),
+                        CompileMessageType::Error,
+                    ));
+                }
+                params.push(vdecl);
+
+                let next = tokens.pop_front();
+                if let unpack_opt_tk!(TokenType::Feature(FeatureToken::Comma), _) = next {
+                    // continue
+                } else if let unpack_opt_tk!(TokenType::Expression(ExpressionToken::CloseParentheses), _) = next {
+                    ended = true;
+                    break;
+                } else {
+                    compiler.emit_compile_message(CompileMessage::expected_token_error(
+                        msmap.clone(),
+                        "')'",
+                        format!("method '{}' parameters", method_name),
+                        next,
+                    ));
+                    break;
+                }
+            }
+
+            if !ended {
+                let next = tokens.pop_front();
+                if let unpack_opt_tk!(TokenType::Expression(ExpressionToken::CloseParentheses), _) = next {
+                    // ok
+                } else {
+                    compiler.emit_compile_message(CompileMessage::expected_token_error(
+                        msmap.clone(),
+                        "')'",
+                        format!("method '{}' parameters", method_name),
+                        next,
+                    ));
+                }
+            }
+
+            // Optional return type: '= Type'
+            let ret = if let Some(Token {
+                typ: TokenType::Expression(ExpressionToken::Operator(Operator { tk: "=", .. })), ..
+            }) = tokens.get(0)
+            {
+                tokens.pop_front();
+                TypeSyntax::parse(tokens, compiler).map(|t| t.data)
+            } else {
+                None
+            };
+
+            // Parse body
+            let body = BlockSyntax::parse(tokens, compiler);
+            if body.is_none() {
+                compiler.emit_compile_message(CompileMessage::new(
+                    msmap.clone(),
+                    format!("expected '{{' to begin body of method '{}'", method_name),
+                    CompileMessageType::Error,
+                ));
+            }
+
+            smap.extend(msmap);
+            methods.push(MethodDecl {
+                name: method_name,
+                has_self,
+                params,
+                ret,
+                body,
+                public,
+            });
+        }
+
+        Some(ModifySyntax {
+            smap,
+            data: ModifyBlock { ty, methods },
+        })
+    }
+
+    fn get_sourcemap(&self) -> &SourceMap {
+        &self.smap
+    }
+}
