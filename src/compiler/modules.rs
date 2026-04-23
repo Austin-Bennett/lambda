@@ -75,12 +75,19 @@ impl LTypedModule {
                     functions.push(func);
                 }
                 ast::Item::Modify(modify) => {
+                    //todo: allow any type, including compund types like arrays or pointers
                     let Type::Typename(type_name) = &modify.data.ty else { continue; };
+                    
                     let type_name = type_name.clone();
                     let Some(type_id) = compiler.resolve_type(&modify.data.ty) else { continue; };
                     for method in &modify.data.methods {
                         let mangled = format!("{}_{}", type_name, method.name);
                         let Some(func) = Function::from_method(method, type_id, &mangled, compiler, context) else { continue; };
+                        functions.push(func);
+                    }
+                    for op in &modify.data.operators {
+                        let op_mangled = format!("{}__op_{}", type_name, op.op_name);
+                        let Some(func) = Function::from_operator(op, type_id, &op_mangled, compiler, context) else { continue; };
                         functions.push(func);
                     }
                 }

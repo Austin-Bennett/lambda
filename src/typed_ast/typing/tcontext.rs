@@ -1,7 +1,7 @@
 use crate::ast::ty::Type;
 use crate::lexer::literal::LiteralValue;
 use crate::typed_ast::ast::items::function::FunctionSignature;
-use crate::typed_ast::typing::operator::{AssignmentMaker, BinaryOperatorMaker, ComparisonMakers, ConversionMaker, OperatorOverloads, UnaryOperatorMaker};
+use crate::typed_ast::typing::operator::{AssignmentMaker, BinaryOperatorMaker, ComparisonMakers, ConversionMaker, UnaryOperatorMaker};
 use inkwell::values::BasicValueEnum;
 use crate::typed_ast::typing::ty::{StructId, StructInfo, TypeId, TypeInfo, TypeKind};
 use inkwell::builder::Builder;
@@ -187,99 +187,43 @@ impl TypeContext {
                 self.types[id as usize].enable_neg_operator(id, neg);
             }
 
-            TypeKind::Pointer(inner_ty) => {
-                let inner_info: BasicTypeEnum<'static> = self.types[inner_ty as usize].llvm_type.try_into().unwrap();
-                let add: BinaryOperatorMaker = Box::new(move |b, l, r| unsafe {
-
-                    b.build_gep(
-                        inner_info,
-                        l.into_pointer_value(),
-                        &[
-                            r.into_int_value()
-                        ],
-                        "pointer_add"
-                    ).unwrap().into()
-                });
-                let sub: BinaryOperatorMaker = Box::new(move |b, l, r| unsafe {
-                    let neg = b.build_int_neg(r.into_int_value(), "neg").unwrap();
-                    b.build_gep(
-                        inner_info,
-                        l.into_pointer_value(),
-                        &[
-                            neg
-                        ],
-                        "pointer_sub"
-                    ).unwrap().into()
-                });
-
-                self.types[id as usize].ops.add.insert(self.isize, (id, add));
-                self.types[id as usize].ops.sub.insert(self.isize, (id, sub));
-            }
-
             _ => {
                 // Non-numeric types that somehow ended up here – no-op.
             }
         }
     }
 
-    fn enable_index_operator(&mut self, id: TypeId) {
-        if let TypeKind::Array { ty: array_ty, .. } = self.types[id as usize].kind.clone() {
-            let inner_info = self.types[array_ty as usize].llvm_type;
+    fn enable_array_operator(&mut self, id: TypeId) {
+        let TypeKind::Array { ty: array_ty, .. } = self.types[id as usize].kind.clone() else { return; };
+        let inner_info = self.types[array_ty as usize].llvm_type;
 
 
-            self.types[id as usize].enable_index_operator(
-                self.usize,
-                array_ty,
-                Box::new(
-                    move |b, array, index| unsafe {
-                        //todo: enforcing basic type access
-                        let basic: BasicTypeEnum = inner_info.try_into().unwrap();
 
 
-                        let elem_ptr = b.build_gep(basic,
-                                                   array.into_pointer_value(),
-                                                   &[
-                                                       index.try_into().unwrap()
-                                                   ],
-                                                   "array_element_ptr",
-                        ).unwrap();
+        self.types[id as usize].enable_index_operator(
+            self.usize,
+            array_ty,
+            Box::new(
+                move |b, array, index| unsafe {
 
-                        b.build_load(basic, elem_ptr, "array_element")
-                            .unwrap()
-                            .into()
-                    }
-                ),
-            );
-        } else if let TypeKind::Slice( inner ) = self.types[id as usize].kind.clone() {
-            let inner_info = self.types[inner as usize].llvm_type;
-
-            self.types[id as usize].enable_index_operator(
-                self.usize,
-                inner,
-                Box::new(
-                    move |builder, slice, index| unsafe {
-                        let basic_inner: BasicTypeEnum = inner_info.try_into().unwrap();
-                        let slice_struct = slice.into_struct_value();
-                        let pointer = builder.build_extract_value(slice_struct, 1, "slice_array_pointer")
-                            .unwrap().try_into().unwrap();
+                    let basic: BasicTypeEnum = inner_info.try_into().unwrap();
 
 
-                        let elem_ptr = builder.build_gep(
-                            basic_inner,
-                            pointer,
-                            &[
-                                index.try_into().unwrap()
-                            ],
-                            "slice_element_ptr"
-                        ).unwrap();
 
-                        builder.build_load(basic_inner, elem_ptr, "slice_element")
-                            .unwrap()
-                            .into()
-                    }
-                )
-            );
-        }
+                    let elem_ptr = b.build_gep(basic,
+                                array.into_pointer_value(),
+                                &[
+                                    index.try_into().unwrap()
+                                ],
+                                "array_element_ptr"
+                    ).unwrap();
+
+                    b.build_load(basic, elem_ptr, "array_element")
+                        .unwrap()
+                        .into()
+                }
+            )
+        );
 
     }
 
@@ -469,12 +413,14 @@ impl TypeContext {
         );
         self.int_literal = id;
         self.enable_arithmetic_neg(id);
+        self.enable_from_int_literal(id, 32, true);
 
         let id = self.add(Type::Typename("#float_literal".into()),
             TypeInfo::new(TypeKind::FloatLiteral, self.llvm_context.f64_type().into())
         );
         self.float_literal = id;
         self.enable_arithmetic_neg(id);
+        self.enable_from_float_literal(id, 64);
 
         //SIGNED INTEGERS
 
@@ -489,14 +435,6 @@ impl TypeContext {
 
         let id = self.add(Type::Typename("int64".into()), TypeInfo::new(TypeKind::Int(64), self.llvm_context.i64_type().into()));
         self.int64 = id; self.enable_arithmetic_neg(id); self.enable_from_int_literal(id, 64, true);
-
-        let id = self.add(Type::Typename("isize".into()), TypeInfo::new(
-            TypeKind::Int(Self::SIZE_POINTER as u32 * 8),
-            self.llvm_context.custom_width_int_type(Self::SIZE_POINTER as u32 * 8).into(),
-        ));
-        self.isize = id; self.enable_arithmetic_neg(id);
-        self.enable_from_int_literal(id, Self::SIZE_POINTER as u32 * 8, true);
-
 
         //UNSIGNED INTEGERS
 
@@ -519,7 +457,12 @@ impl TypeContext {
         self.usize = id; self.enable_arithmetic_neg(id);
         self.enable_from_int_literal(id, Self::SIZE_POINTER as u32 * 8, false);
 
-
+        let id = self.add(Type::Typename("isize".into()), TypeInfo::new(
+            TypeKind::Int(Self::SIZE_POINTER as u32 * 8),
+            self.llvm_context.custom_width_int_type(Self::SIZE_POINTER as u32 * 8).into(),
+        ));
+        self.isize = id; self.enable_arithmetic_neg(id);
+        self.enable_from_int_literal(id, Self::SIZE_POINTER as u32 * 8, true);
 
         let id = self.add(Type::Typename("bool".into()),
             TypeInfo::new(TypeKind::Boolean, self.llvm_context.custom_width_int_type(1).into())
@@ -540,8 +483,8 @@ impl TypeContext {
         let bool_id = self.bool;
         let comparable = [
             self.int_literal, self.float_literal,
-            self.int8, self.int16, self.int32, self.int64, self.isize,
-            self.uint8, self.uint16, self.uint32, self.uint64, self.usize,
+            self.int8, self.int16, self.int32, self.int64,
+            self.uint8, self.uint16, self.uint32, self.uint64, self.usize, self.isize,
             self.float32, self.float64,
             self.bool,
         ];
@@ -551,8 +494,8 @@ impl TypeContext {
 
         let numeric = [
             self.int_literal, self.float_literal,
-            self.int8, self.int16, self.int32, self.int64, self.isize,
-            self.uint8, self.uint16, self.uint32, self.uint64, self.usize,
+            self.int8, self.int16, self.int32, self.int64,
+            self.uint8, self.uint16, self.uint32, self.uint64, self.usize, self.isize,
             self.float32, self.float64,
         ];
         for &from_id in &numeric {
@@ -600,9 +543,7 @@ impl TypeContext {
     pub fn create_slice_llvm_structure(&self) -> StructType<'static> {
         self.llvm_context.struct_type(
             &[
-                //size of the slice (0)
                 self.get_by_id(self.usize).unwrap().llvm_type.try_into().unwrap(),
-                //the actual array (1)
                 self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into(),
             ],
             true
@@ -692,6 +633,7 @@ impl TypeContext {
 
     fn enable_ptr_conversions(&mut self, ptr_id: TypeId) {
         let usize_id = self.usize;
+        let isize_id = self.isize;
         let usize_int_ty = match BasicTypeEnum::try_from(self.types[usize_id as usize].llvm_type) {
             Ok(t) => t.into_int_type(),
             Err(_) => return,
@@ -707,6 +649,17 @@ impl TypeContext {
         self.types[usize_id as usize].ops.conversion_ops.insert(ptr_id, Box::new(move |b, v| {
             b.build_int_to_ptr(v.into_int_value(), ptr_llvm_ty, "inttoptr").unwrap().into()
         }));
+
+        // isize → ptr  (same as usize → ptr at the LLVM level)
+        if isize_id != 0 {
+            self.types[isize_id as usize].ops.conversion_ops.insert(ptr_id, Box::new(move |b, v| {
+                b.build_int_to_ptr(v.into_int_value(), ptr_llvm_ty, "inttoptr").unwrap().into()
+            }));
+            // ptr → isize
+            self.types[ptr_id as usize].ops.conversion_ops.insert(isize_id, Box::new(move |b, v| {
+                b.build_ptr_to_int(v.into_pointer_value(), usize_int_ty, "ptrtoint").unwrap().into()
+            }));
+        }
 
         // cross-ptr no-op conversions with all existing pointer/reference types
         let existing: Vec<TypeId> = self.types.iter().enumerate()
@@ -726,6 +679,68 @@ impl TypeContext {
         }
     }
 
+    fn enable_ptr_comparison(&mut self, ptr_id: TypeId) {
+        use inkwell::IntPredicate;
+        let bool_id = self.bool;
+        let usize_int_ty = self.llvm_context.custom_width_int_type(Self::SIZE_POINTER as u32 * 8);
+        let bool_llvm = self.types[bool_id as usize].llvm_type.into_int_type();
+
+        let makers = ComparisonMakers {
+            eq: Box::new(move |b, l, r| {
+                let li = b.build_ptr_to_int(l.into_pointer_value(), usize_int_ty, "pi").unwrap();
+                let ri = b.build_ptr_to_int(r.into_pointer_value(), usize_int_ty, "pi").unwrap();
+                b.build_int_z_extend(b.build_int_compare(IntPredicate::EQ, li, ri, "peq").unwrap(), bool_llvm, "b").unwrap().into()
+            }),
+            ne: Box::new(move |b, l, r| {
+                let li = b.build_ptr_to_int(l.into_pointer_value(), usize_int_ty, "pi").unwrap();
+                let ri = b.build_ptr_to_int(r.into_pointer_value(), usize_int_ty, "pi").unwrap();
+                b.build_int_z_extend(b.build_int_compare(IntPredicate::NE, li, ri, "pne").unwrap(), bool_llvm, "b").unwrap().into()
+            }),
+            lt: Box::new(move |b, l, r| {
+                let li = b.build_ptr_to_int(l.into_pointer_value(), usize_int_ty, "pi").unwrap();
+                let ri = b.build_ptr_to_int(r.into_pointer_value(), usize_int_ty, "pi").unwrap();
+                b.build_int_z_extend(b.build_int_compare(IntPredicate::ULT, li, ri, "plt").unwrap(), bool_llvm, "b").unwrap().into()
+            }),
+            gt: Box::new(move |b, l, r| {
+                let li = b.build_ptr_to_int(l.into_pointer_value(), usize_int_ty, "pi").unwrap();
+                let ri = b.build_ptr_to_int(r.into_pointer_value(), usize_int_ty, "pi").unwrap();
+                b.build_int_z_extend(b.build_int_compare(IntPredicate::UGT, li, ri, "pgt").unwrap(), bool_llvm, "b").unwrap().into()
+            }),
+            le: Box::new(move |b, l, r| {
+                let li = b.build_ptr_to_int(l.into_pointer_value(), usize_int_ty, "pi").unwrap();
+                let ri = b.build_ptr_to_int(r.into_pointer_value(), usize_int_ty, "pi").unwrap();
+                b.build_int_z_extend(b.build_int_compare(IntPredicate::ULE, li, ri, "ple").unwrap(), bool_llvm, "b").unwrap().into()
+            }),
+            ge: Box::new(move |b, l, r| {
+                let li = b.build_ptr_to_int(l.into_pointer_value(), usize_int_ty, "pi").unwrap();
+                let ri = b.build_ptr_to_int(r.into_pointer_value(), usize_int_ty, "pi").unwrap();
+                b.build_int_z_extend(b.build_int_compare(IntPredicate::UGE, li, ri, "pge").unwrap(), bool_llvm, "b").unwrap().into()
+            }),
+        };
+        self.types[ptr_id as usize].ops.cmp.insert(ptr_id, makers);
+    }
+
+    fn enable_ptr_arithmetic(&mut self, ptr_id: TypeId) {
+        let isize_id = self.isize;
+        if isize_id == 0 { return; }
+        let i8_ty = self.llvm_context.i8_type();
+        self.types[ptr_id as usize].ops.add.insert(isize_id, (ptr_id, Box::new(move |b, ptr, offset| {
+            unsafe {
+                b.build_gep(i8_ty, ptr.into_pointer_value(), &[offset.into_int_value()], "ptr_add")
+                    .unwrap()
+                    .into()
+            }
+        })));
+        self.types[ptr_id as usize].ops.sub.insert(isize_id, (ptr_id, Box::new(move |b, ptr, offset| {
+            let neg = b.build_int_neg(offset.into_int_value(), "neg_off").unwrap();
+            unsafe {
+                b.build_gep(i8_ty, ptr.into_pointer_value(), &[neg], "ptr_sub")
+                    .unwrap()
+                    .into()
+            }
+        })));
+    }
+
     pub fn add(&mut self, ty: Type, info: TypeInfo) -> TypeId {
         if let Some(id) = self.type_lookup.get(&ty) {
             return *id;
@@ -736,21 +751,18 @@ impl TypeContext {
         self.type_ids.insert(id, ty);
         self.types.push(info);
 
-
-        if matches!(self.types[id as usize].kind, TypeKind::Pointer(_)) {
-            self.enable_arithmetic_neg(id)
-        }
-
         if matches!(self.types[id as usize].kind, TypeKind::Pointer(_) | TypeKind::Reference(_))
             && self.usize != 0
         {
             self.enable_ptr_conversions(id);
-        } else if matches!(self.types[id as usize].kind, TypeKind::Array { .. }) ||
-            matches!(self.types[id as usize].kind, TypeKind::Slice(_)) {
-            self.enable_index_operator(id)
+            self.enable_assignment(id);
+            self.enable_ptr_comparison(id);
+            if matches!(self.types[id as usize].kind, TypeKind::Pointer(_)) {
+                self.enable_ptr_arithmetic(id);
+            }
+        } else if matches!(self.types[id as usize].kind, TypeKind::Array { .. }) {
+            self.enable_array_operator(id)
         }
-
-        self.enable_assignment(id);
 
         id
     }
@@ -866,6 +878,7 @@ impl TypeContext {
     }
 
     pub fn name_of(&self, id: TypeId) -> Option<String> {
+        if id == self.isize { return Some("isize".to_string()); }
         let kind = &self.get_by_id(id)?.kind;
 
         Some(match kind {

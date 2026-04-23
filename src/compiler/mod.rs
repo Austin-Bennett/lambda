@@ -229,6 +229,61 @@ impl Compiler {
                             .methods
                             .insert(method.name.clone(), (mangled, fn_type_id, method.public, !method.has_self));
                     }
+
+                    for op in &modify.data.operators {
+                        let op_mangled = format!("{}__op_{}", type_name, op.op_name);
+
+                        let ret = match &op.ret {
+                            Some(ty) => self.resolve_type(ty).unwrap_or(self.type_context.none),
+                            None => self.type_context.none,
+                        };
+
+                        let mut params = Vec::new();
+                        if op.has_self {
+                            let self_ref_ty = self.type_context.reference_to(type_id);
+                            params.push(self_ref_ty);
+                        }
+                        for p in &op.params {
+                            if let Some(pid) = self.resolve_type(&p.data.ty) {
+                                params.push(pid);
+                            }
+                        }
+
+                        let fn_type_id = self.type_context.add_functional_type(&FunctionSignature {
+                            name: op_mangled.clone(),
+                            ret,
+                            params: params.clone(),
+                        });
+
+                        context.declare_identifier_in_scope(op_mangled.clone(), fn_type_id);
+
+                        // Determine rhs type (first non-self param)
+                        let rhs_ty = if op.has_self && params.len() > 1 {
+                            params[1]
+                        } else if !op.has_self && !params.is_empty() {
+                            params[0]
+                        } else {
+                            self.type_context.none
+                        };
+
+                        let type_info = self.type_context.get_by_id_mut(type_id).unwrap();
+                        match op.op_name.as_str() {
+                            "add"    => { type_info.ops.user_add.insert(rhs_ty, (ret, op_mangled)); }
+                            "sub"    => { type_info.ops.user_sub.insert(rhs_ty, (ret, op_mangled)); }
+                            "mul"    => { type_info.ops.user_mul.insert(rhs_ty, (ret, op_mangled)); }
+                            "div"    => { type_info.ops.user_div.insert(rhs_ty, (ret, op_mangled)); }
+                            "cmp"    => { type_info.ops.user_cmp.insert(rhs_ty, op_mangled); }
+                            "assign" => { type_info.ops.user_assign.insert(rhs_ty, (ret, op_mangled)); }
+                            "drop"   => { type_info.ops.drop = Some(op_mangled); }
+                            other    => {
+                                self.emit_compile_message(CompileMessage::new(
+                                    modify.smap.clone(),
+                                    format!("unknown operator '{}'; valid operators: add, sub, mul, div, cmp, assign, drop", other),
+                                    CompileMessageType::Error,
+                                ));
+                            }
+                        }
+                    }
                 }
             }
         }

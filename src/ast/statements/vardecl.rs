@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
-use std::process::abort;
 use crate::ast::{GenericSyntax, Syntax};
 use crate::ast::statements::expressions::ExprSyntax;
 use crate::ast::ty::{Type, TypeSyntax};
@@ -52,7 +51,7 @@ impl Syntax for VarDeclSyntax {
             TokenType::Expression(ExpressionToken::Identifier(_)),
             TokenType::Feature(FeatureToken::Colon),
         ) {
-            let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Identifier(name)), ident_smap) = tokens.pop_front() else { abort() };
+            let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Identifier(name)), ident_smap) = tokens.pop_front() else { unreachable!() };
             tokens.pop_front();
             let mut smap = if let Some(mut psmap) = public_smap { psmap.extend(ident_smap); psmap } else { ident_smap };
             let ty = if let Some(ty) = TypeSyntax::parse(tokens, compiler) {
@@ -72,7 +71,7 @@ impl Syntax for VarDeclSyntax {
             let expr = if let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Operator(
                 Operator{ tk: "=", .. }
             )), _) = tokens.get(0) {
-                let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Operator(Operator{ tk: "=", .. })), opmap) = tokens.pop_front() else { abort() };
+                let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Operator(Operator{ tk: "=", .. })), opmap) = tokens.pop_front() else { unreachable!() };
 
 
                 let expr = match ExprSyntax::parse(tokens, compiler) {

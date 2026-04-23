@@ -1,7 +1,5 @@
-use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 use crate::ast::GenericSyntax;
-use crate::ast::statements::expressions::ExprSyntax;
 use crate::ast::statements::if_stmt::{ElseStatement, IfSyntax};
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::typed_ast::ast::block::TypedBlockSyntax;

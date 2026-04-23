@@ -5,7 +5,7 @@ use crate::ast::{GenericSyntax, Syntax};
 use crate::ast::statements::expressions::ExprSyntax;
 use crate::common::sourcemap::SourceMap;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
-use crate::lexer::token::{ExpressionToken, FeatureToken, StatementToken, Token, TokenType};
+use crate::lexer::token::{FeatureToken, StatementToken, Token, TokenType};
 use crate::{token_match, unpack_opt_tk};
 
 pub enum ElseStatement {

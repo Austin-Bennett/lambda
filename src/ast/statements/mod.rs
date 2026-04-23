@@ -1,15 +1,13 @@
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
-use crate::ast::block::BlockSyntax;
-use crate::ast::{GenericSyntax, Syntax};
+use crate::ast::Syntax;
 use crate::ast::statements::vardecl::*;
 use crate::ast::statements::expressions::*;
 use crate::ast::statements::if_stmt::IfSyntax;
 use crate::ast::statements::ret::{Return};
 use crate::ast::statements::while_stmt::WhileSyntax;
 use crate::common::sourcemap::SourceMap;
-use crate::common::utils::outcome::Outcome;
 use crate::compiler::Compiler;
 use crate::lexer::token::Token;
 pub mod vardecl;

@@ -10,7 +10,7 @@ use crate::common::sourcemap::SourceMap;
 use crate::common::utils::outcome::Outcome;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::literal::LiteralValue;
-use crate::lexer::token::{ExpressionToken, FeatureToken, Token, TokenType};
+use crate::lexer::token::{ExpressionToken, FeatureToken, Token};
 
 #[derive(Hash, Clone)]
 pub struct BinaryOperation {
@@ -214,9 +214,8 @@ impl ExprSyntax {
 
                 smap.extend(emap);
                 break;
-            } else if let Some(Token{ typ: TokenType::Feature(FeatureToken::Comma), smap: _emap }) = tokens.get(0) {
-                let Some(Token{ typ: TokenType::Feature(FeatureToken::Comma), smap: emap }) = tokens.pop_front() else { unreachable!() };
-
+            } else if let Some((FeatureToken::Comma, _)) = tokens.peek_feature() {
+                let (_, emap) = tokens.next_feature().unwrap();
                 smap.extend(emap);
             } else if let Some(tk) = tokens.pop_front() {
                 let close = match close_token { ExpressionToken::CloseBracket => ']', _ => ')' };

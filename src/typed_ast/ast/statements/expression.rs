@@ -1,14 +1,13 @@
 use crate::ast::statements::expressions::{Expr, ExprSyntax};
 use crate::common::sourcemap::SourceMap;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
-use crate::lexer::literal::LiteralValue;
+use crate::lexer::literal::{IntegerLiteral, LiteralValue};
 use crate::typed_ast::typing::scope::AvailableContext;
 use crate::typed_ast::typing::tcontext::TypeContext;
 use crate::typed_ast::typing::ty::{StructId, TypeId, TypeKind};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::mem;
-use crate::ast::statements::if_stmt::IfSyntax;
 use crate::typed_ast::typing::operator::BinaryOperatorMaker;
 
 pub enum BinaryOperator {
@@ -107,7 +106,6 @@ pub struct TypedStructConstruct {
 pub struct TypedBoundMethod {
     pub self_expr: TypedExpr,
     pub mangled_name: String,
-    pub stat1c: bool,
 }
 
 pub enum TypedExprNode {
@@ -271,18 +269,9 @@ impl TypedExpr {
         expr
     }
 
-    /// Infer concrete types when one or both sides are literals. Returns true if types are now compatible
+    /// Infer concrete types when one or both sides are literals. Returns true if types now match.
     pub fn infer_literals_binary(context: &TypeContext, lhs: &mut TypedExpr, rhs: &mut TypedExpr) -> bool {
-
-        if !context.is_literal(lhs.ty) && !context.is_literal(rhs.ty) {
-            //no literals to infer
-            return true;
-        }
-
-        if lhs.ty == rhs.ty {
-            return true;
-        }
-
+        if lhs.ty == rhs.ty { return true; }
         if context.is_literal(lhs.ty) && context.get_by_id(rhs.ty).map_or(false, |i| i.ops.from_literal.contains_key(&lhs.ty)) {
             lhs.ty = rhs.ty;
             return true;
@@ -293,7 +282,6 @@ impl TypedExpr {
         }
         false
     }
-
 
     /// Infer the result type for an index operation, coercing a literal index if needed.
     pub fn infer_literal_index(context: &TypeContext, index: &mut TypedExpr, index_op: &HashMap<TypeId, (TypeId, BinaryOperatorMaker)>) -> Option<TypeId> {
@@ -337,6 +325,138 @@ impl TypedExpr {
         ret
     }
     
+    /// Find a user-defined binary op entry, coercing a literal rhs type if needed.
+    /// Returns `(coerced_rhs_ty, result_ty, mangled_name)`.
+    fn find_user_binop(
+        user_ops: &HashMap<TypeId, (TypeId, String)>,
+        rhs_ty: TypeId,
+        context: &TypeContext,
+    ) -> Option<(TypeId, TypeId, String)> {
+        if let Some((ret, mangled)) = user_ops.get(&rhs_ty) {
+            return Some((rhs_ty, *ret, mangled.clone()));
+        }
+        if context.is_literal(rhs_ty) {
+            for (reg_ty, (ret, mangled)) in user_ops {
+                if context.get_by_id(*reg_ty)
+                    .map_or(false, |i| i.ops.from_literal.contains_key(&rhs_ty))
+                {
+                    return Some((*reg_ty, *ret, mangled.clone()));
+                }
+            }
+        }
+        None
+    }
+
+    /// Find a user-defined cmp op entry, coercing a literal rhs type if needed.
+    /// Returns `(coerced_rhs_ty, mangled_name)`.
+    fn find_user_cmp(
+        user_cmp: &HashMap<TypeId, String>,
+        rhs_ty: TypeId,
+        context: &TypeContext,
+    ) -> Option<(TypeId, String)> {
+        if let Some(mangled) = user_cmp.get(&rhs_ty) {
+            return Some((rhs_ty, mangled.clone()));
+        }
+        if context.is_literal(rhs_ty) {
+            for (reg_ty, mangled) in user_cmp {
+                if context.get_by_id(*reg_ty)
+                    .map_or(false, |i| i.ops.from_literal.contains_key(&rhs_ty))
+                {
+                    return Some((*reg_ty, mangled.clone()));
+                }
+            }
+        }
+        None
+    }
+
+    /// Build a call to a user-defined binary operator: `mangled(&lhs, rhs)`.
+    fn make_user_binop_call(
+        mangled: String,
+        result_ty: TypeId,
+        lhs: TypedExpr,
+        rhs: TypedExpr,
+        context: &AvailableContext<TypeId>,
+        compiler: &mut Compiler,
+        smap: SourceMap,
+    ) -> Option<(TypedExprNode, TypeId)> {
+        let fn_type_id = *context.get_identifier(&mangled)?;
+        let self_ref_ty = compiler.type_context.reference_to(lhs.ty);
+        let self_ref = TypedExpr {
+            smap: lhs.smap.clone(),
+            ty: self_ref_ty,
+            value: TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
+                op: UnaryOperator::Reference,
+                operand: lhs,
+            })),
+        };
+        let fn_expr = TypedExpr {
+            smap: smap.clone(),
+            ty: fn_type_id,
+            value: TypedExprNode::Identifier(mangled),
+        };
+        Some((TypedExprNode::CallOp(Box::new(TypedCallOperation {
+            caller: fn_expr,
+            arguments: vec![self_ref, rhs],
+        })), result_ty))
+    }
+
+    /// Build a comparison using a user-defined `cmp` operator.
+    /// Generates `T__op_cmp(&lhs, rhs) OP 0` where OP is the original comparison.
+    fn make_user_cmp_call(
+        op_tk: &str,
+        mangled: String,
+        lhs: TypedExpr,
+        rhs: TypedExpr,
+        context: &AvailableContext<TypeId>,
+        compiler: &mut Compiler,
+        smap: SourceMap,
+    ) -> Option<(TypedExprNode, TypeId)> {
+        let fn_type_id = *context.get_identifier(&mangled)?;
+        let int8_id = compiler.type_context.int8;
+        let bool_id = compiler.type_context.bool;
+        let self_ref_ty = compiler.type_context.reference_to(lhs.ty);
+        let self_ref = TypedExpr {
+            smap: lhs.smap.clone(),
+            ty: self_ref_ty,
+            value: TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
+                op: UnaryOperator::Reference,
+                operand: lhs,
+            })),
+        };
+        let fn_expr = TypedExpr {
+            smap: smap.clone(),
+            ty: fn_type_id,
+            value: TypedExprNode::Identifier(mangled),
+        };
+        let cmp_call = TypedExpr {
+            ty: int8_id,
+            smap: smap.clone(),
+            value: TypedExprNode::CallOp(Box::new(TypedCallOperation {
+                caller: fn_expr,
+                arguments: vec![self_ref, rhs],
+            })),
+        };
+        let zero = TypedExpr {
+            ty: int8_id,
+            smap: smap.clone(),
+            value: TypedExprNode::Literal(LiteralValue::Integer(IntegerLiteral { value: 0, negative: false })),
+        };
+        let op_variant = match op_tk {
+            "==" => BinaryOperator::Eq,
+            "!=" => BinaryOperator::Ne,
+            "<"  => BinaryOperator::Lt,
+            ">"  => BinaryOperator::Gt,
+            "<=" => BinaryOperator::Le,
+            ">=" => BinaryOperator::Ge,
+            _    => unreachable!(),
+        };
+        Some((TypedExprNode::BinaryOp(Box::new(TypedBinaryOperation {
+            op: op_variant,
+            lhs: cmp_call,
+            rhs: zero,
+        })), bool_id))
+    }
+
     pub fn from_node(expr: &ExprSyntax, compiler: &mut Compiler, context: &AvailableContext<TypeId>) -> Option<(TypedExprNode, TypeId)> {
         match &expr.data {
             Expr::Identifier(ident) => {
@@ -454,21 +574,45 @@ impl TypedExpr {
                 let mut lhs = if bin.op.tk != "=" { Self::coerce_ref(lhs_raw, &compiler.type_context) } else { lhs_raw };
                 let mut rhs = Self::coerce_ref(rhs_raw, &compiler.type_context);
 
-                if bin.op.tk != "=" && !Self::infer_literals_binary(&compiler.type_context, &mut lhs, &mut rhs) {
-                    let mut smap = lhs.smap.clone();
-                    smap.extend(&rhs.smap);
-                    compiler.emit_compile_message(
-                        CompileMessage::new(
-                            smap,
-                            format!("Cannot infer types for binary operation between {} and {}",
-                                compiler.type_context.name_of(lhs.ty).unwrap(), compiler.type_context.name_of(rhs.ty).unwrap()
-                            ),
-                            CompileMessageType::Error
-                        )
-                    );
-                    return None;
-                }
+                if bin.op.tk != "=" {
+                    Self::infer_literals_binary(&compiler.type_context, &mut lhs, &mut rhs);
 
+                    // Check user-defined binary/cmp operators (take priority over built-ins)
+                    match bin.op.tk {
+                        "+" | "-" | "*" | "/" => {
+                            let found = {
+                                let info = compiler.type_context.get_by_id(lhs.ty)?;
+                                let user_ops = match bin.op.tk {
+                                    "+" => &info.ops.user_add,
+                                    "-" => &info.ops.user_sub,
+                                    "*" => &info.ops.user_mul,
+                                    "/" => &info.ops.user_div,
+                                    _   => unreachable!(),
+                                };
+                                Self::find_user_binop(user_ops, rhs.ty, &compiler.type_context)
+                            };
+                            if let Some((coerced_ty, result_ty, mangled)) = found {
+                                rhs.ty = coerced_ty;
+                                return Some(Self::make_user_binop_call(
+                                    mangled, result_ty, lhs, rhs, context, compiler, expr.smap.clone(),
+                                )?);
+                            }
+                        }
+                        "==" | "!=" | "<" | ">" | "<=" | ">=" => {
+                            let found = {
+                                let info = compiler.type_context.get_by_id(lhs.ty)?;
+                                Self::find_user_cmp(&info.ops.user_cmp, rhs.ty, &compiler.type_context)
+                            };
+                            if let Some((coerced_ty, mangled)) = found {
+                                rhs.ty = coerced_ty;
+                                return Some(Self::make_user_cmp_call(
+                                    bin.op.tk, mangled, lhs, rhs, context, compiler, expr.smap.clone(),
+                                )?);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
 
                 //lhs must have an operator overload that accepts rhs
 
@@ -640,6 +784,22 @@ impl TypedExpr {
                         // Coerce any literal RHS to the target type if the target accepts it.
                         rhs = Self::coerce_literal(&compiler.type_context, rhs, target_ty);
 
+                        // Check user-defined assign operator (takes priority over built-in copy)
+                        if !lhs_is_deref {
+                            let found = {
+                                let info = compiler.type_context.get_by_id(target_ty);
+                                info.and_then(|i| {
+                                    Self::find_user_binop(&i.ops.user_assign, rhs.ty, &compiler.type_context)
+                                })
+                            };
+                            if let Some((coerced_ty, result_ty, mangled)) = found {
+                                rhs.ty = coerced_ty;
+                                return Some(Self::make_user_binop_call(
+                                    mangled, result_ty, lhs, rhs, context, compiler, expr.smap.clone(),
+                                )?);
+                            }
+                        }
+
                         if lhs_is_deref {
                             if rhs.ty != target_ty {
                                 compiler.emit_compile_message(CompileMessage::new(
@@ -804,11 +964,7 @@ impl TypedExpr {
                         return None;
                     };
 
-
-                    let mut args = vec![];
-                    if !bm.stat1c {
-                        args.push(bm.self_expr);
-                    }
+                    let mut args = vec![bm.self_expr];
                     for (i, arg_expr) in call.arguments.iter().enumerate() {
                         let mut typed = TypedExpr::from_ast(arg_expr, compiler, context)?;
                         if let Some(&expected) = params.get(i + 1) {
@@ -974,9 +1130,15 @@ impl TypedExpr {
             Expr::MemberAccess(op) => {
                 let object = TypedExpr::from_ast(&op.object, compiler, context)?;
 
-                // Check for a method on the object's type first
-                if let Some((mangled, fn_type_id, public, stat1c)) = compiler.type_context
-                    .get_by_id(object.ty)
+                // Compute effective type (unwrap one reference level) for method/member lookup
+                let effective_ty = match compiler.type_context.get_by_id(object.ty).map(|i| i.kind.clone()) {
+                    Some(TypeKind::Reference(inner)) => inner,
+                    _ => object.ty,
+                };
+
+                // Check for a method on the effective type first
+                if let Some((mangled, fn_type_id, public)) = compiler.type_context
+                    .get_by_id(effective_ty)
                     .and_then(|info| info.methods.get(&op.member))
                     .cloned()
                 {
@@ -988,9 +1150,21 @@ impl TypedExpr {
                         ));
                         return None;
                     }
-                    // self must be an lvalue so we can take its address
-                    //todo: accept an identifier or a reference
-                    if !matches!(&object.value, TypedExprNode::Identifier(_)) {
+
+                    // A static method's first param is NOT the self-reference type.
+                    // Detect this and return a plain identifier — no receiver binding needed.
+                    let self_ref_ty = compiler.type_context.reference_to(effective_ty);
+                    let is_static = match compiler.type_context.get_by_id(fn_type_id).map(|i| i.kind.clone()) {
+                        Some(TypeKind::Function { params, .. }) => params.first() != Some(&self_ref_ty),
+                        _ => false,
+                    };
+
+                    if is_static {
+                        return Some((TypedExprNode::Identifier(mangled), fn_type_id));
+                    }
+
+                    // Instance method: self must be an lvalue so we can take its address.
+                    let TypedExprNode::Identifier(_) = &object.value else {
                         compiler.emit_compile_message(CompileMessage::new(
                             op.object.smap.clone(),
                             "method receiver must be a variable".into(),
@@ -998,40 +1172,29 @@ impl TypedExpr {
                         ));
                         return None;
                     };
-                    let self_ref_ty = compiler.type_context.reference_to(object.ty);
-                    let self_ref = TypedExpr {
-                        smap: object.smap.clone(),
-                        ty: self_ref_ty,
-                        value: TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
-                            op: UnaryOperator::Reference,
-                            operand: object,
-                        })),
+                    let self_expr = if object.ty == effective_ty {
+                        // direct struct — take address
+                        TypedExpr {
+                            smap: object.smap.clone(),
+                            ty: self_ref_ty,
+                            value: TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
+                                op: UnaryOperator::Reference,
+                                operand: object,
+                            })),
+                        }
+                    } else {
+                        // already a reference — pass as-is
+                        object
                     };
                     return Some((TypedExprNode::BoundMethod(Box::new(TypedBoundMethod {
-                        self_expr: self_ref,
+                        self_expr,
                         mangled_name: mangled,
-                        stat1c
                     })), fn_type_id));
                 }
 
-                // Resolve the struct id: accept both direct structs and references-to-structs
-                let sid = match compiler.type_context.get_by_id(object.ty).map(|i| i.kind.clone()).unwrap_or(TypeKind::None) {
-                    TypeKind::Struct(sid) => sid,
-                    TypeKind::Reference(inner) => {
-                        match compiler.type_context.get_by_id(inner).map(|i| i.kind.clone()).unwrap_or(TypeKind::None) {
-                            TypeKind::Struct(sid) => sid,
-                            _ => {
-                                compiler.emit_compile_message(CompileMessage::new(
-                                    expr.smap.clone(),
-                                    format!("cannot access member '{}' on non-struct type {}",
-                                        op.member,
-                                        compiler.type_context.name_of(object.ty).unwrap_or_default()),
-                                    CompileMessageType::Error,
-                                ));
-                                return None;
-                            }
-                        }
-                    }
+                // Resolve the struct id from the effective type
+                let sid = match compiler.type_context.get_by_id(effective_ty).map(|i| i.kind.clone()) {
+                    Some(TypeKind::Struct(sid)) => sid,
                     _ => {
                         compiler.emit_compile_message(CompileMessage::new(
                             expr.smap.clone(),
@@ -1056,8 +1219,7 @@ impl TypedExpr {
                     return None;
                 };
                 let member_ty = member.ty;
-
-
+                let object = Self::coerce_ref(object, &compiler.type_context);
                 Some((TypedExprNode::MemberAccess(Box::new(TypedMemberAccess { object, member_index })), member_ty))
             }
         }

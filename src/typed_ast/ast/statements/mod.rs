@@ -1,8 +1,7 @@
 use crate::ast::statements::Statement;
-use crate::common::sourcemap::SourceMap;
 use crate::compiler::Compiler;
 use crate::typed_ast::ast::statements::expression::TypedExpr;
-use crate::typed_ast::ast::statements::if_stmt::{TypedIfStatement, TypedIfSyntax};
+use crate::typed_ast::ast::statements::if_stmt::TypedIfSyntax;
 use crate::typed_ast::ast::statements::ret::TypedReturn;
 use crate::typed_ast::ast::statements::vardecl::TypedVarDecl;
 use crate::typed_ast::ast::statements::while_stmt::TypedWhileSyntax;

@@ -173,18 +173,11 @@ struct Point {
 }
 
 modify Point {
-    public new(float32 x, float32 y) = Point {
-        return Point(x, y);
-    }
-
     public length2(self) = float32 {
         //self is a reference to this object
-        //self.x is a reference aswell
-        return *self.x * *self.x + *self.y * *self.y;
+        return self.x * self.x + self.y * self.y;
     }
 }
-
-
 
 //modify primitive types too- you can modify any valid type
 modify int32 {
@@ -197,25 +190,43 @@ modify int32 {
 }
 ```
 
-*Operator overloading is done inside modify blocks aswell*
+
+*Operator Overloading*
+
+this is also done inside a modify block:
+
+*Syntax*
 ```lambda
-modify Point {
-    //fn is replaced with operator, and the name of the operand
-    public operator add(self, other: Point) = Point {
-        return Point(*self.x + *other.x, *self.y + *other.y);
-    }
-}
+//operator overloads are always public, if a public is put before a operator method
+//its allowed, but will cause a compiler warning
+operator operator_name(self, args...) = result { ... }
 ```
 
-*Operators*
+*Operator methods:*
 
+```lambda
+//addition, a + b = c
+operator add(self, other: T) = R { ... }
 
-| Operator |         Signature          | Description |
-|:--------:|:--------------------------:|-------------|
-|    +     |  add(self, other: T) = R   | a + b       |
-|    -     |  sub(self, other: T) = R   | a - b       |
-|    *     |  mul(self, other: T) = R   | a * b       |
-|    /     |  div(self, other: T) = R   | a / b       |
-|    =     | assign(self, other: T) = R | a = b       |
-|   as T   |     convert(self) = T      | a as T      |
-|   drop   |         drop(self)         | destructor  |
+//subtraction, a - b = c
+operator sub(self, other: T) = R { ... }
+
+//multiplication, a * b = c
+operator mul(self, other: T) = R { ... }
+
+//division, a / b = c
+operator div(self, other: T) = R { ... }
+
+//assignment, a = b
+//note that if T is Self, then it overrides the default move/copy operator for struct types, 
+//you cannot override it on primitives however, no other operator supports this besides assign
+operator assign(self, other: T) = R { ... }
+
+//comparison operator, a < b, a <= b, a > b, a >= b, a == b, a != b
+//returns 0 if equal, 1 if greater than, and -1 if less than
+//maybe todo: implement enums in lambda and replace this with a enum
+operator cmp(self, other: T) = int8 { ... }
+
+//drop operator / destructor operator
+operator drop(self) { ... }
+```

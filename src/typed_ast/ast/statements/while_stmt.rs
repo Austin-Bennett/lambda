@@ -3,7 +3,6 @@ use crate::ast::statements::while_stmt::WhileSyntax;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::typed_ast::ast::block::TypedBlockSyntax;
 use crate::typed_ast::ast::statements::expression::TypedExpr;
-use crate::typed_ast::ast::statements::TypedStatement;
 use crate::typed_ast::typing::scope::AvailableContext;
 use crate::typed_ast::typing::tcontext::TypeContext;
 use crate::typed_ast::typing::ty::TypeId;

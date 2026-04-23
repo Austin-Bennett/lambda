@@ -53,6 +53,7 @@ pub enum StatementToken {
     WhileKW,
     PublicKW,
     ModifyKW,
+    OperatorKW,
 }
 
 #[derive(Clone, Debug)]

@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 use std::ops::{Deref, DerefMut, DerefPure};
-use std::process::abort;
 use crate::ast::Syntax;
 use crate::ast::statements::expressions::ExprSyntax;
 use crate::common::sourcemap::SourceMap;
@@ -37,7 +36,7 @@ impl Syntax for Return {
         let unpack_opt_tk!( TokenType::Statement(StatementToken::ReturnKW), _) = tokens.get(0) else {
             return None;
         };
-        let unpack_opt_tk!( TokenType::Statement(StatementToken::ReturnKW), mut smap) = tokens.pop_front() else { abort(); };
+        let unpack_opt_tk!( TokenType::Statement(StatementToken::ReturnKW), mut smap) = tokens.pop_front() else { unreachable!() };
 
         let expr = match ExprSyntax::parse(tokens, context) {
             Some(e) => e,

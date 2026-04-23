@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
-use std::process::abort;
 use crate::ast::{GenericSyntax, Syntax};
 use crate::ast::statements::vardecl::{VarDecl, VarDeclSyntax};
 use crate::common::sourcemap::SourceMap;
@@ -38,7 +37,7 @@ impl Syntax for StructureSyntax {
         Self: Sized
     {
         let unpack_opt_tk!( TokenType::Statement(StatementToken::StructKW), _ ) = tokens.get(0) else { return None };
-        let unpack_opt_tk!( TokenType::Statement(StatementToken::StructKW), mut smap ) = tokens.pop_front() else { abort(); };
+        let unpack_opt_tk!( TokenType::Statement(StatementToken::StructKW), mut smap ) = tokens.pop_front() else { unreachable!() };
 
 
 
@@ -107,7 +106,7 @@ impl Syntax for StructureSyntax {
 
         //expect the '}'
         let next = tokens.pop_front();
-        let unpack_opt_tk!( TokenType::Feature(FeatureToken::CloseBrace), _ ) = next else {
+        let unpack_opt_tk!( TokenType::Feature(FeatureToken::CloseBrace), cbsmap ) = next else {
             compiler.emit_compile_message(CompileMessage::expected_token_error(
                 res.smap,
                 "}",
@@ -116,7 +115,8 @@ impl Syntax for StructureSyntax {
             ));
             return None;
         };
-        
+        res.smap.extend(cbsmap);
+
         Some(res)
     }
 
