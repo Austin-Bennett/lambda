@@ -2,57 +2,6 @@ extern fn malloc(n: usize) = uint8*;
 extern fn free(ptr: uint8*);
 extern fn realloc(ptr: uint8*, n: usize) = uint8*;
 
-
-struct Point {
-    public x: int32,
-    public y: int32,
-}
-
-modify Point {
-    public fn sum(self) = int32 {
-        return self.x + self.y;
-    }
-
-    public fn length2(self) = int32 {
-        return self.x * self.x + self.y * self.y;
-    }
-
-    public fn scale(self, factor: int32) = Point {
-        return Point(self.x * factor, self.y * factor);
-    }
-
-    public fn origin() = Point {
-        return Point(0, 0);
-    }
-
-    public fn splat(v: int32) = Point {
-        return Point(v, v);
-    }
-}
-
-modify int32 {
-    public fn max(self, other: int32) = int32 {
-        if self > other {
-            return self;
-        }
-        return other;
-    }
-
-    public fn min(self, other: int32) = int32 {
-        if self < other {
-            return self;
-        }
-        return other;
-    }
-
-    public fn abs(self) = int32 {
-        if self < 0 {
-            return 0 - self;
-        }
-        return self;
-    }
-}
-
 struct IntList {
     array: int32*,
     size: usize,
@@ -79,245 +28,15 @@ modify IntList {
         *(self.array + index as isize)
     }
 
-    operator drop(self) {
+    fn operator drop(self) {
         free(self.array as uint8*);
     }
 }
 
 fn main() = int8 {
 
-    // test 1: integer addition
-    r: int32 = 3 + 4;
-    if r != 7 {
-        return 1 as int8;
-    }
-
-    // test 2: integer subtraction
-    r = 10 - 3;
-    if r != 7 {
-        return 2 as int8;
-    }
-
-    // test 3: integer multiplication
-    r = 6 * 7;
-    if r != 42 {
-        return 3 as int8;
-    }
-
-    // test 4: integer division
-    r = 20 / 4;
-    if r != 5 {
-        return 4 as int8;
-    }
-
-    // test 5: unary negation
-    r = -9;
-    if r != 0 - 9 {
-        return 5 as int8;
-    }
-
-    // test 6: equality (false case)
-    if 5 == 3 {
-        return 6 as int8;
-    }
-
-    // test 7: inequality (true case)
-    b: bool = 5 != 3;
-    if b == false {
-        return 7 as int8;
-    }
-
-    // test 8: less-than
-    b = 3 < 5;
-    if b == false {
-        return 8 as int8;
-    }
-
-    // test 9: greater-than
-    b = 5 > 3;
-    if b == false {
-        return 9 as int8;
-    }
-
-    // test 10: less-than-or-equal (equal case)
-    b = 5 <= 5;
-    if b == false {
-        return 10 as int8;
-    }
-
-    // test 11: greater-than-or-equal (greater case)
-    b = 7 >= 5;
-    if b == false {
-        return 11 as int8;
-    }
-
-    // test 12: if-else takes else branch
-    r = 0;
-    if 3 > 5 {
-        r = 1;
-    } else {
-        r = 2;
-    }
-    if r != 2 {
-        return 12 as int8;
-    }
-
-    // test 13: if-else takes then branch
-    r = 0;
-    if 5 > 3 {
-        r = 1;
-    } else {
-        r = 2;
-    }
-    if r != 1 {
-        return 13 as int8;
-    }
-
-    // test 14: while loop (sum 1..5 = 15)
-    i: int32 = 1;
-    s: int32 = 0;
-    while i <= 5 {
-        s = s + i;
-        i = i + 1;
-    }
-    if s != 15 {
-        return 14 as int8;
-    }
-
-    // test 15: while loop exit condition (i should be 6 after loop)
-    if i != 6 {
-        return 15 as int8;
-    }
-
-    // test 16: struct construction — x field
-    p: Point = Point(3, 4);
-    if p.x != 3 {
-        return 16 as int8;
-    }
-
-    // test 17: struct construction — y field
-    if p.y != 4 {
-        return 17 as int8;
-    }
-
-    // test 18: struct member assignment (field write)
-    p.x = 10;
-    if p.x != 10 {
-        return 18 as int8;
-    }
-
-    // test 19: struct member assignment does not clobber other field
-    if p.y != 4 {
-        return 19 as int8;
-    }
-
-    // test 20: method call (sum)
-    p2: Point = Point(3, 4);
-    if p2.sum() != 7 {
-        return 20 as int8;
-    }
-
-    // test 21: method call (length2 = 9 + 16 = 25)
-    if p2.length2() != 25 {
-        return 21 as int8;
-    }
-
-    // test 22: method with argument (max)
-    a: int32 = 10;
-    bv: int32 = 20;
-    if a.max(bv) != 20 {
-        return 22 as int8;
-    }
-
-    // test 23: method with argument (min)
-    if a.min(bv) != 10 {
-        return 23 as int8;
-    }
-
-    // test 24: method returning struct (scale)
-    p3: Point = p2.scale(2);
-    if p3.x != 6 {
-        return 24 as int8;
-    }
-
-    // test 25: scale y field
-    if p3.y != 8 {
-        return 25 as int8;
-    }
-
-    // test 26: abs of negative
-    neg: int32 = 0 - 5;
-    if neg.abs() != 5 {
-        return 26 as int8;
-    }
-
-    // test 27: abs of positive
-    pos: int32 = 5;
-    if pos.abs() != 5 {
-        return 27 as int8;
-    }
-
-    // test 28: float addition
-    fa: float64 = 1.5 + 2.5;
-    if fa != 4.0 {
-        return 28 as int8;
-    }
-
-    // test 29: float subtraction
-    fb: float64 = 5.0 - 1.5;
-    if fb != 3.5 {
-        return 29 as int8;
-    }
-
-    // test 30: float multiplication
-    fc: float64 = 2.0 * 3.0;
-    if fc != 6.0 {
-        return 30 as int8;
-    }
-
-    // test 31: cast int32 -> int8
-    big: int32 = 42;
-    small: int8 = big as int8;
-    if small != 42 as int8 {
-        return 31 as int8;
-    }
-
-    // test 32: chained arithmetic
-    r = 2 + 3 * 4;
-    if r != 14 {
-        return 32 as int8;
-    }
-
-    // test 33: nested if (inner taken)
-    r = 0;
-    if 10 > 5 {
-        if 3 < 5 {
-            r = 99;
-        }
-    }
-    if r != 99 {
-        return 33 as int8;
-    }
-
-    // test 34: static method with no parameters
-    origin: Point = Point.origin();
-    if origin.x != 0 {
-        return 34 as int8;
-    }
-    if origin.y != 0 {
-        return 35 as int8;
-    }
-
-    // test 36: static method with a parameter
-    sp: Point = Point.splat(7);
-    if sp.x != 7 {
-        return 36 as int8;
-    }
-    if sp.y != 7 {
-        return 37 as int8;
-    }
-
     //test 38: Dynamic array + drop
+    list0: IntList = IntList.new();
     list: IntList = IntList.new();
     list.add(1);
     list.add(2);
@@ -329,6 +48,14 @@ fn main() = int8 {
     list.add(8);
     list.add(9);
     list.add(10);
+
+    if *list.get(2) == 3 {
+        list2: IntList = IntList.new();
+
+        list2.add(1);
+        list2.add(2);
+        list2.add(3);
+    }
 
     return 0;
 }

@@ -10,8 +10,7 @@ use inkwell::targets::{CodeModel, FileType, InitializationConfig, RelocMode, Tar
 use inkwell::OptimizationLevel;
 use std::fs;
 use std::path::Path;
-use std::process::abort;
-use std::sync::Arc;
+use std::process::{exit};
 
 pub mod lexer;
 pub mod common;
@@ -22,17 +21,29 @@ pub mod tests;
 pub mod typed_ast;
 pub mod consteval;
 
+
+
 #[derive(Parser)]
 pub struct Arguments {
     /// Output path
     #[arg(short, long, default_value = "a.out")]
     output: String,
 
+    ///optimization level
+    #[arg(long, short='O', value_parser = ["none", "1", "2", "3"], default_value = "2")]
+    optimize: String,
+
+    /// print the ast as debug output
     #[arg(long, default_value = "false")]
     debug_ast: bool,
 
+    /// dont do codegen, only generate ast and ir
     #[arg(long, default_value = "false")]
     no_codegen: bool,
+
+    /// generate ir in the specified output file
+    #[arg(long)]
+    output_ir: Option<String>,
 
     /// Compile as a shared library (.so / .dll)
     #[arg(long)]
@@ -46,6 +57,7 @@ pub struct Arguments {
     #[arg(short = 'L', value_name = "PATH", action = clap::ArgAction::Append)]
     lib_paths: Vec<String>,
 
+    ///files to compile
     #[arg(num_args = 1.., value_name = "FILE")]
     files: Vec<String>,
 }
@@ -77,7 +89,7 @@ fn main() -> Result<()> {
 
     compiler.raise_compile_warnings(true);
     if compiler.raise_compile_errors(true) {
-        abort();
+        exit(-1);
     }
 
 
@@ -96,7 +108,7 @@ fn main() -> Result<()> {
 
     compiler.raise_compile_warnings(true);
     if compiler.raise_compile_errors(true) {
-        abort();
+        exit(-1);
     }
 
     if args.debug_ast {
@@ -120,15 +132,17 @@ fn main() -> Result<()> {
 
     compiler.raise_compile_warnings(true);
     if compiler.raise_compile_errors(true) {
-        abort();
+        exit(-1);
     }
-    
-    llvm_mod.print_to_file("intermediate.llvm").unwrap();
+
+    if let Some(ir) = args.output_ir {
+        llvm_mod.print_to_file(ir).unwrap();
+    }
 
     if let Err(err) = llvm_mod.verify() {
         eprintln!("LLVM IR Verification Error: {}", err.to_string());
         // This will print exactly what is wrong with your GEP or types
-        abort();
+        exit(-1);
     }
 
 
@@ -143,12 +157,19 @@ fn main() -> Result<()> {
 
     let reloc_mode = if args.shared { RelocMode::PIC } else { RelocMode::Default };
 
+    let opt_level = match args.optimize.as_ref() {
+        "1" => OptimizationLevel::Less,
+        "2" => OptimizationLevel::Default,
+        "3" => OptimizationLevel::Aggressive,
+        _ => OptimizationLevel::None,
+    };
+
     let machine = target
         .create_target_machine(
             &triple,
             "generic",
             "",
-            OptimizationLevel::None,
+            opt_level,
             reloc_mode,
             CodeModel::Default,
         )
@@ -193,7 +214,7 @@ fn main() -> Result<()> {
     }
 
     let artifact = if args.shared { "shared library" } else { "executable" };
-    println!("Successfully compiled {} -> {}", artifact, args.output);
+    println!("Successfully compiled {}: {} [optimization level: {}]", artifact, args.output, args.optimize);
 
     Ok(())
 }

@@ -568,11 +568,10 @@ impl TypedExpr {
                 }
             },
             Expr::BinaryOp(bin) => {
-                let lhs_raw = TypedExpr::from_ast(&bin.lhs, compiler, context)?;
-                let rhs_raw = TypedExpr::from_ast(&bin.rhs, compiler, context)?;
+                let mut lhs = TypedExpr::from_ast(&bin.lhs, compiler, context)?;
+                let mut rhs = TypedExpr::from_ast(&bin.rhs, compiler, context)?;
                 // Auto-deref references for non-assignment binary ops so that `self: T&` works naturally
-                let mut lhs = if bin.op.tk != "=" { Self::coerce_ref(lhs_raw, &compiler.type_context) } else { lhs_raw };
-                let mut rhs = Self::coerce_ref(rhs_raw, &compiler.type_context);
+
 
                 if bin.op.tk != "=" {
                     Self::infer_literals_binary(&compiler.type_context, &mut lhs, &mut rhs);

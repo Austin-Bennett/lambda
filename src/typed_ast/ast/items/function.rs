@@ -6,7 +6,7 @@ use crate::typed_ast::ast::statements::vardecl::TypedVarDecl;
 use crate::typed_ast::typing::scope::AvailableContext;
 use crate::typed_ast::typing::tcontext::TypeContext;
 use crate::typed_ast::typing::ty::TypeId;
-use std::ops::AddAssign;
+use std::ops::{AddAssign, Deref};
 
 #[derive(PartialEq, Eq, Clone, Hash)]
 pub struct FunctionSignature {
@@ -48,7 +48,7 @@ impl Function {
                 f.add_assign("\n");
             }
 
-            for s in &code.data {
+            for s in code.data.deref() {
                 f.add_assign("\t");
                 f.add_assign(s.to_string(context).as_str());
                 f.add_assign("\n");

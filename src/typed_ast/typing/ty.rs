@@ -29,8 +29,7 @@ pub struct TypeInfo {
 
     pub llvm_type: AnyTypeEnum<'static>,
 
-    /// method_name → (mangled_name, function_type_id, public, static)
-    pub methods: HashMap<String, (String, TypeId, bool, bool)>,
+    pub methods: HashMap<String, (String, TypeId, bool)>,
 }
 
 impl TypeInfo {

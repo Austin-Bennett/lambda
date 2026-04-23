@@ -71,7 +71,7 @@ impl TypedIfSyntax {
             s.push('}');
         } else {
             s.push('\n');
-            for st in &self.data.code.data {
+            for st in self.data.code.data.deref() {
                 s.push('\t');
                 s += &st.to_string(context);
                 s.push('\n');
@@ -91,7 +91,7 @@ impl TypedIfSyntax {
                         s.push('}');
                     } else {
                         s.push('\n');
-                        for st in &e.data {
+                        for st in e.data.deref() {
                             s += &st.to_string(context);
                             s.push('\n');
                         }

@@ -1,3 +1,4 @@
+use std::ops::Deref;
 use crate::ast::GenericSyntax;
 use crate::ast::statements::while_stmt::WhileSyntax;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
@@ -25,7 +26,7 @@ impl TypedWhileSyntax {
             s.push('\n');
         }
         
-        for st in &self.data.code.data {
+        for st in self.data.code.data.deref() {
             s += &*st.to_string(context);
             s.push('\n');
         }

@@ -1,3 +1,4 @@
+use std::ops::{Deref, DerefMut};
 use crate::ast::block::BlockSyntax;
 use crate::ast::GenericSyntax;
 use crate::common::sourcemap::SourceMap;
@@ -9,7 +10,27 @@ use crate::typed_ast::ast::statements::TypedStatement;
 use crate::typed_ast::typing::scope::AvailableContext;
 use crate::typed_ast::typing::ty::TypeId;
 
-pub type TypedBlock = Vec<TypedStatement>;
+
+
+
+pub struct TypedBlock {
+    pub code: Vec<TypedStatement>,
+    pub drops: Vec<TypedExpr>,
+}
+
+impl Deref for TypedBlock {
+    type Target = Vec<TypedStatement>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.code
+    }
+}
+
+impl DerefMut for TypedBlock {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.code
+    }
+}
 
 
 pub type TypedBlockSyntax = GenericSyntax<TypedBlock>;
@@ -37,6 +58,8 @@ impl TypedBlockSyntax {
             }
             statements.push(stmt);
         }
+
+        let mut drops = Vec::new();
 
         // Append drop calls in LIFO order (last declared → dropped first).
         for (name, ty, drop_mangled, smap) in drop_vars.into_iter().rev() {
@@ -71,13 +94,16 @@ impl TypedBlockSyntax {
                     arguments: vec![self_ref],
                 })),
             };
-            statements.push(TypedStatement::Expr(drop_call));
+            drops.push(drop_call);
         }
 
         context.pop_last_scope();
 
         Some(Self{
-            data: statements,
+            data: TypedBlock {
+                code: statements,
+                drops,
+            },
             smap: blk.smap.clone(),
         })
     }

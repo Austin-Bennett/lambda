@@ -116,7 +116,7 @@ impl Syntax for FunctionSyntax {
         };
 
 
-        let mut next = tokens.pop_front();
+        let next = tokens.pop_front();
         
 
         //expect an open parentheses

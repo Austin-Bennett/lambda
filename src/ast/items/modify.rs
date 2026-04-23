@@ -147,7 +147,7 @@ impl Syntax for ModifySyntax {
                 smap.extend(fmap);
             } else {
                 compiler.emit_compile_message(
-                    CompileMessage::expected_token_error(
+                    CompileMessage::expected_token_in_error(
                         smap,
                         "fn keyword",
                         "modify block declaration",
@@ -258,21 +258,6 @@ impl Syntax for ModifySyntax {
                     body,
                 });
                 continue;
-            }
-            
-            let next = tokens.pop_front();
-            if let unpack_opt_tk!(TokenType::Statement(StatementToken::FnKW), fmap) = next {
-                smap.extend(fmap);
-            } else {
-                compiler.emit_compile_message(
-                    CompileMessage::expected_token_in_error(
-                        smap,
-                        "'fn' keyword",
-                        "modify block",
-                        next
-                    )
-                );
-                return None;
             }
 
             // Method name
