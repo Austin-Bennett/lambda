@@ -75,7 +75,7 @@ impl LTypedModule {
                     functions.push(func);
                 }
                 ast::Item::Modify(modify) => {
-                    //todo: allow any type, including compund types like arrays or pointers
+                    //todo: allow any type, including compound types like arrays or pointers
                     let Type::Typename(type_name) = &modify.data.ty else { continue; };
                     
                     let type_name = type_name.clone();

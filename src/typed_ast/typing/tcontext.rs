@@ -45,6 +45,10 @@ pub struct TypeContext {
     pub float32: TypeId,
     pub float64: TypeId,
 
+    //str or a string pointer is a uint8* utf8-encoded string
+    pub str: TypeId,
+
+
     pub intrinsics: HashMap<String, TypeId>,
 }
 
@@ -83,6 +87,7 @@ impl TypeContext {
             isize: 0,
             float32: 0,
             float64: 0,
+            str: 0,
             intrinsics: HashMap::new(),
         };
 
@@ -878,43 +883,10 @@ impl TypeContext {
     }
 
     pub fn name_of(&self, id: TypeId) -> Option<String> {
-        if id == self.isize { return Some("isize".to_string()); }
         let kind = &self.get_by_id(id)?.kind;
 
-        Some(match kind {
-            TypeKind::IntLiteral => "integer literal".to_string(),
-            TypeKind::FloatLiteral => "float literal".to_string(),
-            TypeKind::Int(w) => format!("int{}", w),
-            TypeKind::UInt(w) => format!("uint{}", w),
-            TypeKind::Float(w) => format!("float{}", w),
-            
-            TypeKind::Boolean => "bool".to_string(),
-            TypeKind::None => "none".to_string(),
+        let ty_ty = &self.type_ids[&id];
 
-            TypeKind::Struct(id) => format!("{}", self.structs[*id as usize].name),
-            TypeKind::Pointer(ty) => format!("{}*", self.name_of(*ty)?),
-            TypeKind::Reference(ty) => format!("{}&", self.name_of(*ty)?),
-            TypeKind::Slice(ty) => format!("{}[]", self.name_of(*ty)?),
-            TypeKind::Array { ty, size } => format!("{}[{}]", self.name_of(*ty)?, size),
-            TypeKind::Intrinsic { .. } => "<intrinsic>".to_string(),
-            TypeKind::Function { ret, params } => {
-                let mut res = String::new();
-                let _ = write!(res, "{}(", self.name_of(*ret)?);
-
-                let mut first = true;
-                for p in params {
-                    if !first {
-                        let _ =write!(res, ", ");
-                    }
-                    first = false;
-
-                    let _ = write!(res, "{}", self.name_of(*p)?);
-                }
-                res += ")";
-
-
-                res
-            }
-        })
+        Some(format!("{:?}", ty_ty))
     }
 }

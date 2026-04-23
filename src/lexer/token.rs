@@ -11,6 +11,8 @@ pub enum ExpressionToken {
     IntegerLiteral(IntegerLiteral),
     BoolLiteral(bool),
     FloatLiteral(f64),
+    StringLiteral(String),
+    CharLiteral(char),
 
     
     Operator(Operator),
