@@ -2,11 +2,11 @@ use crate::ast::statements::Statement;
 use crate::ast::{GenericSyntax, Syntax};
 use crate::common::sourcemap::SourceMap;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
+use crate::lexer::iter::TokenIterator;
 use crate::lexer::token::{FeatureToken, Token, TokenType};
-use crate::{token_match, unpack_opt_tk};
+use crate::token_match;
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
-use std::process::abort;
 
 pub type Block = Vec<Statement>;
 
@@ -30,17 +30,17 @@ impl Syntax for BlockSyntax {
         Self: Sized
     {
         if token_match!(tokens, TokenType::Feature(FeatureToken::OpenBrace)) {
-            let unpack_opt_tk!(TokenType::Feature(FeatureToken::OpenBrace), smap) = tokens.pop_front() else { abort(); };
+            let (_, smap) = tokens.next_feature().unwrap();
             let og_smap = smap.clone();
 
             let mut result = BlockSyntax::new(Block::new(), smap);
             loop {
-                if let unpack_opt_tk!(TokenType::Feature(FeatureToken::CloseBrace), bsmap) = tokens.get(0) {
+                if let Some((FeatureToken::CloseBrace, _)) = tokens.peek_feature() {
+                    let (_, bsmap) = tokens.next_feature().unwrap();
                     result.smap.extend(bsmap);
-                    tokens.pop_front();
                     break;
-                }else if token_match!(tokens, TokenType::Feature(FeatureToken::StatementEnd)) {
-                    tokens.pop_front();
+                } else if let Some((FeatureToken::StatementEnd, _)) = tokens.peek_feature() {
+                    tokens.next_feature();
                 } else {
                     let stmt = match Statement::parse(tokens, compiler) {
                         Some(v) => v,

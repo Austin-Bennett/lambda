@@ -189,3 +189,44 @@ modify int32 {
     }
 }
 ```
+
+
+*Operator Overloading*
+
+this is also done inside a modify block:
+
+*Syntax*
+```lambda
+//operator overloads are always public, if a public is put before a operator method
+//its allowed, but will cause a compiler warning
+operator operator_name(self, args...) = result { ... }
+```
+
+*Operator methods:*
+
+```lambda
+//addition, a + b = c
+operator add(self, other: T) = R { ... }
+
+//subtraction, a - b = c
+operator sub(self, other: T) = R { ... }
+
+//multiplication, a * b = c
+operator mul(self, other: T) = R { ... }
+
+//division, a / b = c
+operator div(self, other: T) = R { ... }
+
+//assignment, a = b
+//note that if T is Self, then it overrides the default move/copy operator for struct types, 
+//you cannot override it on primitives however, no other operator supports this besides assign
+operator assign(self, other: T) = R { ... }
+
+//comparison operator, a < b, a <= b, a > b, a >= b, a == b, a != b
+//returns 0 if equal, 1 if greater than, and -1 if less than
+//maybe todo: implement enums in lambda and replace this with a enum
+operator cmp(self, other: T) = int8 { ... }
+
+//drop operator / destructor operator
+operator drop(self) { ... }
+```

@@ -50,6 +50,23 @@ impl CompileMessage {
         }
     }
 
+    pub fn expected_token_in_error(src: SourceMap, what: impl AsRef<str>, in_: impl AsRef<str>, next_token: Option<Token>) -> Self {
+        match next_token {
+            Some(tk) => {
+                CompileMessage::new(
+                    src,
+                    format!("expected {} in {}, got token: {:?}", what.as_ref(), in_.as_ref(), tk.typ),
+                    CompileMessageType::Error
+                )
+            },
+            None => CompileMessage::new(
+                src,
+                format!("expected {} in {}", what.as_ref(), in_.as_ref()),
+                CompileMessageType::Error
+            )
+        }
+    }
+
     pub fn note(src: SourceMap, msg: String) -> Self {
         Self{
             source: src,

@@ -55,11 +55,16 @@ impl SourceMap {
 
     pub fn extend(&mut self, other: impl AsRef<SourceMap>) {
         let other = other.as_ref();
-        if self.end() < other.end() {
-            self.len = other.end() - self.offset;
-        } else if self.offset > other.offset {
+        if other.len == 0 { return; }
+        if self.len == 0 {
             self.offset = other.offset;
+            self.len = other.len;
+            return;
         }
+        let new_start = self.offset.min(other.offset);
+        let new_end = self.end().max(other.end());
+        self.offset = new_start;
+        self.len = new_end - new_start;
     }
     
 }

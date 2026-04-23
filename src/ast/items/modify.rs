@@ -33,14 +33,36 @@ impl Debug for MethodDecl {
     }
 }
 
+pub struct OperatorDecl {
+    pub op_name: String, // "add", "sub", "mul", "div", "assign", "cmp", "drop"
+    pub has_self: bool,
+    pub params: Vec<VarDeclSyntax>,
+    pub ret: Option<Type>,
+    pub body: Option<BlockSyntax>,
+}
+
+impl Debug for OperatorDecl {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "operator {}(", self.op_name)?;
+        if self.has_self { write!(f, "self")?; }
+        for p in &self.params {
+            write!(f, ", {:?}", p.data)?;
+        }
+        write!(f, ")")?;
+        if let Some(ret) = &self.ret { write!(f, " = {:?}", ret)?; }
+        Ok(())
+    }
+}
+
 pub struct ModifyBlock {
     pub ty: Type,
     pub methods: Vec<MethodDecl>,
+    pub operators: Vec<OperatorDecl>,
 }
 
 impl Debug for ModifyBlock {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "modify {:?} {{ {} methods }}", self.ty, self.methods.len())
+        write!(f, "modify {:?} {{ {} methods, {} operators }}", self.ty, self.methods.len(), self.operators.len())
     }
 }
 
@@ -84,6 +106,7 @@ impl Syntax for ModifySyntax {
         smap.extend(bsmap);
 
         let mut methods = Vec::new();
+        let mut operators = Vec::new();
 
         loop {
             // Skip semicolons
@@ -117,6 +140,124 @@ impl Syntax for ModifySyntax {
             } else {
                 (false, None)
             };
+
+            // Check for 'operator' keyword
+            if let Some(Token { typ: TokenType::Statement(StatementToken::OperatorKW), .. }) = tokens.get(0) {
+                if public {
+                    compiler.emit_compile_message(CompileMessage::new(
+                        smap.clone(),
+                        "operators are always public; 'public' keyword is redundant here".into(),
+                        CompileMessageType::Warning,
+                    ));
+                }
+                tokens.pop_front(); // consume 'operator'
+
+                // Operator name
+                let next = tokens.pop_front();
+                let (op_name, opsmap) = if let unpack_opt_tk!(
+                    TokenType::Expression(ExpressionToken::Identifier(name)), imap
+                ) = next {
+                    (name, imap)
+                } else {
+                    compiler.emit_compile_message(CompileMessage::expected_token_error(
+                        smap.clone(), "operator name", "operator declaration", next,
+                    ));
+                    continue;
+                };
+
+                // Consume '('
+                let next = tokens.pop_front();
+                if !matches!(next, unpack_opt_tk!(TokenType::Expression(ExpressionToken::OpenParentheses), _)) {
+                    compiler.emit_compile_message(CompileMessage::expected_token_error(
+                        opsmap.clone(), "'('", format!("operator '{}'", op_name), next,
+                    ));
+                    continue;
+                }
+
+                // Optional 'self'
+                let has_self = if let Some(Token {
+                    typ: TokenType::Expression(ExpressionToken::Identifier(s)), ..
+                }) = tokens.get(0) && s == "self" {
+                    tokens.pop_front();
+                    if let Some(Token { typ: TokenType::Feature(FeatureToken::Comma), .. }) = tokens.get(0) {
+                        tokens.pop_front();
+                    }
+                    true
+                } else {
+                    false
+                };
+
+                // Parse remaining params
+                let mut op_params = Vec::new();
+                let mut ended = false;
+                while let Some(vdecl) = VarDeclSyntax::parse(tokens, compiler) {
+                    op_params.push(vdecl);
+                    let next = tokens.pop_front();
+                    if let unpack_opt_tk!(TokenType::Feature(FeatureToken::Comma), _) = next {
+                        // continue
+                    } else if let unpack_opt_tk!(TokenType::Expression(ExpressionToken::CloseParentheses), _) = next {
+                        ended = true;
+                        break;
+                    } else {
+                        compiler.emit_compile_message(CompileMessage::expected_token_error(
+                            opsmap.clone(), "')'", format!("operator '{}'", op_name), next,
+                        ));
+                        break;
+                    }
+                }
+                if !ended {
+                    let next = tokens.pop_front();
+                    if !matches!(next, unpack_opt_tk!(TokenType::Expression(ExpressionToken::CloseParentheses), _)) {
+                        compiler.emit_compile_message(CompileMessage::expected_token_error(
+                            opsmap.clone(), "')'", format!("operator '{}'", op_name), next,
+                        ));
+                    }
+                }
+
+                // Optional return type: '= Type'
+                let op_ret = if let Some(Token {
+                    typ: TokenType::Expression(ExpressionToken::Operator(Operator { tk: "=", .. })), ..
+                }) = tokens.get(0) {
+                    tokens.pop_front();
+                    TypeSyntax::parse(tokens, compiler).map(|t| t.data)
+                } else {
+                    None
+                };
+
+                // Parse body
+                let body = BlockSyntax::parse(tokens, compiler);
+                if body.is_none() {
+                    compiler.emit_compile_message(CompileMessage::new(
+                        opsmap.clone(),
+                        format!("expected '{{' to begin body of operator '{}'", op_name),
+                        CompileMessageType::Error,
+                    ));
+                }
+                smap.extend(opsmap);
+                operators.push(OperatorDecl {
+                    op_name,
+                    has_self,
+                    params: op_params,
+                    ret: op_ret,
+                    body,
+                });
+                continue;
+            }
+            
+            let next = tokens.pop_front();
+            if let unpack_opt_tk!(TokenType::Statement(StatementToken::FnKW), fmap) = next {
+                smap.extend(fmap);
+            } else {
+                compiler.emit_compile_message(
+                    CompileMessage::expected_token_in_error(
+                        smap,
+                        "'fn' keyword",
+                        "modify block",
+                        next
+                    )
+                );
+                return None;
+            }
 
             // Method name
             let next = tokens.pop_front();
@@ -232,6 +373,9 @@ impl Syntax for ModifySyntax {
                 ));
             }
 
+            if let Some(ref body_syntax) = body {
+                smap.extend(&body_syntax.smap);
+            }
             smap.extend(msmap);
             methods.push(MethodDecl {
                 name: method_name,
@@ -245,7 +389,7 @@ impl Syntax for ModifySyntax {
 
         Some(ModifySyntax {
             smap,
-            data: ModifyBlock { ty, methods },
+            data: ModifyBlock { ty, methods, operators },
         })
     }
 

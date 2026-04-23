@@ -1,40 +1,113 @@
 ; ModuleID = 'lambda_program'
 source_filename = "lambda_program"
 
+declare ptr @malloc(i64)
+
+declare void @free(ptr)
+
+declare ptr @realloc(ptr, i64)
+
 define i32 @Point_sum(ptr %0) {
 entry:
   %self = alloca ptr, align 8
   store ptr %0, ptr %self, align 8
+  %return_var = alloca i32, align 4
   %self1 = load ptr, ptr %self, align 8
-  %deref_struct = load { i32, i32 }, ptr %self1, align 4
-  %member = extractvalue { i32, i32 } %deref_struct, 0
+  %refread = load { i32, i32 }, ptr %self1, align 4
+  %member = extractvalue { i32, i32 } %refread, 0
   %self2 = load ptr, ptr %self, align 8
-  %deref_struct3 = load { i32, i32 }, ptr %self2, align 4
-  %member4 = extractvalue { i32, i32 } %deref_struct3, 1
+  %refread3 = load { i32, i32 }, ptr %self2, align 4
+  %member4 = extractvalue { i32, i32 } %refread3, 1
   %iadd = add i32 %member, %member4
-  ret i32 %iadd
+  store i32 %iadd, ptr %return_var, align 4
+  br label %return
+
+return:                                           ; preds = %entry
+  %return_val = load i32, ptr %return_var, align 4
+  ret i32 %return_val
 }
 
 define i32 @Point_length2(ptr %0) {
 entry:
   %self = alloca ptr, align 8
   store ptr %0, ptr %self, align 8
+  %return_var = alloca i32, align 4
   %self1 = load ptr, ptr %self, align 8
-  %deref_struct = load { i32, i32 }, ptr %self1, align 4
-  %member = extractvalue { i32, i32 } %deref_struct, 0
+  %refread = load { i32, i32 }, ptr %self1, align 4
+  %member = extractvalue { i32, i32 } %refread, 0
   %self2 = load ptr, ptr %self, align 8
-  %deref_struct3 = load { i32, i32 }, ptr %self2, align 4
-  %member4 = extractvalue { i32, i32 } %deref_struct3, 0
+  %refread3 = load { i32, i32 }, ptr %self2, align 4
+  %member4 = extractvalue { i32, i32 } %refread3, 0
   %imul = mul i32 %member, %member4
   %self5 = load ptr, ptr %self, align 8
-  %deref_struct6 = load { i32, i32 }, ptr %self5, align 4
-  %member7 = extractvalue { i32, i32 } %deref_struct6, 1
+  %refread6 = load { i32, i32 }, ptr %self5, align 4
+  %member7 = extractvalue { i32, i32 } %refread6, 1
   %self8 = load ptr, ptr %self, align 8
-  %deref_struct9 = load { i32, i32 }, ptr %self8, align 4
-  %member10 = extractvalue { i32, i32 } %deref_struct9, 1
+  %refread9 = load { i32, i32 }, ptr %self8, align 4
+  %member10 = extractvalue { i32, i32 } %refread9, 1
   %imul11 = mul i32 %member7, %member10
   %iadd = add i32 %imul, %imul11
-  ret i32 %iadd
+  store i32 %iadd, ptr %return_var, align 4
+  br label %return
+
+return:                                           ; preds = %entry
+  %return_val = load i32, ptr %return_var, align 4
+  ret i32 %return_val
+}
+
+define { i32, i32 } @Point_scale(ptr %0, i32 %1) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %factor = alloca i32, align 4
+  store i32 %1, ptr %factor, align 4
+  %return_var = alloca { i32, i32 }, align 8
+  %self1 = load ptr, ptr %self, align 8
+  %refread = load { i32, i32 }, ptr %self1, align 4
+  %member = extractvalue { i32, i32 } %refread, 0
+  %factor2 = load i32, ptr %factor, align 4
+  %imul = mul i32 %member, %factor2
+  %sf = insertvalue { i32, i32 } undef, i32 %imul, 0
+  %self3 = load ptr, ptr %self, align 8
+  %refread4 = load { i32, i32 }, ptr %self3, align 4
+  %member5 = extractvalue { i32, i32 } %refread4, 1
+  %factor6 = load i32, ptr %factor, align 4
+  %imul7 = mul i32 %member5, %factor6
+  %sf8 = insertvalue { i32, i32 } %sf, i32 %imul7, 1
+  store { i32, i32 } %sf8, ptr %return_var, align 4
+  br label %return
+
+return:                                           ; preds = %entry
+  %return_val = load { i32, i32 }, ptr %return_var, align 4
+  ret { i32, i32 } %return_val
+}
+
+define { i32, i32 } @Point_origin() {
+entry:
+  %return_var = alloca { i32, i32 }, align 8
+  store { i32, i32 } zeroinitializer, ptr %return_var, align 4
+  br label %return
+
+return:                                           ; preds = %entry
+  %return_val = load { i32, i32 }, ptr %return_var, align 4
+  ret { i32, i32 } %return_val
+}
+
+define { i32, i32 } @Point_splat(i32 %0) {
+entry:
+  %v = alloca i32, align 4
+  store i32 %0, ptr %v, align 4
+  %return_var = alloca { i32, i32 }, align 8
+  %v1 = load i32, ptr %v, align 4
+  %sf = insertvalue { i32, i32 } undef, i32 %v1, 0
+  %v2 = load i32, ptr %v, align 4
+  %sf3 = insertvalue { i32, i32 } %sf, i32 %v2, 1
+  store { i32, i32 } %sf3, ptr %return_var, align 4
+  br label %return
+
+return:                                           ; preds = %entry
+  %return_val = load { i32, i32 }, ptr %return_var, align 4
+  ret { i32, i32 } %return_val
 }
 
 define i32 @int32_max(ptr %0, i32 %1) {
@@ -43,6 +116,7 @@ entry:
   store ptr %0, ptr %self, align 8
   %other = alloca i32, align 4
   store i32 %1, ptr %other, align 4
+  %return_var = alloca i32, align 4
   %self1 = load ptr, ptr %self, align 8
   %refread = load i32, ptr %self1, align 4
   %other2 = load i32, ptr %other, align 4
@@ -52,33 +126,786 @@ entry:
 then:                                             ; preds = %entry
   %self3 = load ptr, ptr %self, align 8
   %refread4 = load i32, ptr %self3, align 4
-  ret i32 %refread4
+  store i32 %refread4, ptr %return_var, align 4
+  br label %if_merge
 
 else:                                             ; preds = %entry
   br label %if_merge
 
-if_merge:                                         ; preds = %else
+if_merge:                                         ; preds = %else, %then
   %other5 = load i32, ptr %other, align 4
-  ret i32 %other5
+  store i32 %other5, ptr %return_var, align 4
+  br label %return
+
+return:                                           ; preds = %if_merge
+  %return_val = load i32, ptr %return_var, align 4
+  ret i32 %return_val
+}
+
+define i32 @int32_min(ptr %0, i32 %1) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %other = alloca i32, align 4
+  store i32 %1, ptr %other, align 4
+  %return_var = alloca i32, align 4
+  %self1 = load ptr, ptr %self, align 8
+  %refread = load i32, ptr %self1, align 4
+  %other2 = load i32, ptr %other, align 4
+  %ilt = icmp slt i32 %refread, %other2
+  br i1 %ilt, label %then, label %else
+
+then:                                             ; preds = %entry
+  %self3 = load ptr, ptr %self, align 8
+  %refread4 = load i32, ptr %self3, align 4
+  store i32 %refread4, ptr %return_var, align 4
+  br label %if_merge
+
+else:                                             ; preds = %entry
+  br label %if_merge
+
+if_merge:                                         ; preds = %else, %then
+  %other5 = load i32, ptr %other, align 4
+  store i32 %other5, ptr %return_var, align 4
+  br label %return
+
+return:                                           ; preds = %if_merge
+  %return_val = load i32, ptr %return_var, align 4
+  ret i32 %return_val
+}
+
+define i32 @int32_abs(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %return_var = alloca i32, align 4
+  %self1 = load ptr, ptr %self, align 8
+  %refread = load i32, ptr %self1, align 4
+  %ilt = icmp slt i32 %refread, 0
+  br i1 %ilt, label %then, label %else
+
+then:                                             ; preds = %entry
+  %self2 = load ptr, ptr %self, align 8
+  %refread3 = load i32, ptr %self2, align 4
+  %isub = sub i32 0, %refread3
+  store i32 %isub, ptr %return_var, align 4
+  br label %if_merge
+
+else:                                             ; preds = %entry
+  br label %if_merge
+
+if_merge:                                         ; preds = %else, %then
+  %self4 = load ptr, ptr %self, align 8
+  %refread5 = load i32, ptr %self4, align 4
+  store i32 %refread5, ptr %return_var, align 4
+  br label %return
+
+return:                                           ; preds = %if_merge
+  %return_val = load i32, ptr %return_var, align 4
+  ret i32 %return_val
+}
+
+define { ptr, i64, i64 } @IntList_new() {
+entry:
+  %return_var = alloca { ptr, i64, i64 }, align 8
+  %call = call ptr @malloc(i64 4)
+  %sf = insertvalue { ptr, i64, i64 } undef, ptr %call, 0
+  %sf1 = insertvalue { ptr, i64, i64 } %sf, i64 1, 1
+  %sf2 = insertvalue { ptr, i64, i64 } %sf1, i64 0, 2
+  store { ptr, i64, i64 } %sf2, ptr %return_var, align 8
+  br label %return
+
+return:                                           ; preds = %entry
+  %return_val = load { ptr, i64, i64 }, ptr %return_var, align 8
+  ret { ptr, i64, i64 } %return_val
+}
+
+define void @IntList_add(ptr %0, i32 %1) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %e = alloca i32, align 4
+  store i32 %1, ptr %e, align 4
+  %self1 = load ptr, ptr %self, align 8
+  %refread = load { ptr, i64, i64 }, ptr %self1, align 8
+  %member = extractvalue { ptr, i64, i64 } %refread, 2
+  %self2 = load ptr, ptr %self, align 8
+  %refread3 = load { ptr, i64, i64 }, ptr %self2, align 8
+  %member4 = extractvalue { ptr, i64, i64 } %refread3, 1
+  %uge = icmp uge i64 %member, %member4
+  br i1 %uge, label %then, label %else
+
+then:                                             ; preds = %entry
+  %new_size = alloca i64, align 8
+  %self5 = load ptr, ptr %self, align 8
+  %refread6 = load { ptr, i64, i64 }, ptr %self5, align 8
+  %member7 = extractvalue { ptr, i64, i64 } %refread6, 2
+  %umul = mul i64 %member7, 2
+  %uadd = add i64 %umul, 1
+  store i64 %uadd, ptr %new_size, align 4
+  %self8 = load ptr, ptr %self, align 8
+  %refread9 = load { ptr, i64, i64 }, ptr %self8, align 8
+  %member10 = extractvalue { ptr, i64, i64 } %refread9, 0
+  %new_size11 = load i64, ptr %new_size, align 4
+  %umul12 = mul i64 %new_size11, 4
+  %call = call ptr @realloc(ptr %member10, i64 %umul12)
+  %self13 = load ptr, ptr %self, align 8
+  %field_ptr = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self13, i32 0, i32 0
+  store ptr %call, ptr %field_ptr, align 8
+  %new_size14 = load i64, ptr %new_size, align 4
+  %self15 = load ptr, ptr %self, align 8
+  %field_ptr16 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self15, i32 0, i32 1
+  store i64 %new_size14, ptr %field_ptr16, align 4
+  br label %if_merge
+
+else:                                             ; preds = %entry
+  br label %if_merge
+
+if_merge:                                         ; preds = %else, %then
+  %e17 = load i32, ptr %e, align 4
+  %self18 = load ptr, ptr %self, align 8
+  %refread19 = load { ptr, i64, i64 }, ptr %self18, align 8
+  %member20 = extractvalue { ptr, i64, i64 } %refread19, 0
+  %self21 = load ptr, ptr %self, align 8
+  %refread22 = load { ptr, i64, i64 }, ptr %self21, align 8
+  %member23 = extractvalue { ptr, i64, i64 } %refread22, 2
+  %ptr_add = getelementptr i8, ptr %member20, i64 %member23
+  store i32 %e17, ptr %ptr_add, align 4
+  %self24 = load ptr, ptr %self, align 8
+  %refread25 = load { ptr, i64, i64 }, ptr %self24, align 8
+  %member26 = extractvalue { ptr, i64, i64 } %refread25, 2
+  %uadd27 = add i64 %member26, 1
+  %self28 = load ptr, ptr %self, align 8
+  %field_ptr29 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self28, i32 0, i32 2
+  store i64 %uadd27, ptr %field_ptr29, align 4
+  br label %return
+
+return:                                           ; preds = %if_merge
+  ret void
+}
+
+define ptr @IntList_get(ptr %0, i64 %1) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %index = alloca i64, align 8
+  store i64 %1, ptr %index, align 4
+  %return_var = alloca ptr, align 8
+  %self1 = load ptr, ptr %self, align 8
+  %refread = load { ptr, i64, i64 }, ptr %self1, align 8
+  %member = extractvalue { ptr, i64, i64 } %refread, 0
+  %index2 = load i64, ptr %index, align 4
+  %ptr_add = getelementptr i8, ptr %member, i64 %index2
+  br label %return
+
+return:                                           ; preds = %entry
+  %return_val = load ptr, ptr %return_var, align 8
+  ret ptr %return_val
+}
+
+define void @IntList__op_drop(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  %self1 = load ptr, ptr %self, align 8
+  %refread = load { ptr, i64, i64 }, ptr %self1, align 8
+  %member = extractvalue { ptr, i64, i64 } %refread, 0
+  call void @free(ptr %member)
+  br label %return
+
+return:                                           ; preds = %entry
+  ret void
 }
 
 define i8 @main() {
 entry:
+  %return_var = alloca i8, align 1
+  %r = alloca i32, align 4
+  store i32 7, ptr %r, align 4
+  %r1 = load i32, ptr %r, align 4
+  %ine = icmp ne i32 %r1, 7
+  br i1 %ine, label %then, label %else
+
+then:                                             ; preds = %entry
+  store i8 1, ptr %return_var, align 1
+  br label %if_merge
+
+else:                                             ; preds = %entry
+  br label %if_merge
+
+if_merge:                                         ; preds = %else, %then
+  store i32 7, ptr %r, align 4
+  %r5 = load i32, ptr %r, align 4
+  %ine6 = icmp ne i32 %r5, 7
+  br i1 %ine6, label %then2, label %else3
+
+then2:                                            ; preds = %if_merge
+  store i8 2, ptr %return_var, align 1
+  br label %if_merge4
+
+else3:                                            ; preds = %if_merge
+  br label %if_merge4
+
+if_merge4:                                        ; preds = %else3, %then2
+  store i32 42, ptr %r, align 4
+  %r10 = load i32, ptr %r, align 4
+  %ine11 = icmp ne i32 %r10, 42
+  br i1 %ine11, label %then7, label %else8
+
+then7:                                            ; preds = %if_merge4
+  store i8 3, ptr %return_var, align 1
+  br label %if_merge9
+
+else8:                                            ; preds = %if_merge4
+  br label %if_merge9
+
+if_merge9:                                        ; preds = %else8, %then7
+  store i32 5, ptr %r, align 4
+  %r15 = load i32, ptr %r, align 4
+  %ine16 = icmp ne i32 %r15, 5
+  br i1 %ine16, label %then12, label %else13
+
+then12:                                           ; preds = %if_merge9
+  store i8 4, ptr %return_var, align 1
+  br label %if_merge14
+
+else13:                                           ; preds = %if_merge9
+  br label %if_merge14
+
+if_merge14:                                       ; preds = %else13, %then12
+  store i32 -9, ptr %r, align 4
+  %r20 = load i32, ptr %r, align 4
+  %ine21 = icmp ne i32 %r20, -9
+  br i1 %ine21, label %then17, label %else18
+
+then17:                                           ; preds = %if_merge14
+  store i8 5, ptr %return_var, align 1
+  br label %if_merge19
+
+else18:                                           ; preds = %if_merge14
+  br label %if_merge19
+
+if_merge19:                                       ; preds = %else18, %then17
+  br i1 false, label %then22, label %else23
+
+then22:                                           ; preds = %if_merge19
+  store i8 6, ptr %return_var, align 1
+  br label %if_merge24
+
+else23:                                           ; preds = %if_merge19
+  br label %if_merge24
+
+if_merge24:                                       ; preds = %else23, %then22
+  %b = alloca i1, align 1
+  store i1 true, ptr %b, align 1
+  %b28 = load i1, ptr %b, align 1
+  %beq = icmp eq i1 %b28, false
+  br i1 %beq, label %then25, label %else26
+
+then25:                                           ; preds = %if_merge24
+  store i8 7, ptr %return_var, align 1
+  br label %if_merge27
+
+else26:                                           ; preds = %if_merge24
+  br label %if_merge27
+
+if_merge27:                                       ; preds = %else26, %then25
+  store i1 true, ptr %b, align 1
+  %b32 = load i1, ptr %b, align 1
+  %beq33 = icmp eq i1 %b32, false
+  br i1 %beq33, label %then29, label %else30
+
+then29:                                           ; preds = %if_merge27
+  store i8 8, ptr %return_var, align 1
+  br label %if_merge31
+
+else30:                                           ; preds = %if_merge27
+  br label %if_merge31
+
+if_merge31:                                       ; preds = %else30, %then29
+  store i1 true, ptr %b, align 1
+  %b37 = load i1, ptr %b, align 1
+  %beq38 = icmp eq i1 %b37, false
+  br i1 %beq38, label %then34, label %else35
+
+then34:                                           ; preds = %if_merge31
+  store i8 9, ptr %return_var, align 1
+  br label %if_merge36
+
+else35:                                           ; preds = %if_merge31
+  br label %if_merge36
+
+if_merge36:                                       ; preds = %else35, %then34
+  store i1 true, ptr %b, align 1
+  %b42 = load i1, ptr %b, align 1
+  %beq43 = icmp eq i1 %b42, false
+  br i1 %beq43, label %then39, label %else40
+
+then39:                                           ; preds = %if_merge36
+  store i8 10, ptr %return_var, align 1
+  br label %if_merge41
+
+else40:                                           ; preds = %if_merge36
+  br label %if_merge41
+
+if_merge41:                                       ; preds = %else40, %then39
+  store i1 true, ptr %b, align 1
+  %b47 = load i1, ptr %b, align 1
+  %beq48 = icmp eq i1 %b47, false
+  br i1 %beq48, label %then44, label %else45
+
+then44:                                           ; preds = %if_merge41
+  store i8 11, ptr %return_var, align 1
+  br label %if_merge46
+
+else45:                                           ; preds = %if_merge41
+  br label %if_merge46
+
+if_merge46:                                       ; preds = %else45, %then44
+  store i32 0, ptr %r, align 4
+  br i1 false, label %then49, label %else50
+
+then49:                                           ; preds = %if_merge46
+  store i32 1, ptr %r, align 4
+  br label %if_merge51
+
+else50:                                           ; preds = %if_merge46
+  store i32 2, ptr %r, align 4
+  br label %if_merge51
+
+if_merge51:                                       ; preds = %else50, %then49
+  %r55 = load i32, ptr %r, align 4
+  %ine56 = icmp ne i32 %r55, 2
+  br i1 %ine56, label %then52, label %else53
+
+then52:                                           ; preds = %if_merge51
+  store i8 12, ptr %return_var, align 1
+  br label %if_merge54
+
+else53:                                           ; preds = %if_merge51
+  br label %if_merge54
+
+if_merge54:                                       ; preds = %else53, %then52
+  store i32 0, ptr %r, align 4
+  br i1 true, label %then57, label %else58
+
+then57:                                           ; preds = %if_merge54
+  store i32 1, ptr %r, align 4
+  br label %if_merge59
+
+else58:                                           ; preds = %if_merge54
+  store i32 2, ptr %r, align 4
+  br label %if_merge59
+
+if_merge59:                                       ; preds = %else58, %then57
+  %r63 = load i32, ptr %r, align 4
+  %ine64 = icmp ne i32 %r63, 1
+  br i1 %ine64, label %then60, label %else61
+
+then60:                                           ; preds = %if_merge59
+  store i8 13, ptr %return_var, align 1
+  br label %if_merge62
+
+else61:                                           ; preds = %if_merge59
+  br label %if_merge62
+
+if_merge62:                                       ; preds = %else61, %then60
+  %i = alloca i32, align 4
+  store i32 1, ptr %i, align 4
+  %s = alloca i32, align 4
+  store i32 0, ptr %s, align 4
+  br label %loop_start
+
+loop_start:                                       ; preds = %loop, %if_merge62
+  %i65 = load i32, ptr %i, align 4
+  %ile = icmp sle i32 %i65, 5
+  br i1 %ile, label %loop, label %loop_end
+
+loop:                                             ; preds = %loop_start
+  %s66 = load i32, ptr %s, align 4
+  %i67 = load i32, ptr %i, align 4
+  %iadd = add i32 %s66, %i67
+  store i32 %iadd, ptr %s, align 4
+  %i68 = load i32, ptr %i, align 4
+  %iadd69 = add i32 %i68, 1
+  store i32 %iadd69, ptr %i, align 4
+  br label %loop_start
+
+loop_end:                                         ; preds = %loop_start
+  %s73 = load i32, ptr %s, align 4
+  %ine74 = icmp ne i32 %s73, 15
+  br i1 %ine74, label %then70, label %else71
+
+then70:                                           ; preds = %loop_end
+  store i8 14, ptr %return_var, align 1
+  br label %if_merge72
+
+else71:                                           ; preds = %loop_end
+  br label %if_merge72
+
+if_merge72:                                       ; preds = %else71, %then70
+  %i78 = load i32, ptr %i, align 4
+  %ine79 = icmp ne i32 %i78, 6
+  br i1 %ine79, label %then75, label %else76
+
+then75:                                           ; preds = %if_merge72
+  store i8 15, ptr %return_var, align 1
+  br label %if_merge77
+
+else76:                                           ; preds = %if_merge72
+  br label %if_merge77
+
+if_merge77:                                       ; preds = %else76, %then75
   %p = alloca { i32, i32 }, align 8
   store { i32, i32 } { i32 3, i32 4 }, ptr %p, align 4
-  %s = alloca i32, align 4
-  %call = call i32 @Point_sum(ptr %p)
-  store i32 %call, ptr %s, align 4
-  %s2 = alloca i32, align 4
-  %call1 = call i32 @Point_length2(ptr %p)
-  store i32 %call1, ptr %s2, align 4
+  %p83 = load { i32, i32 }, ptr %p, align 4
+  %member = extractvalue { i32, i32 } %p83, 0
+  %ine84 = icmp ne i32 %member, 3
+  br i1 %ine84, label %then80, label %else81
+
+then80:                                           ; preds = %if_merge77
+  store i8 16, ptr %return_var, align 1
+  br label %if_merge82
+
+else81:                                           ; preds = %if_merge77
+  br label %if_merge82
+
+if_merge82:                                       ; preds = %else81, %then80
+  %p88 = load { i32, i32 }, ptr %p, align 4
+  %member89 = extractvalue { i32, i32 } %p88, 1
+  %ine90 = icmp ne i32 %member89, 4
+  br i1 %ine90, label %then85, label %else86
+
+then85:                                           ; preds = %if_merge82
+  store i8 17, ptr %return_var, align 1
+  br label %if_merge87
+
+else86:                                           ; preds = %if_merge82
+  br label %if_merge87
+
+if_merge87:                                       ; preds = %else86, %then85
+  %field_ptr = getelementptr inbounds nuw { i32, i32 }, ptr %p, i32 0, i32 0
+  store i32 10, ptr %field_ptr, align 4
+  %p94 = load { i32, i32 }, ptr %p, align 4
+  %member95 = extractvalue { i32, i32 } %p94, 0
+  %ine96 = icmp ne i32 %member95, 10
+  br i1 %ine96, label %then91, label %else92
+
+then91:                                           ; preds = %if_merge87
+  store i8 18, ptr %return_var, align 1
+  br label %if_merge93
+
+else92:                                           ; preds = %if_merge87
+  br label %if_merge93
+
+if_merge93:                                       ; preds = %else92, %then91
+  %p100 = load { i32, i32 }, ptr %p, align 4
+  %member101 = extractvalue { i32, i32 } %p100, 1
+  %ine102 = icmp ne i32 %member101, 4
+  br i1 %ine102, label %then97, label %else98
+
+then97:                                           ; preds = %if_merge93
+  store i8 19, ptr %return_var, align 1
+  br label %if_merge99
+
+else98:                                           ; preds = %if_merge93
+  br label %if_merge99
+
+if_merge99:                                       ; preds = %else98, %then97
+  %p2 = alloca { i32, i32 }, align 8
+  store { i32, i32 } { i32 3, i32 4 }, ptr %p2, align 4
+  %call = call i32 @Point_sum(ptr %p2)
+  %ine106 = icmp ne i32 %call, 7
+  br i1 %ine106, label %then103, label %else104
+
+then103:                                          ; preds = %if_merge99
+  store i8 20, ptr %return_var, align 1
+  br label %if_merge105
+
+else104:                                          ; preds = %if_merge99
+  br label %if_merge105
+
+if_merge105:                                      ; preds = %else104, %then103
+  %call110 = call i32 @Point_length2(ptr %p2)
+  %ine111 = icmp ne i32 %call110, 25
+  br i1 %ine111, label %then107, label %else108
+
+then107:                                          ; preds = %if_merge105
+  store i8 21, ptr %return_var, align 1
+  br label %if_merge109
+
+else108:                                          ; preds = %if_merge105
+  br label %if_merge109
+
+if_merge109:                                      ; preds = %else108, %then107
   %a = alloca i32, align 4
   store i32 10, ptr %a, align 4
-  %b = alloca i32, align 4
-  %s3 = load i32, ptr %s, align 4
-  %call4 = call i32 @int32_max(ptr %a, i32 %s3)
-  store i32 %call4, ptr %b, align 4
-  %s25 = load i32, ptr %s2, align 4
-  %trunc = trunc i32 %s25 to i8
-  ret i8 %trunc
+  %bv = alloca i32, align 4
+  store i32 20, ptr %bv, align 4
+  %bv115 = load i32, ptr %bv, align 4
+  %call116 = call i32 @int32_max(ptr %a, i32 %bv115)
+  %ine117 = icmp ne i32 %call116, 20
+  br i1 %ine117, label %then112, label %else113
+
+then112:                                          ; preds = %if_merge109
+  store i8 22, ptr %return_var, align 1
+  br label %if_merge114
+
+else113:                                          ; preds = %if_merge109
+  br label %if_merge114
+
+if_merge114:                                      ; preds = %else113, %then112
+  %bv121 = load i32, ptr %bv, align 4
+  %call122 = call i32 @int32_min(ptr %a, i32 %bv121)
+  %ine123 = icmp ne i32 %call122, 10
+  br i1 %ine123, label %then118, label %else119
+
+then118:                                          ; preds = %if_merge114
+  store i8 23, ptr %return_var, align 1
+  br label %if_merge120
+
+else119:                                          ; preds = %if_merge114
+  br label %if_merge120
+
+if_merge120:                                      ; preds = %else119, %then118
+  %p3 = alloca { i32, i32 }, align 8
+  %call124 = call { i32, i32 } @Point_scale(ptr %p2, i32 2)
+  store { i32, i32 } %call124, ptr %p3, align 4
+  %p3128 = load { i32, i32 }, ptr %p3, align 4
+  %member129 = extractvalue { i32, i32 } %p3128, 0
+  %ine130 = icmp ne i32 %member129, 6
+  br i1 %ine130, label %then125, label %else126
+
+then125:                                          ; preds = %if_merge120
+  store i8 24, ptr %return_var, align 1
+  br label %if_merge127
+
+else126:                                          ; preds = %if_merge120
+  br label %if_merge127
+
+if_merge127:                                      ; preds = %else126, %then125
+  %p3134 = load { i32, i32 }, ptr %p3, align 4
+  %member135 = extractvalue { i32, i32 } %p3134, 1
+  %ine136 = icmp ne i32 %member135, 8
+  br i1 %ine136, label %then131, label %else132
+
+then131:                                          ; preds = %if_merge127
+  store i8 25, ptr %return_var, align 1
+  br label %if_merge133
+
+else132:                                          ; preds = %if_merge127
+  br label %if_merge133
+
+if_merge133:                                      ; preds = %else132, %then131
+  %neg = alloca i32, align 4
+  store i32 -5, ptr %neg, align 4
+  %call140 = call i32 @int32_abs(ptr %neg)
+  %ine141 = icmp ne i32 %call140, 5
+  br i1 %ine141, label %then137, label %else138
+
+then137:                                          ; preds = %if_merge133
+  store i8 26, ptr %return_var, align 1
+  br label %if_merge139
+
+else138:                                          ; preds = %if_merge133
+  br label %if_merge139
+
+if_merge139:                                      ; preds = %else138, %then137
+  %pos = alloca i32, align 4
+  store i32 5, ptr %pos, align 4
+  %call145 = call i32 @int32_abs(ptr %pos)
+  %ine146 = icmp ne i32 %call145, 5
+  br i1 %ine146, label %then142, label %else143
+
+then142:                                          ; preds = %if_merge139
+  store i8 27, ptr %return_var, align 1
+  br label %if_merge144
+
+else143:                                          ; preds = %if_merge139
+  br label %if_merge144
+
+if_merge144:                                      ; preds = %else143, %then142
+  %fa = alloca double, align 8
+  store double 4.000000e+00, ptr %fa, align 8
+  %fa150 = load double, ptr %fa, align 8
+  %fne = fcmp one double %fa150, 4.000000e+00
+  br i1 %fne, label %then147, label %else148
+
+then147:                                          ; preds = %if_merge144
+  store i8 28, ptr %return_var, align 1
+  br label %if_merge149
+
+else148:                                          ; preds = %if_merge144
+  br label %if_merge149
+
+if_merge149:                                      ; preds = %else148, %then147
+  %fb = alloca double, align 8
+  store double 3.500000e+00, ptr %fb, align 8
+  %fb154 = load double, ptr %fb, align 8
+  %fne155 = fcmp one double %fb154, 3.500000e+00
+  br i1 %fne155, label %then151, label %else152
+
+then151:                                          ; preds = %if_merge149
+  store i8 29, ptr %return_var, align 1
+  br label %if_merge153
+
+else152:                                          ; preds = %if_merge149
+  br label %if_merge153
+
+if_merge153:                                      ; preds = %else152, %then151
+  %fc = alloca double, align 8
+  store double 6.000000e+00, ptr %fc, align 8
+  %fc159 = load double, ptr %fc, align 8
+  %fne160 = fcmp one double %fc159, 6.000000e+00
+  br i1 %fne160, label %then156, label %else157
+
+then156:                                          ; preds = %if_merge153
+  store i8 30, ptr %return_var, align 1
+  br label %if_merge158
+
+else157:                                          ; preds = %if_merge153
+  br label %if_merge158
+
+if_merge158:                                      ; preds = %else157, %then156
+  %big = alloca i32, align 4
+  store i32 42, ptr %big, align 4
+  %small = alloca i8, align 1
+  %big161 = load i32, ptr %big, align 4
+  %trunc = trunc i32 %big161 to i8
+  store i8 %trunc, ptr %small, align 1
+  %small165 = load i8, ptr %small, align 1
+  %ine166 = icmp ne i8 %small165, 42
+  br i1 %ine166, label %then162, label %else163
+
+then162:                                          ; preds = %if_merge158
+  store i8 31, ptr %return_var, align 1
+  br label %if_merge164
+
+else163:                                          ; preds = %if_merge158
+  br label %if_merge164
+
+if_merge164:                                      ; preds = %else163, %then162
+  store i32 14, ptr %r, align 4
+  %r170 = load i32, ptr %r, align 4
+  %ine171 = icmp ne i32 %r170, 14
+  br i1 %ine171, label %then167, label %else168
+
+then167:                                          ; preds = %if_merge164
+  store i8 32, ptr %return_var, align 1
+  br label %if_merge169
+
+else168:                                          ; preds = %if_merge164
+  br label %if_merge169
+
+if_merge169:                                      ; preds = %else168, %then167
+  store i32 0, ptr %r, align 4
+  br i1 true, label %then172, label %else173
+
+then172:                                          ; preds = %if_merge169
+  br i1 true, label %then175, label %else176
+
+else173:                                          ; preds = %if_merge169
+  br label %if_merge174
+
+if_merge174:                                      ; preds = %else173, %if_merge177
+  %r181 = load i32, ptr %r, align 4
+  %ine182 = icmp ne i32 %r181, 99
+  br i1 %ine182, label %then178, label %else179
+
+then175:                                          ; preds = %then172
+  store i32 99, ptr %r, align 4
+  br label %if_merge177
+
+else176:                                          ; preds = %then172
+  br label %if_merge177
+
+if_merge177:                                      ; preds = %else176, %then175
+  br label %if_merge174
+
+then178:                                          ; preds = %if_merge174
+  store i8 33, ptr %return_var, align 1
+  br label %if_merge180
+
+else179:                                          ; preds = %if_merge174
+  br label %if_merge180
+
+if_merge180:                                      ; preds = %else179, %then178
+  %origin = alloca { i32, i32 }, align 8
+  %call183 = call { i32, i32 } @Point_origin()
+  store { i32, i32 } %call183, ptr %origin, align 4
+  %origin187 = load { i32, i32 }, ptr %origin, align 4
+  %member188 = extractvalue { i32, i32 } %origin187, 0
+  %ine189 = icmp ne i32 %member188, 0
+  br i1 %ine189, label %then184, label %else185
+
+then184:                                          ; preds = %if_merge180
+  store i8 34, ptr %return_var, align 1
+  br label %if_merge186
+
+else185:                                          ; preds = %if_merge180
+  br label %if_merge186
+
+if_merge186:                                      ; preds = %else185, %then184
+  %origin193 = load { i32, i32 }, ptr %origin, align 4
+  %member194 = extractvalue { i32, i32 } %origin193, 1
+  %ine195 = icmp ne i32 %member194, 0
+  br i1 %ine195, label %then190, label %else191
+
+then190:                                          ; preds = %if_merge186
+  store i8 35, ptr %return_var, align 1
+  br label %if_merge192
+
+else191:                                          ; preds = %if_merge186
+  br label %if_merge192
+
+if_merge192:                                      ; preds = %else191, %then190
+  %sp = alloca { i32, i32 }, align 8
+  %call196 = call { i32, i32 } @Point_splat(i32 7)
+  store { i32, i32 } %call196, ptr %sp, align 4
+  %sp200 = load { i32, i32 }, ptr %sp, align 4
+  %member201 = extractvalue { i32, i32 } %sp200, 0
+  %ine202 = icmp ne i32 %member201, 7
+  br i1 %ine202, label %then197, label %else198
+
+then197:                                          ; preds = %if_merge192
+  store i8 36, ptr %return_var, align 1
+  br label %if_merge199
+
+else198:                                          ; preds = %if_merge192
+  br label %if_merge199
+
+if_merge199:                                      ; preds = %else198, %then197
+  %sp206 = load { i32, i32 }, ptr %sp, align 4
+  %member207 = extractvalue { i32, i32 } %sp206, 1
+  %ine208 = icmp ne i32 %member207, 7
+  br i1 %ine208, label %then203, label %else204
+
+then203:                                          ; preds = %if_merge199
+  store i8 37, ptr %return_var, align 1
+  br label %if_merge205
+
+else204:                                          ; preds = %if_merge199
+  br label %if_merge205
+
+if_merge205:                                      ; preds = %else204, %then203
+  %list = alloca { ptr, i64, i64 }, align 8
+  %call209 = call { ptr, i64, i64 } @IntList_new()
+  store { ptr, i64, i64 } %call209, ptr %list, align 8
+  call void @IntList_add(ptr %list, i32 1)
+  call void @IntList_add(ptr %list, i32 2)
+  call void @IntList_add(ptr %list, i32 3)
+  call void @IntList_add(ptr %list, i32 4)
+  call void @IntList_add(ptr %list, i32 5)
+  call void @IntList_add(ptr %list, i32 6)
+  call void @IntList_add(ptr %list, i32 7)
+  call void @IntList_add(ptr %list, i32 8)
+  call void @IntList_add(ptr %list, i32 9)
+  call void @IntList_add(ptr %list, i32 10)
+  store i8 0, ptr %return_var, align 1
+  call void @IntList__op_drop(ptr %list)
+  br label %return
+
+return:                                           ; preds = %if_merge205
+  %return_val = load i8, ptr %return_var, align 1
+  ret i8 %return_val
 }

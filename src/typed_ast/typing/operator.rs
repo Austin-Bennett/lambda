@@ -43,6 +43,19 @@ pub struct OperatorOverloads {
     pub mul: HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
     pub div: HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
 
+    // User-defined operator functions: rhs TypeId -> (result TypeId, mangled function name)
+    // These take priority over the built-in codegen callbacks above.
+    pub user_add: HashMap<TypeId, (TypeId, String)>,
+    pub user_sub: HashMap<TypeId, (TypeId, String)>,
+    pub user_mul: HashMap<TypeId, (TypeId, String)>,
+    pub user_div: HashMap<TypeId, (TypeId, String)>,
+    // cmp result is always int8; rhs TypeId -> mangled name
+    pub user_cmp: HashMap<TypeId, String>,
+    // assign: rhs TypeId -> (result TypeId, mangled name)
+    pub user_assign: HashMap<TypeId, (TypeId, String)>,
+    // drop: mangled name of the drop function (no rhs, no return)
+    pub drop: Option<String>,
+
     // assign: rhs TypeId -> store callback
     pub assign: HashMap<TypeId, AssignmentMaker>,
 
@@ -52,7 +65,7 @@ pub struct OperatorOverloads {
     // call: parameter type list -> result TypeId
     // (codegen for call is handled separately in compile_expression)
     pub call: HashMap<Vec<TypeId>, TypeId>,
-    
+
     pub index: HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
 
     // explicit `as` casts: target TypeId -> codegen callback
@@ -71,6 +84,14 @@ impl OperatorOverloads {
             sub: HashMap::new(),
             mul: HashMap::new(),
             div: HashMap::new(),
+
+            user_add: HashMap::new(),
+            user_sub: HashMap::new(),
+            user_mul: HashMap::new(),
+            user_div: HashMap::new(),
+            user_cmp: HashMap::new(),
+            user_assign: HashMap::new(),
+            drop: None,
 
             assign: HashMap::new(),
             from_literal: HashMap::new(),

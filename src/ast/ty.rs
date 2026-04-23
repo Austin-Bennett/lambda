@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
-use std::process::abort;
 use std::ptr;
 use crate::ast::{GenericSyntax, Syntax};
 use crate::ast::statements::expressions::ExprSyntax;
@@ -74,7 +73,7 @@ impl TypeSyntax {
             unpack_tk!(TokenType::Expression(
                 ExpressionToken::Operator( Operator{ tk: "*", .. } )
             ), _) => {
-                let unpack_opt_tk!(_, smap) = tokens.pop_front() else { abort() };
+                let unpack_opt_tk!(_, smap) = tokens.pop_front() else { unreachable!() };
 
                 self.smap.extend(smap);
 
@@ -89,7 +88,7 @@ impl TypeSyntax {
             unpack_tk!(TokenType::Expression(
                 ExpressionToken::Operator( Operator{ tk: "&", .. } )
             ), _) => {
-                let unpack_opt_tk!(_, smap) = tokens.pop_front() else { abort() };
+                let unpack_opt_tk!(_, smap) = tokens.pop_front() else { unreachable!() };
 
                 self.smap.extend(smap);
 
@@ -104,7 +103,7 @@ impl TypeSyntax {
             unpack_tk!(TokenType::Expression(
                 ExpressionToken::OpenBracket
             ), _) => {
-                let unpack_opt_tk!(_, smap) = tokens.pop_front() else { abort() };
+                let unpack_opt_tk!(_, smap) = tokens.pop_front() else { unreachable!() };
 
                 let open_brack_smap = smap.clone();
 
