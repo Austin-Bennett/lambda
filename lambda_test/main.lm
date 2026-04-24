@@ -4,7 +4,8 @@
 
 
 fn main() = int8 {
-    let x = 3 as int8;
+    let s = "hello, world!";
 
-    return x;
+
+    return 0;
 }

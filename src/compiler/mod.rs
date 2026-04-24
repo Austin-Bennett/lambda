@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::hash::Hash;
 use std::mem;
 use std::ops::Deref;
 use std::path::PathBuf;
+use std::process::id;
 use inkwell::AddressSpace;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use crate::common::source_owner::SourceOwner;
@@ -33,6 +35,30 @@ pub enum CompileMessageType {
 }
 
 
+pub struct Registry<T: Hash + Eq + Clone>  {
+    pub items: Vec<T>,
+    pub item_map: HashMap<T, u32>,
+}
+
+impl<T: Hash + Eq + Clone> Registry<T> {
+    pub fn new() -> Self {
+        Self{
+            items: Vec::new(),
+            item_map: HashMap::new(),
+        }
+    }
+
+    pub fn add(&mut self, item: T) -> u32 {
+        if let Some(v) = self.item_map.get(&item) {
+            return *v;
+        }
+        let id = self.items.len();
+        self.item_map.insert(item.clone(), id as u32);
+        self.items.push(item);
+
+        id as u32
+    }
+}
 
 
 
@@ -52,6 +78,8 @@ pub struct Compiler {
 
     pub llvm_context: &'static inkwell::context::Context,
     pub type_context: TypeContext,
+
+    pub str_literal_reg: Registry<String>,
 }
 
 
@@ -70,6 +98,7 @@ impl Compiler {
             _findset:            HashSet::new(),
             module_search_paths: vec![PathBuf::from("./")],
             intrinsics:          HashMap::new(),
+            str_literal_reg: Registry::new(),
         }
     }
 

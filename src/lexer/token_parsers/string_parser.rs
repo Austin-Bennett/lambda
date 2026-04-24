@@ -41,7 +41,7 @@ impl Parser for CharLiteralParser {
 
             if s[1..].starts_with("\\") {
                 let Some((escape, len)) = parse_escaped_char(&s[1..(len-1)]) else {
-                    return Some((TokenType::CompileError(format!("Unknown escaped char: {}", s)), s.len()));
+                    return Some((TokenType::CompileError(format!("Unknown escaped char: {}", s)), 2 + len));
                 };
 
                 return Some((TokenType::Expression(ExpressionToken::CharLiteral(escape)), 2+len));
@@ -72,6 +72,37 @@ impl Parser for CharLiteralParser {
 
 impl Parser for StringLiteralParser {
     fn parse(&self, s: &str) -> Option<(TokenType, usize)> {
-        todo!()
+        if s.starts_with('"') {
+
+            let Some(len) = s[1..].find('"') else {
+
+                return Some((TokenType::CompileError(format!("Unclosed string literal: {}", s)), s.len()));
+            };
+
+            let mut res = String::new();
+
+            //parse in each char
+            let mut i = 1;
+            while i <= len {
+                let c = s[i..].chars().next().unwrap();
+                i += c.len_utf8();
+
+                if c == '\\' {
+                    let Some((c, size)) = parse_escaped_char(&s[i..]) else {
+                        return Some((TokenType::CompileError(format!("Unknown escaped char: {}", s)), len + 2));
+                    };
+                    i += size;
+
+                    res.push(c);
+                } else {
+                    res.push(c);
+                }
+            }
+
+            Some((TokenType::Expression(ExpressionToken::StringLiteral(res)), len + 2))
+
+        } else {
+            None
+        }
     }
 }

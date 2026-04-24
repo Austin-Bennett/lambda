@@ -254,14 +254,18 @@ pub enum LiteralValue {
     Integer(IntegerLiteral),
     Float(f64),
     Bool(bool),
+    Char(char),
+    String(u32), //stores its literal id
 }
 
 impl std::hash::Hash for LiteralValue {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         match self {
-            LiteralValue::Integer(i) => { 0u8.hash(state); i.hash(state); }
-            LiteralValue::Float(f)   => { 1u8.hash(state); f.to_bits().hash(state); }
-            LiteralValue::Bool(b)    => { 2u8.hash(state); b.hash(state); }
+            LiteralValue::Integer(i)  => { 0u8.hash(state); i.hash(state); }
+            LiteralValue::Float(f)           => { 1u8.hash(state); f.to_bits().hash(state); }
+            LiteralValue::Bool(b)           => { 2u8.hash(state); b.hash(state); }
+            LiteralValue::Char(c)           => { 3u8.hash(state); c.hash(state); }
+            LiteralValue::String(s)        => { 4u8.hash(state); s.hash(state); }
         }
     }
 }

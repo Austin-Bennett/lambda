@@ -261,6 +261,13 @@ impl ExprSyntax {
             ExpressionToken::BoolLiteral(b) => {
                 ExprSyntax{ data: Expr::Literal(LiteralValue::Bool(b)), smap }
             }
+            ExpressionToken::CharLiteral(c) => { 
+                ExprSyntax{ data: Expr::Literal(LiteralValue::Char(c)), smap }
+            }
+            ExpressionToken::StringLiteral(s) => {
+                let id = compiler.str_literal_reg.add(s);
+                ExprSyntax{ data: Expr::Literal(LiteralValue::String(id)), smap }
+            }
             ExpressionToken::Operator(op) => {
 
                 if !op.bp.is_unary() {

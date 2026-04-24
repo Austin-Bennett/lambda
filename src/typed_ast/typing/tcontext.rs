@@ -45,7 +45,7 @@ pub struct TypeContext {
     pub float32: TypeId,
     pub float64: TypeId,
 
-    //str or a string pointer is a uint8* utf8-encoded string
+    pub char: TypeId,
     pub str: TypeId,
 
 
@@ -87,6 +87,7 @@ impl TypeContext {
             isize: 0,
             float32: 0,
             float64: 0,
+            char: 0,
             str: 0,
             intrinsics: HashMap::new(),
         };
@@ -250,6 +251,8 @@ impl TypeContext {
             }
         }));
     }
+    
+    
 
     fn enable_comparison_operators(&mut self, id: TypeId, bool_id: TypeId) {
         use inkwell::IntPredicate;
@@ -469,6 +472,9 @@ impl TypeContext {
         self.float_literal = id;
         self.enable_arithmetic_neg(id);
         self.enable_from_float_literal(id, 64);
+        
+        
+        
 
         //SIGNED INTEGERS
 
@@ -504,6 +510,7 @@ impl TypeContext {
         ));
         self.usize = id; self.enable_arithmetic_neg(id);
         self.enable_from_int_literal(id, Self::SIZE_POINTER as u32 * 8, false);
+        
 
         let id = self.add(Type::Typename("isize".into()), TypeInfo::new(
             TypeKind::Int(Self::SIZE_POINTER as u32 * 8),
@@ -516,6 +523,20 @@ impl TypeContext {
             TypeInfo::new(TypeKind::Boolean, self.llvm_context.custom_width_int_type(1).into())
         );
         self.bool = id;
+        
+        
+        
+        //CHAR
+        let id = self.add(Type::Typename("char".into()), 
+            TypeInfo::new(TypeKind::Int(32), self.llvm_context.i32_type().into()));
+        self.char = id;
+        
+        
+        //STR
+        let id = self.add(Type::Typename("str".into()),
+            TypeInfo::new(TypeKind::Slice(self.char), self.create_slice_llvm_structure().into())
+        );
+        self.str = id;
 
         //FLOATING-POINT
 
@@ -950,7 +971,6 @@ impl TypeContext {
     }
 
     pub fn name_of(&self, id: TypeId) -> Option<String> {
-        let kind = &self.get_by_id(id)?.kind;
 
         let ty_ty = &self.type_ids[&id];
 

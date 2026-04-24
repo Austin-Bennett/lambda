@@ -512,6 +512,8 @@ impl TypedExpr {
                     LiteralValue::Integer(_) => compiler.type_context.int_literal,
                     LiteralValue::Float(_)   => compiler.type_context.float_literal,
                     LiteralValue::Bool(_)    => compiler.type_context.bool,
+                    LiteralValue::Char(_)    => compiler.type_context.char,
+                    LiteralValue::String(_)  => compiler.type_context.str,
                 };
                 Some((TypedExprNode::Literal(lit.clone()), ty))
             }

@@ -21,7 +21,7 @@ pub fn eval_array_len_expr_uint(expr: &ExprSyntax, compiler: &mut Compiler) -> O
                     }
                 }
             }
-            LiteralValue::Float(_) | LiteralValue::Bool(_) => {
+            _ => {
                 compiler.emit_compile_message(CompileMessage::new(
                     expr.smap.clone(),
                     "only integer literals are allowed in constant expressions".into(),

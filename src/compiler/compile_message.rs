@@ -10,6 +10,8 @@ pub struct CompileMessage {
     pub notes: Vec<CompileMessage>,
 }
 
+
+
 impl Debug for CompileMessage {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "Compile message at {:?}:\n", self.source)?;

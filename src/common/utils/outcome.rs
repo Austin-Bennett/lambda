@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::ops::{ControlFlow, Deref, DerefMut, DerefPure, FromResidual, Try};
+use std::ops::{ControlFlow, Deref, DerefMut, DerefPure, FromResidual, Residual, Try};
 use std::ops::ControlFlow::Break;
 
 //an error type that can represent Some/Ok, None and Err
@@ -117,13 +117,19 @@ impl<T, E> From<Result<T, E>> for Outcome<T, E> {
 
 impl<T, E> FromResidual for Outcome<T, E> {
     fn from_residual(residual: <Self as Try>::Residual) -> Self {
-        Self::Err(residual)
+        Self::Err(residual.0)
     }
+}
+
+pub struct OutcomeResidual<E>(pub E);
+
+impl<T, E> Residual<Option<T>> for OutcomeResidual<E> {
+    type TryType = Outcome<T, E>;
 }
 
 impl<T, E> Try for Outcome<T, E> {
     type Output = Option<T>;
-    type Residual = E;
+    type Residual = OutcomeResidual<E>;
 
     fn from_output(output: Self::Output) -> Self {
         match output {
@@ -141,13 +147,13 @@ impl<T, E> Try for Outcome<T, E> {
                 ControlFlow::Continue(None)
             }
             Outcome::Err(e) => {
-                Break(e)
+                Break(OutcomeResidual(e))
             }
         }
     }
 }
 
-impl<T, E> FromResidual for OnlyOkOutcome<T, E> {
+impl<T, E> FromResidual for OnlyOkOutcome<T, E> where Option<E>: Residual<T> {
     fn from_residual(residual: <Self as Try>::Residual) -> Self {
         Self{
             oc: match residual {
@@ -158,7 +164,7 @@ impl<T, E> FromResidual for OnlyOkOutcome<T, E> {
     }
 }
 
-impl<T, E> Try for OnlyOkOutcome<T, E> {
+impl<T, E> Try for OnlyOkOutcome<T, E> where Option<E>: Residual<T> {
     type Output = T;
     type Residual = Option<E>;
 
