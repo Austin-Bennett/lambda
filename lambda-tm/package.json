@@ -1,13 +1,20 @@
 {
   "name": "lambda",
+  "displayName": "Lambda Language",
+  "description": "Syntax highlighting for the Lambda language",
   "version": "0.0.1",
+  "publisher": "austin-bennett",
+  "engines": { "vscode": "^1.0.0" },
   "contributes": {
-    "grammars": [
-      {
-        "language": "lm",
-        "scopeName": "source.lm",
-        "path": "./lambda.tmLanguage.json"
-      }
-    ]
+    "languages": [{
+      "id": "lambda",
+      "extensions": [".lm"],
+      "aliases": ["Lambda"]
+    }],
+    "grammars": [{
+      "language": "lambda",
+      "scopeName": "source.lm",
+      "path": "./syntaxes/lambda.tmLanguage.json"
+    }]
   }
 }
