@@ -1,0 +1,13 @@
+{
+  "name": "lambda",
+  "version": "0.0.1",
+  "contributes": {
+    "grammars": [
+      {
+        "language": "lm",
+        "scopeName": "source.lm",
+        "path": "./lambda.tmLanguage.json"
+      }
+    ]
+  }
+}

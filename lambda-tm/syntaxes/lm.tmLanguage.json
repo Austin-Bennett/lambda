@@ -1,0 +1,92 @@
+{
+  "name": "Lambda",
+  "scopeName": "source.lm",
+  "fileTypes": ["lm"],
+  "patterns": [
+    { "include": "#comment_block" },
+    { "include": "#comment_line" },
+    { "include": "#string" },
+    { "include": "#char" },
+    { "include": "#keyword" },
+    { "include": "#type_primitive" },
+    { "include": "#bool_literal" },
+    { "include": "#number_float" },
+    { "include": "#number_int" },
+    { "include": "#use_statement" },
+    { "include": "#function_def" },
+    { "include": "#operator" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comment_line": {
+      "name": "comment.line.double-slash.lm",
+      "match": "//.*$"
+    },
+    "comment_block": {
+      "name": "comment.block.lm",
+      "begin": "/\\*",
+      "end": "\\*/"
+    },
+    "string": {
+      "name": "string.quoted.double.lm",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        {
+          "name": "constant.character.escape.lm",
+          "match": "\\\\[\"'\\\\]"
+        }
+      ]
+    },
+    "char": {
+      "name": "string.quoted.single.lm",
+      "begin": "'",
+      "end": "'",
+      "patterns": [
+        {
+          "name": "constant.character.escape.lm",
+          "match": "\\\\[\"'\\\\]"
+        }
+      ]
+    },
+    "keyword": {
+      "name": "keyword.control.lm",
+      "match": "\\b(fn|struct|return|extern|if|else|while|let|public|modify|operator|as)\\b"
+    },
+    "type_primitive": {
+      "name": "support.type.primitive.lm",
+      "match": "\\b(int8|int16|int32|int64|uint8|uint16|uint32|uint64|float32|float64|bool|usize)\\b"
+    },
+    "bool_literal": {
+      "name": "constant.language.boolean.lm",
+      "match": "\\b(true|false)\\b"
+    },
+    "number_float": {
+      "name": "constant.numeric.float.lm",
+      "match": "\\b[0-9]+\\.[0-9]+\\b"
+    },
+    "number_int": {
+      "name": "constant.numeric.integer.lm",
+      "match": "\\b[0-9]+\\b"
+    },
+    "use_statement": {
+      "name": "keyword.control.import.lm",
+      "match": "^use\\s+[a-zA-Z_][a-zA-Z0-9_:]*"
+    },
+    "function_def": {
+      "match": "\\b(fn)\\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.control.lm" },
+        "2": { "name": "entity.name.function.lm" }
+      }
+    },
+    "operator": {
+      "name": "keyword.operator.lm",
+      "match": "<<=|>>=|&&=|\\|\\|=|\\+=|-=|\\*=|/=|&=|\\|=|\\^=|<<|>>|&&|\\|\\||==|!=|<=|>=|[+\\-*/<>=!&|^~]"
+    },
+    "punctuation": {
+      "name": "punctuation.lm",
+      "match": "[{}()\\[\\],:;.]"
+    }
+  }
+}

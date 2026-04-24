@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::mem;
 use std::ops::Deref;
+use std::path::PathBuf;
 use inkwell::AddressSpace;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use crate::common::source_owner::SourceOwner;
@@ -46,6 +47,7 @@ pub struct Compiler {
 
     _findset: HashSet<String>,
 
+    pub module_search_paths: Vec<PathBuf>,
     pub intrinsics: HashMap<String, intrinsic::IntrinsicMaker>,
 
     pub llvm_context: &'static inkwell::context::Context,
@@ -58,15 +60,16 @@ pub struct Compiler {
 impl Compiler {
     pub fn new(llvm_context: &'static inkwell::context::Context) -> Self {
         Self{
-            errors:          Vec::new(),
-            warnings:        Vec::new(),
-            source_map:      HashMap::new(),
-            untyped_modules: HashMap::new(),
-            typed_modules:   HashMap::new(),
-            type_context:    TypeContext::new(llvm_context),
+            errors:              Vec::new(),
+            warnings:            Vec::new(),
+            source_map:          HashMap::new(),
+            untyped_modules:     HashMap::new(),
+            typed_modules:       HashMap::new(),
+            type_context:        TypeContext::new(llvm_context),
             llvm_context,
-            _findset:        HashSet::new(),
-            intrinsics:      HashMap::new(),
+            _findset:            HashSet::new(),
+            module_search_paths: vec![PathBuf::from("./")],
+            intrinsics:          HashMap::new(),
         }
     }
 
@@ -129,21 +132,20 @@ impl Compiler {
                     let mut params = Vec::new();
 
                     for p in &func.data.parameters {
-                        let id = match self.resolve_type(&p.data.ty) {
-                            Some(v ) => v,
+                        let Some(pty) = p.data.ty.as_ref() else { continue; };
+                        let id = match self.resolve_type(pty) {
+                            Some(v) => v,
                             None => {
                                 self.emit_compile_message(
                                     CompileMessage::new(
                                         p.smap.clone(),
-                                        format!("Could not resolve type: {:?}", p.data.ty),
+                                        format!("Could not resolve type: {:?}", pty),
                                         CompileMessageType::Error,
                                     )
                                 );
-
                                 continue;
                             }
                         };
-
                         params.push(id);
                     }
 
@@ -211,8 +213,10 @@ impl Compiler {
                             params.push(self_ref_ty);
                         }
                         for p in &method.params {
-                            if let Some(pid) = self.resolve_type(&p.data.ty) {
-                                params.push(pid);
+                            if let Some(pty) = p.data.ty.as_ref() {
+                                if let Some(pid) = self.resolve_type(pty) {
+                                    params.push(pid);
+                                }
                             }
                         }
 
@@ -244,8 +248,10 @@ impl Compiler {
                             params.push(self_ref_ty);
                         }
                         for p in &op.params {
-                            if let Some(pid) = self.resolve_type(&p.data.ty) {
-                                params.push(pid);
+                            if let Some(pty) = p.data.ty.as_ref() {
+                                if let Some(pid) = self.resolve_type(pty) {
+                                    params.push(pid);
+                                }
                             }
                         }
 
@@ -337,12 +343,13 @@ impl Compiler {
         let mut members = Vec::new();
 
         for VarDecl{ name, ty, value: _, public } in &ast.members {
+            let Some(ety) = ty.as_ref() else { continue; };
             //get the type
-            let Some(id) = self.resolve_type(ty) else {
+            let Some(id) = self.resolve_type(ety) else {
                 self.emit_compile_message(
                     CompileMessage::new(
                         smap.clone(),
-                        format!("Unknown type: {:?}", ty),
+                        format!("Unknown type: {:?}", ety),
                         CompileMessageType::Error,
                     )
                 );
@@ -566,18 +573,28 @@ impl Compiler {
                 TokenType::Statement(StatementToken::UseKW(s)) => {
                     let mod_path = ModulePath::from_module_path(s);
                     if !self.untyped_modules.contains_key(&mod_path) && !added.contains(&mod_path) {
-                        let path = mod_path.to_path();
-                        match Tokens::tokenize(&path) {
-                            Ok(tks) => {
-                                self.add_module_impl(tks, added)
-                            }
-                            Err(e) => {
-                                self.emit_compile_message(CompileMessage::new(
-                                    tk.smap.clone(), 
-                                    format!("Failed to find module {:?} due to error: {}", &path, e),
-                                    CompileMessageType::Error
-                                ))
-                            }
+                        let rel = mod_path.to_path();
+                        let resolved = if rel.is_absolute() {
+                            Some(rel.clone())
+                        } else {
+                            self.module_search_paths.iter()
+                                .map(|sp| sp.join(&rel))
+                                .find(|p| p.exists())
+                        };
+                        match resolved {
+                            Some(p) => match Tokens::tokenize(&p) {
+                                Ok(tks) => self.add_module_impl(tks, added),
+                                Err(e) => self.emit_compile_message(CompileMessage::new(
+                                    tk.smap.clone(),
+                                    format!("Failed to load module {:?}: {}", p, e),
+                                    CompileMessageType::Error,
+                                )),
+                            },
+                            None => self.emit_compile_message(CompileMessage::new(
+                                tk.smap.clone(),
+                                format!("Failed to find module {:?} in any search path", rel),
+                                CompileMessageType::Error,
+                            )),
                         }
                     }
                     dependencies.push(mod_path);

@@ -30,6 +30,7 @@ pub fn parse_escaped_char(s: &str) -> Option<(char, usize)> {
 }
 
 pub struct CharLiteralParser;
+pub struct StringLiteralParser;
 
 impl Parser for CharLiteralParser {
     fn parse(&self, s: &str) -> Option<(TokenType, usize)> {
@@ -43,13 +44,34 @@ impl Parser for CharLiteralParser {
                     return Some((TokenType::CompileError(format!("Unknown escaped char: {}", s)), s.len()));
                 };
 
-                return Some((TokenType::Expression(ExpressionToken::CharLiteral(escape)), len));
+                return Some((TokenType::Expression(ExpressionToken::CharLiteral(escape)), 2+len));
             } else {
-
+                if len == 0 {
+                    return Some((
+                        TokenType::CompileError("Empty char literal!".to_string()), 2
+                    ));
+                }
+                
+                let char = s.chars().next().unwrap();
+                
+                if len != char.len_utf8() {
+                    Some((
+                        TokenType::CompileError("Char literal must contain only 1 char, did you mean to escape it?".to_string()),
+                        2 + len
+                    ))
+                } else {
+                    Some((TokenType::Expression(ExpressionToken::CharLiteral(char)), 2+len))
+                }
             }
 
         } else {
             None
         }
+    }
+}
+
+impl Parser for StringLiteralParser {
+    fn parse(&self, s: &str) -> Option<(TokenType, usize)> {
+        todo!()
     }
 }

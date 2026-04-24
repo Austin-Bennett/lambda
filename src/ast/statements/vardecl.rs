@@ -13,19 +13,20 @@ use crate::unpack_opt_tk;
 #[derive(Hash, Clone)]
 pub struct VarDecl {
     pub name: String,
-    pub ty: Type,
+    pub ty: Option<Type>,
     pub value: Option<ExprSyntax>,
     pub public: bool,
 }
 
 impl Debug for VarDecl {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} : {:?}", self.name, self.ty)?;
-        
+        match &self.ty {
+            Some(ty) => write!(f, "{} : {:?}", self.name, ty)?,
+            None => write!(f, "let {}", self.name)?,
+        }
         if let Some(e) = &self.value {
             write!(f, " = {:?}", e.data)?;
         }
-        
         Ok(())
     }
 }
@@ -37,8 +38,6 @@ impl Syntax for VarDeclSyntax {
     where
         Self: Sized
     {
-        //[public] name : type
-
         // consume optional 'public' keyword
         let (public, public_smap) = if let Some(Token { typ: TokenType::Statement(StatementToken::PublicKW), .. }) = tokens.get(0) {
             let tok = tokens.pop_front().unwrap();
@@ -47,6 +46,54 @@ impl Syntax for VarDeclSyntax {
             (false, None)
         };
 
+        // --- let name = expr  (type-inferred) ---
+        if let Some(Token { typ: TokenType::Statement(StatementToken::LetKW), .. }) = tokens.get(0) {
+            let let_tok = tokens.pop_front().unwrap();
+            let mut smap = if let Some(mut psmap) = public_smap { psmap.extend(let_tok.smap.clone()); psmap } else { let_tok.smap };
+
+            let Some(Token { typ: TokenType::Expression(ExpressionToken::Identifier(_)), .. }) = tokens.get(0) else {
+                compiler.emit_compile_message(CompileMessage::new(
+                    smap,
+                    "expected identifier after 'let'".to_string(),
+                    CompileMessageType::Error,
+                ));
+                return None;
+            };
+            let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Identifier(name)), ident_smap) = tokens.pop_front() else { unreachable!() };
+            smap.extend(ident_smap);
+
+            // require '='
+            let Some(Token { typ: TokenType::Expression(ExpressionToken::Operator(Operator { tk: "=", .. })), .. }) = tokens.get(0) else {
+                compiler.emit_compile_message(CompileMessage::new(
+                    smap,
+                    format!("expected '=' after 'let {}'", name),
+                    CompileMessageType::Error,
+                ));
+                return None;
+            };
+            let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Operator(Operator { tk: "=", .. })), opmap) = tokens.pop_front() else { unreachable!() };
+
+            let expr = match ExprSyntax::parse(tokens, compiler) {
+                Some(v) => v,
+                None => {
+                    smap.extend(opmap);
+                    compiler.emit_compile_message(CompileMessage::new(
+                        smap,
+                        format!("expected expression after 'let {} ='", name),
+                        CompileMessageType::Error,
+                    ));
+                    return None;
+                }
+            };
+            smap.extend(&expr.smap);
+
+            return Some(VarDeclSyntax {
+                smap,
+                data: VarDecl { name, ty: None, value: Some(expr), public },
+            });
+        }
+
+        // --- name : type [= expr]  (explicit type) ---
         if token_match!( tokens,
             TokenType::Expression(ExpressionToken::Identifier(_)),
             TokenType::Feature(FeatureToken::Colon),
@@ -66,14 +113,10 @@ impl Syntax for VarDeclSyntax {
                 return None;
             };
 
-
-            //check for an expression
             let expr = if let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Operator(
                 Operator{ tk: "=", .. }
             )), _) = tokens.get(0) {
                 let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Operator(Operator{ tk: "=", .. })), opmap) = tokens.pop_front() else { unreachable!() };
-
-
                 let expr = match ExprSyntax::parse(tokens, compiler) {
                     Some(v) => v,
                     None => {
@@ -92,18 +135,10 @@ impl Syntax for VarDeclSyntax {
                 None
             };
 
-
-            Some(
-                VarDeclSyntax{
-                    smap,
-                    data: VarDecl{
-                        name,
-                        ty,
-                        value: expr,
-                        public,
-                    }
-                }
-            )
+            Some(VarDeclSyntax {
+                smap,
+                data: VarDecl { name, ty: Some(ty), value: expr, public },
+            })
         } else {
             None
         }

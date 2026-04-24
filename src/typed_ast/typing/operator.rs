@@ -36,12 +36,21 @@ pub struct ComparisonMakers {
 pub struct OperatorOverloads {
     // neg: result type + codegen callback
     pub neg: Option<(TypeId, UnaryOperatorMaker)>,
+    // not: bitwise/boolean NOT, result type + callback
+    pub not: Option<(TypeId, UnaryOperatorMaker)>,
 
     // binary arithmetic: rhs TypeId -> (result TypeId, codegen callback)
     pub add: HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
     pub sub: HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
     pub mul: HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
     pub div: HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
+
+    // bitwise binary: rhs TypeId -> (result TypeId, codegen callback)
+    pub bit_and: HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
+    pub bit_or:  HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
+    pub bit_xor: HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
+    pub shl:     HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
+    pub shr:     HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
 
     // User-defined operator functions: rhs TypeId -> (result TypeId, mangled function name)
     // These take priority over the built-in codegen callbacks above.
@@ -79,11 +88,18 @@ impl OperatorOverloads {
     pub fn new() -> Self {
         Self {
             neg: None,
+            not: None,
 
             add: HashMap::new(),
             sub: HashMap::new(),
             mul: HashMap::new(),
             div: HashMap::new(),
+
+            bit_and: HashMap::new(),
+            bit_or:  HashMap::new(),
+            bit_xor: HashMap::new(),
+            shl:     HashMap::new(),
+            shr:     HashMap::new(),
 
             user_add: HashMap::new(),
             user_sub: HashMap::new(),

@@ -11,17 +11,15 @@ use std::mem;
 use crate::typed_ast::typing::operator::BinaryOperatorMaker;
 
 pub enum BinaryOperator {
-    Add,
-    Sub,
-    Mul,
-    Div,
+    Add, Sub, Mul, Div,
     Assign,
-    Eq,
-    Ne,
-    Lt,
-    Gt,
-    Le,
-    Ge,
+    Eq, Ne, Lt, Gt, Le, Ge,
+    BitAnd, BitOr, BitXor, Shl, Shr,
+    BoolAnd, BoolOr,
+    // compound assignment: lhs op= rhs
+    AddAssign, SubAssign, MulAssign, DivAssign,
+    BitAndAssign, BitOrAssign, BitXorAssign, ShlAssign, ShrAssign,
+    BoolAndAssign, BoolOrAssign,
 }
 
 impl Debug for BinaryOperator {
@@ -32,12 +30,30 @@ impl Debug for BinaryOperator {
             BinaryOperator::Mul => f.write_str("*"),
             BinaryOperator::Div => f.write_str("/"),
             BinaryOperator::Assign => f.write_str("="),
-            BinaryOperator::Eq => f.write_str("=="),
-            BinaryOperator::Ne => f.write_str("!="),
-            BinaryOperator::Lt => f.write_str("<"),
-            BinaryOperator::Gt => f.write_str(">"),
-            BinaryOperator::Le => f.write_str("<="),
-            BinaryOperator::Ge => f.write_str(">="),
+            BinaryOperator::Eq  => f.write_str("=="),
+            BinaryOperator::Ne  => f.write_str("!="),
+            BinaryOperator::Lt  => f.write_str("<"),
+            BinaryOperator::Gt  => f.write_str(">"),
+            BinaryOperator::Le  => f.write_str("<="),
+            BinaryOperator::Ge  => f.write_str(">="),
+            BinaryOperator::BitAnd => f.write_str("&"),
+            BinaryOperator::BitOr  => f.write_str("|"),
+            BinaryOperator::BitXor => f.write_str("^"),
+            BinaryOperator::Shl    => f.write_str("<<"),
+            BinaryOperator::Shr    => f.write_str(">>"),
+            BinaryOperator::BoolAnd => f.write_str("&&"),
+            BinaryOperator::BoolOr  => f.write_str("||"),
+            BinaryOperator::AddAssign    => f.write_str("+="),
+            BinaryOperator::SubAssign    => f.write_str("-="),
+            BinaryOperator::MulAssign    => f.write_str("*="),
+            BinaryOperator::DivAssign    => f.write_str("/="),
+            BinaryOperator::BitAndAssign => f.write_str("&="),
+            BinaryOperator::BitOrAssign  => f.write_str("|="),
+            BinaryOperator::BitXorAssign => f.write_str("^="),
+            BinaryOperator::ShlAssign    => f.write_str("<<="),
+            BinaryOperator::ShrAssign    => f.write_str(">>="),
+            BinaryOperator::BoolAndAssign => f.write_str("&&="),
+            BinaryOperator::BoolOrAssign  => f.write_str("||="),
         }
     }
 }
@@ -46,14 +62,16 @@ impl Debug for BinaryOperator {
 
 pub enum UnaryOperator {
     Neg,
+    Not,
     Reference,
     Dereference,
 }
 
 impl Debug for UnaryOperator {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self { 
+        match self {
             UnaryOperator::Neg => f.write_str("-"),
+            UnaryOperator::Not => f.write_str("!"),
             UnaryOperator::Reference => f.write_str("&"),
             UnaryOperator::Dereference => f.write_str("*"),
         }
@@ -101,6 +119,12 @@ pub struct TypedStructConstruct {
     pub fields: Vec<TypedExpr>,
 }
 
+pub struct TypedSliceConstruct {
+    pub ptr: TypedExpr,
+    pub len: TypedExpr,
+    pub element_ty: TypeId,
+}
+
 /// A method with its receiver already attached: `p.length2` stores `&p` and the mangled name.
 /// When called, the receiver is prepended as the first argument automatically.
 pub struct TypedBoundMethod {
@@ -125,6 +149,7 @@ pub enum TypedExprNode {
     CompilerIntrinsic(Box<TypedCompilerIntrinsic>),
     MemberAccess(Box<TypedMemberAccess>),
     StructConstruct(Box<TypedStructConstruct>),
+    SliceConstruct(Box<TypedSliceConstruct>),
     BoundMethod(Box<TypedBoundMethod>),
 }
 
@@ -208,6 +233,9 @@ impl Debug for TypedExprNode {
             }
             TypedExprNode::StructConstruct(sc) => {
                 write!(f, "struct_construct({:?})", sc.fields)
+            }
+            TypedExprNode::SliceConstruct(sc) => {
+                write!(f, "slice({:?}, {:?})", sc.ptr, sc.len)
             }
             TypedExprNode::BoundMethod(bm) => {
                 write!(f, "{:?}.{}", bm.self_expr, bm.mangled_name)
@@ -573,6 +601,67 @@ impl TypedExpr {
                 // Auto-deref references for non-assignment binary ops so that `self: T&` works naturally
 
 
+                // compound assignment: desugar a op= b → a = a op b, but just verify types here
+                // and tag with the compound variant; codegen handles the load-modify-store.
+                if matches!(bin.op.tk, "+=" | "-=" | "*=" | "/=" | "&=" | "|=" | "^=" | "<<=" | ">>=" | "&&=" | "||=") {
+                    // LHS must be a plain identifier for compound assign
+                    let TypedExprNode::Identifier(_) = &lhs.value else {
+                        compiler.emit_compile_message(CompileMessage::new(
+                            expr.smap.clone(),
+                            format!("left-hand side of '{}' must be a variable", bin.op.tk),
+                            CompileMessageType::Error,
+                        ));
+                        return None;
+                    };
+                    Self::infer_literals_binary(&compiler.type_context, &mut lhs, &mut rhs);
+                    let inner_tk = bin.op.tk.trim_end_matches('=');
+                    let lhs_ty = lhs.ty;
+                    let lhs_inf = compiler.type_context.get_by_id(lhs_ty)?;
+                    // verify inner op is supported
+                    let ok = match inner_tk {
+                        "+"  => lhs_inf.ops.add.contains_key(&rhs.ty),
+                        "-"  => lhs_inf.ops.sub.contains_key(&rhs.ty),
+                        "*"  => lhs_inf.ops.mul.contains_key(&rhs.ty),
+                        "/"  => lhs_inf.ops.div.contains_key(&rhs.ty),
+                        "&"  => lhs_inf.ops.bit_and.contains_key(&rhs.ty),
+                        "|"  => lhs_inf.ops.bit_or.contains_key(&rhs.ty),
+                        "^"  => lhs_inf.ops.bit_xor.contains_key(&rhs.ty),
+                        "<<" => lhs_inf.ops.shl.contains_key(&rhs.ty),
+                        ">>" => lhs_inf.ops.shr.contains_key(&rhs.ty),
+                        "&&" => lhs_ty == compiler.type_context.bool && rhs.ty == compiler.type_context.bool,
+                        "||" => lhs_ty == compiler.type_context.bool && rhs.ty == compiler.type_context.bool,
+                        _ => false,
+                    };
+                    if !ok {
+                        compiler.emit_compile_message(CompileMessage::new(
+                            expr.smap.clone(),
+                            format!("operator '{}' not supported for types {} and {}",
+                                bin.op.tk,
+                                compiler.type_context.name_of(lhs_ty).unwrap_or_default(),
+                                compiler.type_context.name_of(rhs.ty).unwrap_or_default()),
+                            CompileMessageType::Error,
+                        ));
+                        return None;
+                    }
+                    let op_variant = match inner_tk {
+                        "+"  => BinaryOperator::AddAssign,
+                        "-"  => BinaryOperator::SubAssign,
+                        "*"  => BinaryOperator::MulAssign,
+                        "/"  => BinaryOperator::DivAssign,
+                        "&"  => BinaryOperator::BitAndAssign,
+                        "|"  => BinaryOperator::BitOrAssign,
+                        "^"  => BinaryOperator::BitXorAssign,
+                        "<<" => BinaryOperator::ShlAssign,
+                        ">>" => BinaryOperator::ShrAssign,
+                        "&&" => BinaryOperator::BoolAndAssign,
+                        "||" => BinaryOperator::BoolOrAssign,
+                        _ => unreachable!(),
+                    };
+                    return Some((TypedExprNode::BinaryOp(Box::new(TypedBinaryOperation {
+                        op: op_variant, lhs, rhs,
+                    })), lhs_ty));
+                }
+
                 if bin.op.tk != "=" {
                     Self::infer_literals_binary(&compiler.type_context, &mut lhs, &mut rhs);
 
@@ -831,6 +920,55 @@ impl TypedExpr {
                         })), target_ty))
                     }
 
+                    // bitwise binary operators
+                    "&" | "|" | "^" | "<<" | ">>" => {
+                        let (op_variant, op_map) = {
+                            let lhs_inf = compiler.type_context.get_by_id(lhs.ty)?;
+                            match bin.op.tk {
+                                "&"  => (BinaryOperator::BitAnd, lhs_inf.ops.bit_and.get(&rhs.ty).map(|(r,_)| *r)),
+                                "|"  => (BinaryOperator::BitOr,  lhs_inf.ops.bit_or.get(&rhs.ty).map(|(r,_)| *r)),
+                                "^"  => (BinaryOperator::BitXor, lhs_inf.ops.bit_xor.get(&rhs.ty).map(|(r,_)| *r)),
+                                "<<" => (BinaryOperator::Shl,    lhs_inf.ops.shl.get(&rhs.ty).map(|(r,_)| *r)),
+                                ">>" => (BinaryOperator::Shr,    lhs_inf.ops.shr.get(&rhs.ty).map(|(r,_)| *r)),
+                                _ => unreachable!(),
+                            }
+                        };
+                        let Some(res_ty) = op_map else {
+                            compiler.emit_compile_message(CompileMessage::new(
+                                expr.smap.clone(),
+                                format!("operator '{}' not supported for types {} and {}",
+                                    bin.op.tk,
+                                    compiler.type_context.name_of(lhs.ty).unwrap_or_default(),
+                                    compiler.type_context.name_of(rhs.ty).unwrap_or_default()),
+                                CompileMessageType::Error,
+                            ));
+                            return None;
+                        };
+                        Some((TypedExprNode::BinaryOp(Box::new(TypedBinaryOperation {
+                            op: op_variant, lhs, rhs,
+                        })), res_ty))
+                    }
+
+                    // short-circuit boolean operators
+                    "&&" | "||" => {
+                        let bool_id = compiler.type_context.bool;
+                        if lhs.ty != bool_id || rhs.ty != bool_id {
+                            compiler.emit_compile_message(CompileMessage::new(
+                                expr.smap.clone(),
+                                format!("'{}' requires bool operands, got {} and {}",
+                                    bin.op.tk,
+                                    compiler.type_context.name_of(lhs.ty).unwrap_or_default(),
+                                    compiler.type_context.name_of(rhs.ty).unwrap_or_default()),
+                                CompileMessageType::Error,
+                            ));
+                            return None;
+                        }
+                        let op_variant = if bin.op.tk == "&&" { BinaryOperator::BoolAnd } else { BinaryOperator::BoolOr };
+                        Some((TypedExprNode::BinaryOp(Box::new(TypedBinaryOperation {
+                            op: op_variant, lhs, rhs,
+                        })), bool_id))
+                    }
+
                     _ => {
                         //we really shouldn't get this far
                         panic!("Unknown op: {}", bin.op.tk);
@@ -878,31 +1016,31 @@ impl TypedExpr {
                         )
                     },
                     "&" => {
-                        //lhs MUST be a identifier
-                        let TypedExprNode::Identifier(_) = &lhs else {
-                            compiler.emit_compile_message(
-                                CompileMessage::new(
+                        match &lhs {
+                            TypedExprNode::Identifier(_) => {
+                                let ref_type = compiler.type_context.reference_to(lhs_ty);
+                                Some((TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
+                                    op: UnaryOperator::Reference,
+                                    operand: TypedExpr { value: lhs, ty: ref_type, smap: expr.smap.clone() },
+                                })), ref_type))
+                            }
+                            TypedExprNode::Index(_) => {
+                                // &arr[i] → T& (reference to element)
+                                let ref_type = compiler.type_context.reference_to(lhs_ty);
+                                Some((TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
+                                    op: UnaryOperator::Reference,
+                                    operand: TypedExpr { value: lhs, ty: ref_type, smap: expr.smap.clone() },
+                                })), ref_type))
+                            }
+                            _ => {
+                                compiler.emit_compile_message(CompileMessage::new(
                                     expr.smap.clone(),
                                     "Cannot take address of rvalue!".to_string(),
                                     CompileMessageType::Error,
-                                )
-                            );
-
-                            return None;
-                        };
-
-
-                        let ref_type = compiler.type_context.reference_to(lhs_ty);
-
-                        Some((TypedExprNode::UnaryOp(
-                            Box::new(
-                                TypedUnaryOperation{
-                                    op: UnaryOperator::Reference,
-                                    operand: TypedExpr{ value: lhs, ty: ref_type, smap: expr.smap.clone() }
-                                }
-                            ),
-
-                        ), ref_type))
+                                ));
+                                None
+                            }
+                        }
                     },
                     "*" => {
                         match &lhs_inf.kind {
@@ -932,6 +1070,21 @@ impl TypedExpr {
                             }
                         }
                     }
+                    "!" => {
+                        let Some((not_ty, _)) = &lhs_inf.ops.not else {
+                            compiler.emit_compile_message(CompileMessage::new(
+                                expr.smap.clone(),
+                                format!("Cannot apply '!' to {}",
+                                    compiler.type_context.name_of(lhs_ty).unwrap()),
+                                CompileMessageType::Error,
+                            ));
+                            return None;
+                        };
+                        Some((TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
+                            op: UnaryOperator::Not,
+                            operand: TypedExpr { value: lhs, ty: lhs_ty, smap: expr.smap.clone() },
+                        })), *not_ty))
+                    }
                     _ => {
                         panic!("Unknown unary op: {}", op.op.tk)
                     }
@@ -950,6 +1103,53 @@ impl TypedExpr {
                 Some((TypedExprNode::Cast(Box::new(TypedCastOperation { expr: inner, target })), target))
             }
             Expr::CallOp(call) => {
+                // slice(ptr: T*, len: usize) → T[]
+                if let Expr::Identifier(name) = &call.caller.data {
+                    if name == "slice" {
+                        if call.arguments.len() != 2 {
+                            compiler.emit_compile_message(CompileMessage::new(
+                                expr.smap.clone(),
+                                format!("'slice' requires exactly 2 arguments (ptr, len), got {}", call.arguments.len()),
+                                CompileMessageType::Error,
+                            ));
+                            return None;
+                        }
+                        let ptr_expr = TypedExpr::from_ast(&call.arguments[0], compiler, context)?;
+                        let element_ty = match compiler.type_context.get_by_id(ptr_expr.ty).map(|i| &i.kind) {
+                            Some(TypeKind::Pointer(inner)) | Some(TypeKind::Reference(inner)) => *inner,
+                            _ => {
+                                compiler.emit_compile_message(CompileMessage::new(
+                                    call.arguments[0].smap.clone(),
+                                    format!("'slice' first argument must be a pointer or reference, got {}",
+                                        compiler.type_context.name_of(ptr_expr.ty).unwrap_or_default()),
+                                    CompileMessageType::Error,
+                                ));
+                                return None;
+                            }
+                        };
+                        let mut len_expr = TypedExpr::from_ast(&call.arguments[1], compiler, context)?;
+                        len_expr = Self::coerce_literal(&compiler.type_context, len_expr, compiler.type_context.usize);
+                        if len_expr.ty != compiler.type_context.usize {
+                            compiler.emit_compile_message(CompileMessage::new(
+                                call.arguments[1].smap.clone(),
+                                format!("'slice' second argument must be usize, got {}",
+                                    compiler.type_context.name_of(len_expr.ty).unwrap_or_default()),
+                                CompileMessageType::Error,
+                            ));
+                            return None;
+                        }
+                        let slice_ty = compiler.type_context.slice_of(element_ty);
+                        return Some((
+                            TypedExprNode::SliceConstruct(Box::new(TypedSliceConstruct {
+                                ptr: ptr_expr,
+                                len: len_expr,
+                                element_ty,
+                            })),
+                            slice_ty,
+                        ));
+                    }
+                }
+
                 let (caller, caller_ty) = TypedExpr::from_node(&call.caller, compiler, context)?;
 
                 // Method call: MemberAccess already resolved this to a BoundMethod.

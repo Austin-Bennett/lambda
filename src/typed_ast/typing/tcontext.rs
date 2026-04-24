@@ -297,6 +297,49 @@ impl TypeContext {
         self.types[id as usize].ops.cmp.insert(id, makers);
     }
 
+    fn enable_bitwise_operators(&mut self, id: TypeId) {
+        let kind = self.types[id as usize].kind.clone();
+        let signed = matches!(kind, TypeKind::Int(_) | TypeKind::IntLiteral);
+
+        let and: BinaryOperatorMaker = Box::new(|b, l, r| {
+            b.build_and(l.into_int_value(), r.into_int_value(), "band").unwrap().into()
+        });
+        let or: BinaryOperatorMaker = Box::new(|b, l, r| {
+            b.build_or(l.into_int_value(), r.into_int_value(), "bor").unwrap().into()
+        });
+        let xor: BinaryOperatorMaker = Box::new(|b, l, r| {
+            b.build_xor(l.into_int_value(), r.into_int_value(), "bxor").unwrap().into()
+        });
+        self.types[id as usize].ops.bit_and.insert(id, (id, and));
+        self.types[id as usize].ops.bit_or.insert(id, (id, or));
+        self.types[id as usize].ops.bit_xor.insert(id, (id, xor));
+
+        // shifts only for integer types, not bool (TypeKind::Boolean)
+        if matches!(kind, TypeKind::Int(_) | TypeKind::UInt(_) | TypeKind::IntLiteral) {
+            let shl: BinaryOperatorMaker = Box::new(|b, l, r| {
+                b.build_left_shift(l.into_int_value(), r.into_int_value(), "shl").unwrap().into()
+            });
+            let shr: BinaryOperatorMaker = if signed {
+                Box::new(|b, l, r| {
+                    b.build_right_shift(l.into_int_value(), r.into_int_value(), true, "ashr").unwrap().into()
+                })
+            } else {
+                Box::new(|b, l, r| {
+                    b.build_right_shift(l.into_int_value(), r.into_int_value(), false, "lshr").unwrap().into()
+                })
+            };
+            self.types[id as usize].ops.shl.insert(id, (id, shl));
+            self.types[id as usize].ops.shr.insert(id, (id, shr));
+        }
+    }
+
+    fn enable_not(&mut self, id: TypeId) {
+        let not: UnaryOperatorMaker = Box::new(|b, v| {
+            b.build_not(v.into_int_value(), "bnot").unwrap().into()
+        });
+        self.types[id as usize].ops.not = Some((id, not));
+    }
+
     pub fn enable_assignment(&mut self, id: TypeId) {
         let maker: AssignmentMaker = Box::new(|b, ptr, val| {
             b.build_store(ptr, BasicValueEnum::try_from(val).unwrap()).unwrap();
@@ -512,6 +555,18 @@ impl TypeContext {
             self.enable_assignment(from_id);
         }
         self.enable_assignment(self.bool);
+
+        // bitwise ops for all integer types (including int_literal) and bool
+        let bitwise = [
+            self.int_literal,
+            self.int8, self.int16, self.int32, self.int64,
+            self.uint8, self.uint16, self.uint32, self.uint64, self.usize, self.isize,
+            self.bool,
+        ];
+        for &id in &bitwise {
+            self.enable_bitwise_operators(id);
+            self.enable_not(id);
+        }
 
         let (bool_id, uint8_id) = (self.bool, self.uint8);
         self.types[bool_id as usize].ops.conversion_ops.insert(uint8_id, Box::new(|_b, v| v));
@@ -794,6 +849,18 @@ impl TypeContext {
             TypeKind::Reference(inner_id),
             self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into(),
         ))
+    }
+
+    pub fn slice_of(&mut self, inner_ty: TypeId) -> TypeId {
+        let inner_syn = self.type_ids[&inner_ty].clone();
+        let slice_ty = Type::Slice(Box::new(inner_syn));
+        if let Some(&id) = self.type_lookup.get(&slice_ty) {
+            return id;
+        }
+        let usize_llvm: inkwell::types::BasicTypeEnum<'static> = self.get_by_id(self.usize).unwrap().llvm_type.try_into().unwrap();
+        let ptr_llvm = self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).as_basic_type_enum();
+        let llvm = self.llvm_context.struct_type(&[usize_llvm, ptr_llvm], true).into();
+        self.add(slice_ty, TypeInfo::new(TypeKind::Slice(inner_ty), llvm))
     }
 
     pub fn array_of(&mut self, array_ty: TypeId, size: usize) -> TypeId {

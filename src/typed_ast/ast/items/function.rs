@@ -1,5 +1,9 @@
+use crate::ast::block::BlockSyntax;
 use crate::ast::function::FunctionSyntax;
 use crate::ast::items::modify::{MethodDecl, OperatorDecl};
+use crate::ast::statements::vardecl::VarDeclSyntax;
+use crate::ast::ty::Type;
+use crate::common::sourcemap::SourceMap;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::typed_ast::ast::block::TypedBlockSyntax;
 use crate::typed_ast::ast::statements::vardecl::TypedVarDecl;
@@ -65,22 +69,27 @@ impl Function {
 
 
 impl Function {
-    pub fn from_method(
-        method: &MethodDecl,
-        self_type_id: TypeId,
+    fn from_parts(
         mangled_name: &str,
+        has_self: bool,
+        self_type_id: Option<TypeId>,
+        params: &[VarDeclSyntax],
+        ret_ty: Option<&Type>,
+        body: Option<&BlockSyntax>,
+        is_extern: bool,
+        error_smap: SourceMap,
         compiler: &mut Compiler,
         context: &mut AvailableContext<TypeId>,
     ) -> Option<Self> {
         context.push_new_scope();
 
-        let ret = match &method.ret {
+        let ret = match ret_ty {
             Some(ty) => {
                 let Some(id) = compiler.resolve_type(ty) else {
-                    compiler.emit_compile_message(crate::compiler::CompileMessage::new(
-                        method.body.as_ref().map(|b| b.smap.clone()).unwrap_or_default(),
+                    compiler.emit_compile_message(CompileMessage::new(
+                        error_smap,
                         format!("Could not resolve return type {:?}", ty),
-                        crate::compiler::CompileMessageType::Error,
+                        CompileMessageType::Error,
                     ));
                     context.pop_last_scope();
                     return None;
@@ -93,14 +102,14 @@ impl Function {
         let mut param_names = Vec::new();
         let mut param_types = Vec::new();
 
-        if method.has_self {
-            let self_ref_ty = compiler.type_context.reference_to(self_type_id);
+        if has_self {
+            let self_ref_ty = compiler.type_context.reference_to(self_type_id.unwrap());
             context.declare_identifier_in_scope("self".to_string(), self_ref_ty);
             param_names.push("self".to_string());
             param_types.push(self_ref_ty);
         }
 
-        for p in &method.params {
+        for p in params {
             let Some(typed) = TypedVarDecl::from_ast(p, compiler, context) else {
                 context.pop_last_scope();
                 return None;
@@ -115,20 +124,40 @@ impl Function {
             params: param_types,
         };
 
-        let code = if let Some(body) = &method.body {
-            Some(TypedBlockSyntax::from_ast(body, ret, compiler, context)?)
+        let code = if let Some(b) = body {
+            let Some(typed) = TypedBlockSyntax::from_ast(b, ret, compiler, context) else {
+                context.pop_last_scope();
+                return None;
+            };
+            Some(typed)
         } else {
             None
         };
 
         context.pop_last_scope();
 
-        Some(Self {
-            is_extern: false,
-            signature: sig,
-            code,
-            params: param_names,
-        })
+        Some(Self { is_extern, signature: sig, code, params: param_names })
+    }
+
+    pub fn from_method(
+        method: &MethodDecl,
+        self_type_id: TypeId,
+        mangled_name: &str,
+        compiler: &mut Compiler,
+        context: &mut AvailableContext<TypeId>,
+    ) -> Option<Self> {
+        Self::from_parts(
+            mangled_name,
+            method.has_self,
+            Some(self_type_id),
+            &method.params,
+            method.ret.as_ref(),
+            method.body.as_ref(),
+            false,
+            method.body.as_ref().map(|b| b.smap.clone()).unwrap_or_default(),
+            compiler,
+            context,
+        )
     }
 
     pub fn from_operator(
@@ -138,133 +167,43 @@ impl Function {
         compiler: &mut Compiler,
         context: &mut AvailableContext<TypeId>,
     ) -> Option<Self> {
-        context.push_new_scope();
-
-        let ret = match &op.ret {
-            Some(ty) => {
-                let Some(id) = compiler.resolve_type(ty) else {
-                    compiler.emit_compile_message(crate::compiler::CompileMessage::new(
-                        op.body.as_ref().map(|b| b.smap.clone()).unwrap_or_default(),
-                        format!("Could not resolve return type {:?}", ty),
-                        crate::compiler::CompileMessageType::Error,
-                    ));
-                    context.pop_last_scope();
-                    return None;
-                };
-                id
-            }
-            None => compiler.type_context.none,
-        };
-
-        let mut param_names = Vec::new();
-        let mut param_types = Vec::new();
-
-        if op.has_self {
-            let self_ref_ty = compiler.type_context.reference_to(self_type_id);
-            context.declare_identifier_in_scope("self".to_string(), self_ref_ty);
-            param_names.push("self".to_string());
-            param_types.push(self_ref_ty);
-        }
-
-        for p in &op.params {
-            let Some(typed) = TypedVarDecl::from_ast(p, compiler, context) else {
-                context.pop_last_scope();
-                return None;
-            };
-            param_names.push(typed.name.clone());
-            param_types.push(typed.ty);
-        }
-
-        let sig = FunctionSignature {
-            name: mangled_name.to_string(),
-            ret,
-            params: param_types,
-        };
-
-        let code = if let Some(body) = &op.body {
-            Some(TypedBlockSyntax::from_ast(body, ret, compiler, context)?)
-        } else {
-            None
-        };
-
-        context.pop_last_scope();
-
-        Some(Self {
-            is_extern: false,
-            signature: sig,
-            code,
-            params: param_names,
-        })
+        Self::from_parts(
+            mangled_name,
+            op.has_self,
+            Some(self_type_id),
+            &op.params,
+            op.ret.as_ref(),
+            op.body.as_ref(),
+            false,
+            op.body.as_ref().map(|b| b.smap.clone()).unwrap_or_default(),
+            compiler,
+            context,
+        )
     }
 
     pub fn from_ast(func: &FunctionSyntax, compiler: &mut Compiler, context: &mut AvailableContext<TypeId>) -> Option<Self> {
-        context.push_new_scope();
+        let result = Self::from_parts(
+            &func.data.name,
+            false,
+            None,
+            &func.data.parameters,
+            func.data.ty.as_ref(),
+            func.data.body.as_ref(),
+            func.data.is_extern,
+            func.smap.clone(),
+            compiler,
+            context,
+        )?;
 
-        let ret = match &func.data.ty {
-            Some(ty) => {
-                let Some(id) = compiler.resolve_type(ty) else {
-
-                    compiler.emit_compile_message(
-                        CompileMessage::new(
-                            func.smap.clone(),
-                            format!("Could not resolve type {:?}", ty),
-                            CompileMessageType::Error,
-                        )
-                    );
-
-                    return None;
-                };
-
-                id
-            },
-            None => compiler.type_context.none
-        };
-
-        let mut params = Vec::new();
-
-        for p in &func.data.parameters {
-            //this will also declare the parameters in the scope
-            params.push(TypedVarDecl::from_ast(p, compiler, context)?)
-        }
-
-        //resolve the signature
-        let sig = FunctionSignature {
-            name: func.data.name.clone(),
-            ret,
-            params: params.iter().map(|v| v.ty).collect()
-        };
-
-        if sig.name == "main" && sig.ret != compiler.type_context.int8 {
-            compiler.emit_compile_message(
-                CompileMessage::new(
-                    func.smap.clone(),
-                    "main function must return an i32 denoting the programs return type!".to_string(),
-                    CompileMessageType::Error
-                )
-            );
+        if result.signature.name == "main" && result.signature.ret != compiler.type_context.int8 {
+            compiler.emit_compile_message(CompileMessage::new(
+                func.smap.clone(),
+                "main function must return an int8 denoting the programs exit status!".to_string(),
+                CompileMessageType::Error,
+            ));
             return None;
         }
-        
-        let code = if let Some(body) = &func.data.body {
-            Some(TypedBlockSyntax::from_ast(body, ret, compiler, context)?)
-        } else {
-            None
-        };
 
-        let res = Some(
-
-            Self{
-                code,
-                params: params.iter().map(|v| v.name.clone()).collect(),
-                signature: sig,
-                is_extern: func.data.is_extern,
-            }
-
-        );
-
-
-        context.pop_last_scope();
-
-        res
+        Some(result)
     }
 }

@@ -4,18 +4,39 @@ use crate::common::operator::Operator;
 lazy_static!{
     pub static ref OPERATORS: Vec<Operator> = {
         let mut res = vec![
+            // 3-char (longest first after sort)
+            Operator::SHL_ASSIGN,
+            Operator::SHR_ASSIGN,
+            Operator::BOOL_AND_ASSIGN,
+            Operator::BOOL_OR_ASSIGN,
+            // 2-char
+            Operator::ADD_ASSIGN,
+            Operator::SUB_ASSIGN,
+            Operator::MUL_ASSIGN,
+            Operator::DIV_ASSIGN,
+            Operator::BIT_AND_ASSIGN,
+            Operator::BIT_OR_ASSIGN,
+            Operator::BIT_XOR_ASSIGN,
+            Operator::BOOL_AND,
+            Operator::BOOL_OR,
+            Operator::EQ,
+            Operator::NE,
+            Operator::LE,
+            Operator::GE,
+            Operator::SHL,
+            Operator::SHR,
+            // 1-char
             Operator::ASSIGN,
             Operator::ADD,
             Operator::SUB,
             Operator::MUL,
             Operator::DIV,
-            Operator::BITWISE_AND,
-            Operator::EQ,
-            Operator::NE,
+            Operator::BIT_AND,
+            Operator::BIT_OR,
+            Operator::BIT_XOR,
             Operator::LT,
             Operator::GT,
-            Operator::LE,
-            Operator::GE,
+            Operator::NOT,
         ];
 
         res.sort_by(|f, s| s.tk.len().cmp(&f.tk.len()));

@@ -263,7 +263,14 @@ impl Compiler {
                     .and_then(|info| info.llvm_type.try_into().ok())
                     .unwrap();
 
+                // Always emit allocas in the function entry block so that loop bodies
+                // don't adjust rsp on every iteration, which would overflow the stack.
+                let current_block = builder.get_insert_block().unwrap();
+                let entry_block = function.get_first_basic_block().unwrap();
+                builder.position_at_end(entry_block);
                 let alloca = builder.build_alloca(basic_ty, &vd.name).unwrap();
+                builder.position_at_end(current_block);
+
                 locals.declare_identifier_in_scope(vd.name.clone(), alloca.into());
 
                 if let Some(val_expr) = &vd.val {
@@ -276,12 +283,13 @@ impl Compiler {
             }
 
             TypedStatement::Return(ret) => {
-                if let Some(val) = self.compile_expression(builder, ret_var, globals, locals, &ret.0) {
+                let val = self.compile_expression(builder, ret_var, globals, locals, &ret.0);
+                if let Some(val) = val {
                     if let Ok(basic_val) = BasicValueEnum::try_from(val) {
                         ret_var.map(|v| builder.build_store(v, basic_val));
                     }
-                    builder.build_unconditional_branch(ret_block).unwrap();
                 }
+                builder.build_unconditional_branch(ret_block).unwrap();
             },
 
             TypedStatement::If(i4) => {
@@ -383,6 +391,9 @@ impl Compiler {
         if let Some(e1se) = &i4.data.otherwise {
             match e1se.deref() {
                 TypedElseStatement::If(if_statement) => {
+                    // else_block is the entry point when the outer condition is false;
+                    // the recursive if-statement's predicate must be emitted there.
+                    builder.position_at_end(else_block);
                     self.compile_if_statement(builder, function, ret_var, ret_block, globals, locals, if_statement);
                     // compile_if_statement leaves the builder at its own merge block; branch to ours.
                     if builder.get_insert_block().unwrap().get_terminator().is_none() {
@@ -518,11 +529,11 @@ impl Compiler {
             },
 
             TypedExprNode::BinaryOp(bop) => {
+                // --- Assign ---
                 if let BinaryOperator::Assign = &bop.op {
                     let rhs_val = self.compile_expression(builder, ret_var, globals, locals, &bop.rhs).unwrap();
                     match &bop.lhs.value {
                         TypedExprNode::RefRead(ref_inner) => {
-                            // Store through the reference pointer.
                             let ref_ptr = self.compile_expression(builder, ret_var, globals, locals, ref_inner).unwrap();
                             let basic: BasicValueEnum<'static> = rhs_val.try_into().ok().unwrap();
                             builder.build_store(ref_ptr.into_pointer_value(), basic).unwrap();
@@ -534,23 +545,19 @@ impl Compiler {
                             maker(builder, alloca, rhs_val);
                         }
                         TypedExprNode::UnaryOp(uop) if matches!(uop.op, UnaryOperator::Dereference) => {
-                            // Compile the pointer operand to get the address, then store through it.
                             let ptr_val = self.compile_expression(builder, ret_var, globals, locals, &uop.operand).unwrap();
                             let basic: BasicValueEnum<'static> = rhs_val.try_into().ok().unwrap();
                             builder.build_store(ptr_val.into_pointer_value(), basic).unwrap();
                         }
                         TypedExprNode::MemberAccess(ma) => {
-                            // Get a pointer to the struct field, then store through it.
                             let field_ptr = match &ma.object.value {
                                 TypedExprNode::Identifier(name) => {
-                                    // Direct struct variable: alloca is the base pointer
                                     let alloca = locals.get_identifier(name).unwrap().into_pointer_value();
                                     let TypeKind::Struct(sid) = self.type_context.get_by_id(ma.object.ty).unwrap().kind.clone() else { return None; };
                                     let struct_ty = self.type_context.structs[sid as usize].llvm_struct;
                                     builder.build_struct_gep(struct_ty, alloca, ma.member_index as u32, "field_ptr").ok().unwrap()
                                 }
                                 TypedExprNode::RefRead(inner) => {
-                                    // Reference to struct: inner compiles to the struct pointer
                                     let struct_ptr = self.compile_expression(builder, ret_var, globals, locals, inner).unwrap().into_pointer_value();
                                     let TypeKind::Struct(sid) = self.type_context.get_by_id(ma.object.ty).unwrap().kind.clone() else { return None; };
                                     let struct_ty = self.type_context.structs[sid as usize].llvm_struct;
@@ -566,11 +573,116 @@ impl Compiler {
                     return Some(rhs_val);
                 }
 
+                // --- Short-circuit && ---
+                if let BinaryOperator::BoolAnd = &bop.op {
+                    let function = builder.get_insert_block().unwrap().get_parent().unwrap();
+                    let lhs_val = self.compile_expression(builder, ret_var, globals, locals, &bop.lhs)?.into_int_value();
+                    let lhs_block = builder.get_insert_block().unwrap();
+                    let rhs_block   = self.llvm_context.append_basic_block(function, "and_rhs");
+                    let merge_block = self.llvm_context.append_basic_block(function, "and_merge");
+                    builder.build_conditional_branch(lhs_val, rhs_block, merge_block).unwrap();
+
+                    builder.position_at_end(rhs_block);
+                    let rhs_val = self.compile_expression(builder, ret_var, globals, locals, &bop.rhs)?.into_int_value();
+                    let rhs_final = builder.get_insert_block().unwrap();
+                    builder.build_unconditional_branch(merge_block).unwrap();
+
+                    builder.position_at_end(merge_block);
+                    let bool_ty = self.llvm_context.custom_width_int_type(1);
+                    let false_val = bool_ty.const_int(0, false);
+                    let phi = builder.build_phi(bool_ty, "and_result").unwrap();
+                    phi.add_incoming(&[(&false_val, lhs_block), (&rhs_val, rhs_final)]);
+                    return Some(phi.as_basic_value().into());
+                }
+
+                // --- Short-circuit || ---
+                if let BinaryOperator::BoolOr = &bop.op {
+                    let function = builder.get_insert_block().unwrap().get_parent().unwrap();
+                    let lhs_val = self.compile_expression(builder, ret_var, globals, locals, &bop.lhs)?.into_int_value();
+                    let lhs_block = builder.get_insert_block().unwrap();
+                    let rhs_block   = self.llvm_context.append_basic_block(function, "or_rhs");
+                    let merge_block = self.llvm_context.append_basic_block(function, "or_merge");
+                    builder.build_conditional_branch(lhs_val, merge_block, rhs_block).unwrap();
+
+                    builder.position_at_end(rhs_block);
+                    let rhs_val = self.compile_expression(builder, ret_var, globals, locals, &bop.rhs)?.into_int_value();
+                    let rhs_final = builder.get_insert_block().unwrap();
+                    builder.build_unconditional_branch(merge_block).unwrap();
+
+                    builder.position_at_end(merge_block);
+                    let bool_ty = self.llvm_context.custom_width_int_type(1);
+                    let true_val = bool_ty.const_int(1, false);
+                    let phi = builder.build_phi(bool_ty, "or_result").unwrap();
+                    phi.add_incoming(&[(&true_val, lhs_block), (&rhs_val, rhs_final)]);
+                    return Some(phi.as_basic_value().into());
+                }
+
+                // --- Compound assignment (a op= b) ---
+                let compound_inner_op: Option<fn(&inkwell::builder::Builder<'static>,
+                    AnyValueEnum<'static>, AnyValueEnum<'static>,
+                    &crate::typed_ast::typing::operator::OperatorOverloads,
+                    crate::typed_ast::typing::ty::TypeId) -> Option<AnyValueEnum<'static>>>
+                    = match &bop.op {
+                    BinaryOperator::AddAssign    => Some(|b,l,r,ops,rty| ops.add.get(&rty).map(|(_,m)| m(b,l,r))),
+                    BinaryOperator::SubAssign    => Some(|b,l,r,ops,rty| ops.sub.get(&rty).map(|(_,m)| m(b,l,r))),
+                    BinaryOperator::MulAssign    => Some(|b,l,r,ops,rty| ops.mul.get(&rty).map(|(_,m)| m(b,l,r))),
+                    BinaryOperator::DivAssign    => Some(|b,l,r,ops,rty| ops.div.get(&rty).map(|(_,m)| m(b,l,r))),
+                    BinaryOperator::BitAndAssign => Some(|b,l,r,ops,rty| ops.bit_and.get(&rty).map(|(_,m)| m(b,l,r))),
+                    BinaryOperator::BitOrAssign  => Some(|b,l,r,ops,rty| ops.bit_or.get(&rty).map(|(_,m)| m(b,l,r))),
+                    BinaryOperator::BitXorAssign => Some(|b,l,r,ops,rty| ops.bit_xor.get(&rty).map(|(_,m)| m(b,l,r))),
+                    BinaryOperator::ShlAssign    => Some(|b,l,r,ops,rty| ops.shl.get(&rty).map(|(_,m)| m(b,l,r))),
+                    BinaryOperator::ShrAssign    => Some(|b,l,r,ops,rty| ops.shr.get(&rty).map(|(_,m)| m(b,l,r))),
+                    _ => None,
+                };
+                if let Some(inner_fn) = compound_inner_op {
+                    let TypedExprNode::Identifier(name) = &bop.lhs.value else { return None; };
+                    let alloca = locals.get_identifier(name).unwrap().into_pointer_value();
+                    let lhs_ty: BasicTypeEnum<'static> = self.type_context
+                        .get_by_id(bop.lhs.ty).unwrap().llvm_type.try_into().ok().unwrap();
+                    let current_val: AnyValueEnum<'static> = builder.build_load(lhs_ty, alloca, "ca_load").unwrap().into();
+                    let rhs_val = self.compile_expression(builder, ret_var, globals, locals, &bop.rhs)?;
+                    let new_val = {
+                        let ops = &self.type_context.get_by_id(bop.lhs.ty).unwrap().ops;
+                        inner_fn(builder, current_val, rhs_val, ops, bop.rhs.ty)?
+                    };
+                    let basic_new: BasicValueEnum<'static> = new_val.try_into().ok().unwrap();
+                    builder.build_store(alloca, basic_new).unwrap();
+                    return Some(new_val);
+                }
+
+                // --- Compound &&= / ||= (short-circuit) ---
+                if matches!(bop.op, BinaryOperator::BoolAndAssign | BinaryOperator::BoolOrAssign) {
+                    let is_and = matches!(bop.op, BinaryOperator::BoolAndAssign);
+                    let function = builder.get_insert_block().unwrap().get_parent().unwrap();
+                    let TypedExprNode::Identifier(name) = &bop.lhs.value else { return None; };
+                    let alloca = locals.get_identifier(name).unwrap().into_pointer_value();
+                    let bool_ty = self.llvm_context.custom_width_int_type(1);
+                    let lhs_val = builder.build_load(bool_ty, alloca, "ca_load").unwrap().into_int_value();
+                    let lhs_block   = builder.get_insert_block().unwrap();
+                    let rhs_block   = self.llvm_context.append_basic_block(function, "bca_rhs");
+                    let merge_block = self.llvm_context.append_basic_block(function, "bca_merge");
+                    if is_and {
+                        builder.build_conditional_branch(lhs_val, rhs_block, merge_block).unwrap();
+                    } else {
+                        builder.build_conditional_branch(lhs_val, merge_block, rhs_block).unwrap();
+                    }
+                    builder.position_at_end(rhs_block);
+                    let rhs_val = self.compile_expression(builder, ret_var, globals, locals, &bop.rhs)?.into_int_value();
+                    let rhs_final = builder.get_insert_block().unwrap();
+                    builder.build_unconditional_branch(merge_block).unwrap();
+                    builder.position_at_end(merge_block);
+                    let short_val = bool_ty.const_int(if is_and { 0 } else { 1 }, false);
+                    let phi = builder.build_phi(bool_ty, "bca_result").unwrap();
+                    phi.add_incoming(&[(&short_val, lhs_block), (&rhs_val, rhs_final)]);
+                    let result_val: BasicValueEnum = phi.as_basic_value();
+                    builder.build_store(alloca, result_val).unwrap();
+                    return Some(result_val.into());
+                }
+
+                // --- Generic binary ops (both sides evaluated eagerly) ---
                 let lhs_val = self.compile_expression(builder, ret_var, globals, locals, &bop.lhs).unwrap();
                 let rhs_val = self.compile_expression(builder, ret_var, globals, locals, &bop.rhs).unwrap();
 
-                // Look up the operator callback. All borrows of type_context are released
-                // before the next compile_expression call, so no conflict.
                 let result = {
                     let ops = &self.type_context.get_by_id(bop.lhs.ty).unwrap().ops;
                     match &bop.op {
@@ -578,13 +690,20 @@ impl Compiler {
                         BinaryOperator::Sub => ops.sub.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
                         BinaryOperator::Mul => ops.mul.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
                         BinaryOperator::Div => ops.div.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
+                        BinaryOperator::BitAnd => ops.bit_and.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
+                        BinaryOperator::BitOr  => ops.bit_or.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
+                        BinaryOperator::BitXor => ops.bit_xor.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
+                        BinaryOperator::Shl    => ops.shl.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
+                        BinaryOperator::Shr    => ops.shr.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
                         BinaryOperator::Assign => unreachable!("assign handled above"),
+                        BinaryOperator::BoolAnd | BinaryOperator::BoolOr => unreachable!("handled above"),
                         BinaryOperator::Eq => ops.cmp.get(&bop.rhs.ty).map(|c| (c.eq)(builder, lhs_val, rhs_val)),
                         BinaryOperator::Ne => ops.cmp.get(&bop.rhs.ty).map(|c| (c.ne)(builder, lhs_val, rhs_val)),
                         BinaryOperator::Lt => ops.cmp.get(&bop.rhs.ty).map(|c| (c.lt)(builder, lhs_val, rhs_val)),
                         BinaryOperator::Gt => ops.cmp.get(&bop.rhs.ty).map(|c| (c.gt)(builder, lhs_val, rhs_val)),
                         BinaryOperator::Le => ops.cmp.get(&bop.rhs.ty).map(|c| (c.le)(builder, lhs_val, rhs_val)),
                         BinaryOperator::Ge => ops.cmp.get(&bop.rhs.ty).map(|c| (c.ge)(builder, lhs_val, rhs_val)),
+                        _ => unreachable!("compound assign handled above"),
                     }
                 };
                 result
@@ -593,38 +712,56 @@ impl Compiler {
             TypedExprNode::UnaryOp(uop) => {
                 match &uop.op {
                     UnaryOperator::Reference => {
-                        let TypedExprNode::Identifier(name) = &uop.operand.value else { return None; };
-                        if let Some(alloca) = locals.get_identifier(name) {
-                            return Some(alloca.into_pointer_value().into());
+                        match &uop.operand.value {
+                            TypedExprNode::Identifier(name) => {
+                                if let Some(alloca) = locals.get_identifier(name) {
+                                    return Some(alloca.into_pointer_value().into());
+                                }
+                                // functions are already pointers in LLVM's opaque pointer model
+                                if let Some(&global) = globals.get(name) {
+                                    return Some(global);
+                                }
+                                return None;
+                            }
+                            TypedExprNode::Index(idx) => {
+                                // &arr[i] — GEP without load
+                                let array_ptr = self.compile_expression(builder, ret_var, globals, locals, &idx.operand)
+                                    .unwrap().into_pointer_value();
+                                let idx_val: inkwell::values::IntValue<'static> = self
+                                    .compile_expression(builder, ret_var, globals, locals, &idx.index)
+                                    .unwrap().try_into().ok().unwrap();
+                                let array_info = self.type_context.get_by_id(idx.operand.ty).unwrap();
+                                let elem_ty_id = match array_info.kind {
+                                    TypeKind::Array { ty, .. } => ty,
+                                    TypeKind::Slice(ty) => ty,
+                                    _ => return None,
+                                };
+                                let elem_llvm: BasicTypeEnum<'static> = self.type_context
+                                    .get_by_id(elem_ty_id).unwrap().llvm_type.try_into().unwrap();
+                                let elem_ptr = unsafe {
+                                    builder.build_gep(elem_llvm, array_ptr, &[idx_val], "elem_ptr").unwrap()
+                                };
+                                return Some(elem_ptr.into());
+                            }
+                            _ => return None,
                         }
-                        // functions are already pointers in LLVM's opaque pointer model
-                        if let Some(&global) = globals.get(name) {
-                            return Some(global);
-                        }
-                        return None;
                     }
                     UnaryOperator::Dereference => {
-
-                        //dereferencing a pointer is syntactic sugar, we basically just return the pointer and let the "read ref"
-                        //do the rest
                         let ptr_val = self.compile_expression(builder, ret_var, globals, locals, &uop.operand).unwrap();
-                        //return the pointer
-                        // let inner_ty = match self.type_context.get_by_id(uop.operand.ty).unwrap().kind.clone() {
-                        //     TypeKind::Pointer(id) => id,
-                        //     _ => return None,
-                        // };
-                        // let llvm_ty: BasicTypeEnum = self.type_context.get_by_id(inner_ty).unwrap().llvm_type.try_into().ok().unwrap();
-                        // return Some(builder.build_load(llvm_ty, ptr_val.into_pointer_value(), "deref").unwrap().into());
                         return Some(ptr_val)
                     }
-                    UnaryOperator::Neg => {}
+                    UnaryOperator::Neg | UnaryOperator::Not => {}
                 }
 
                 let operand_val = self.compile_expression(builder, ret_var, globals, locals, &uop.operand).unwrap();
 
                 let result = {
                     let ops = &self.type_context.get_by_id(uop.operand.ty).unwrap().ops;
-                    ops.neg.as_ref().map(|(_, maker)| maker(builder, operand_val))
+                    match &uop.op {
+                        UnaryOperator::Neg => ops.neg.as_ref().map(|(_, maker)| maker(builder, operand_val)),
+                        UnaryOperator::Not => ops.not.as_ref().map(|(_, maker)| maker(builder, operand_val)),
+                        _ => unreachable!(),
+                    }
                 };
                 result
             }
@@ -664,6 +801,17 @@ impl Compiler {
                 } else {
                     None
                 }
+            }
+            TypedExprNode::SliceConstruct(sc) => {
+                let slice_ty = self.type_context.get_by_id(e.ty).unwrap().llvm_type
+                    .try_into().ok().unwrap();
+                let BasicTypeEnum::StructType(slice_struct_ty) = slice_ty else { return None; };
+                let len_val: BasicValueEnum<'static> = self.compile_expression(builder, ret_var, globals, locals, &sc.len)?.try_into().ok()?;
+                let ptr_val: BasicValueEnum<'static> = self.compile_expression(builder, ret_var, globals, locals, &sc.ptr)?.try_into().ok()?;
+                let mut agg: BasicValueEnum<'static> = slice_struct_ty.get_undef().into();
+                agg = builder.build_insert_value(agg.into_struct_value(), len_val, 0, "sl_len").unwrap().into_struct_value().into();
+                agg = builder.build_insert_value(agg.into_struct_value(), ptr_val, 1, "sl_ptr").unwrap().into_struct_value().into();
+                Some(agg.into())
             }
             TypedExprNode::StructConstruct(sc) => {
                 let struct_ty = self.type_context.structs[sc.struct_id as usize].llvm_struct;

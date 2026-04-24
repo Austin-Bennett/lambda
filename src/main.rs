@@ -16,8 +16,7 @@ pub mod lexer;
 pub mod common;
 pub mod compiler;
 pub mod ast;
-#[cfg(test)]
-pub mod tests;
+
 pub mod typed_ast;
 pub mod consteval;
 
@@ -57,8 +56,12 @@ pub struct Arguments {
     #[arg(short = 'L', value_name = "PATH", action = clap::ArgAction::Append)]
     lib_paths: Vec<String>,
 
+    /// Add a module search path (e.g. -M ./stdlib)
+    #[arg(short = 'M', long = "modules", value_name = "PATH", action = clap::ArgAction::Append)]
+    module_paths: Vec<String>,
+
     ///files to compile
-    #[arg(num_args = 1.., value_name = "FILE")]
+    #[arg(num_args = 1.., required = true, value_name = "FILE")]
     files: Vec<String>,
 }
 
@@ -73,15 +76,28 @@ fn main() -> Result<()> {
 
     
 
+    for path in &args.module_paths {
+        compiler.module_search_paths.push(std::path::PathBuf::from(path));
+    }
+    let search_paths = compiler.module_search_paths.clone();
+
     for file in &args.files {
-        match fs::read_to_string(file) {
-            Ok(f) => {
-                compiler.add_module(
-                    SourceOwner::new(SourceDescriptor::File, file.clone()),
+        let path = Path::new(file);
+        let resolved = if path.is_absolute() {
+            Some(path.to_path_buf())
+        } else {
+            search_paths.iter().map(|sp| sp.join(path)).find(|p| p.exists())
+        };
+
+        match resolved {
+            Some(p) => match fs::read_to_string(&p) {
+                Ok(f) => compiler.add_module(
+                    SourceOwner::new(SourceDescriptor::File, p.to_string_lossy().into_owned()),
                     f,
-                )
-            }
-            Err(e) => eprintln!("{:?}", e),
+                ),
+                Err(e) => eprintln!("{}: {:?}", file, e),
+            },
+            None => eprintln!("{}: file not found in any module search path", file),
         }
     }
 

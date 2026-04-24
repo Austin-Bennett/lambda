@@ -2,11 +2,26 @@
 Compiled language based on LLVM, compiler written in rust
 
 ## Usage
-`lambda [--output, -o <output> (default: a.out)] [--debug_ast] [--shared] [-l, --link <shared library>] [-L <linkage directory>] files...`
+```
+lambda 
+[--output, -o <output> (default: a.out)]
+[--shared]
+[-l, --link <shared library>]
+[-L <linkage directory>]
+[--optimize, -O <none, 1, 2, 3>]
+files...
+```
+**Debug Options**
+```
+[--output-ir <path>]
+[--debug-ast]
+[--no-codegen]
+ ```
 
+### Compile options
 **output:** the output file path
 
-**debug_ast:** print the AST as a debug step
+**debug-ast:** print the AST as a debug step
 
 **shared:** compile this as a shared (.so or .dll) library
 
@@ -14,7 +29,16 @@ Compiled language based on LLVM, compiler written in rust
 
 **L:** specify a linkage directory for linking to a file
 
+**optimize:** optimization level to apply to the generated IR
+
 **files:** files to compile
+
+### Debug Options
+
+**output-ir:** output the generated llvm ir to the specified path
+
+**no-codegen:** Tell the compiler to stop after AST generation
+
 
 ## Lang features
 
@@ -61,6 +85,29 @@ An expression is anything that performs actions on values, for example, `a+b` is
 
 putting a number in front of any identifier (such as the `2b` example) is the same as multiplication
 all primitive types can use the syntax `a(b)` for multiplication as well (i.e `2(2)` will return `4`)
+
+
+#### Operators
+
+|                         Name                          | Token |
+|:-----------------------------------------------------:|:-----:|
+|                       Addition                        |   +   |
+|                Subtraction / Negation                 |   -   |
+|             Multiplication / Dereference              |   *   |
+|                       Division                        |   /   |
+|                        Assign                         |   =   |
+| Address Of / Bitwise AND / Boolean NS<sup>1</sup> AND |   &   |
+|        Bitwise OR / Boolean NS<sup>1</sup> OR         |  \|   |
+|                      Bitwise XOR                      |   ^   |
+|                 Bitwise / Boolean NOT                 |   !   |
+|                  Bitwise Shift Right                  |  \>>  |
+|                  Bitwise Shift Left                   |  <<   |
+|                      Boolean AND                      |  &&   |
+|                      Boolean OR                       | \|\|  |
+
+1. NS stands for Non-Short Circuiting
+2. Bitwise operators can only be applied to integer types
+3. All of these operators have assignment variants (+=)
 
 #### Variable Declarations
 
