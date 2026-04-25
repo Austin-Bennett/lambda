@@ -82,23 +82,31 @@ fn main() -> Result<()> {
     }
     let search_paths = compiler.module_search_paths.clone();
 
+    let mut extra_link_inputs: Vec<String> = Vec::new();
+
     for file in &args.files {
         let path = Path::new(file);
-        let resolved = if path.is_absolute() {
-            Some(path.to_path_buf())
-        } else {
-            search_paths.iter().map(|sp| sp.join(path)).find(|p| p.exists())
-        };
+        match path.extension().and_then(|e| e.to_str()) {
+            Some("lm") | None => {
+                let resolved = if path.is_absolute() {
+                    Some(path.to_path_buf())
+                } else {
+                    search_paths.iter().map(|sp| sp.join(path)).find(|p| p.exists())
+                };
 
-        match resolved {
-            Some(p) => match fs::read_to_string(&p) {
-                Ok(f) => compiler.add_module(
-                    SourceOwner::new(SourceDescriptor::File, p.to_string_lossy().into_owned()),
-                    f,
-                ),
-                Err(e) => eprintln!("{}: {:?}", file, e),
-            },
-            None => eprintln!("{}: file not found in any module search path", file),
+                match resolved {
+                    Some(p) => match fs::read_to_string(&p) {
+                        Ok(f) => compiler.add_module(
+                            SourceOwner::new(SourceDescriptor::File, p.to_string_lossy().into_owned()),
+                            f,
+                        ),
+                        Err(e) => eprintln!("{}: {:?}", file, e),
+                    },
+                    None => eprintln!("{}: file not found in any module search path", file),
+                }
+            }
+            // Object files, archives, shared libs — pass directly to the linker
+            _ => extra_link_inputs.push(file.clone()),
         }
     }
 
@@ -205,7 +213,11 @@ fn main() -> Result<()> {
         link_cmd.arg("-shared");
     }
     
-    link_cmd.args([obj_path.to_str().unwrap(), "-o", &args.output]);
+    link_cmd.arg(obj_path.to_str().unwrap());
+    for input in &extra_link_inputs {
+        link_cmd.arg(input);
+    }
+    link_cmd.args(["-o", &args.output]);
     for path in &args.lib_paths {
         link_cmd.args(["-L", path]);
     }
