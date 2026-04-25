@@ -71,13 +71,17 @@ impl LTypedModule {
         for item in &module.ast {
             match item {
                 ast::Item::Func(function) => {
+                    // generic functions are handled on-demand; skip them here
+                    if !function.data.type_parameters.is_empty() { continue; }
                     let Some(func) = Function::from_ast(function, compiler, context) else { continue; };
                     functions.push(func);
                 }
                 ast::Item::Modify(modify) => {
+                    // generic modify blocks are handled on-demand; skip them here
+                    if !modify.data.type_parameters.is_empty() { continue; }
                     //todo: allow any type, including compound types like arrays or pointers
                     let Type::Typename(type_name) = &modify.data.ty else { continue; };
-                    
+
                     let type_name = type_name.clone();
                     let Some(type_id) = compiler.resolve_type(&modify.data.ty) else { continue; };
                     for method in &modify.data.methods {

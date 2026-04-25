@@ -8,6 +8,7 @@ use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{FeatureToken, StatementToken, Token, TokenType};
 use crate::{token_match, unpack_opt_tk};
 
+#[derive(Clone)]
 pub enum ElseStatement {
     If(IfSyntax),
     Else(BlockSyntax),
@@ -30,6 +31,7 @@ impl Debug for ElseStatement {
     }
 }
 
+#[derive(Clone)]
 pub struct IfStatement {
     pub predicate: ExprSyntax,
     pub code: BlockSyntax,

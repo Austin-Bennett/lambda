@@ -11,13 +11,11 @@ use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 
 
-//todo: return value
+#[derive(Clone)]
 pub struct Function {
     pub name: String,
+    pub type_parameters: Vec<String>,
     pub parameters: Vec<VarDeclSyntax>,
-
-    //todo: vec of type parameters
-    //pub type_parameters: Vec<String>,
     pub body: Option<BlockSyntax>,
     pub ty: Option<Type>, //None for void
 
@@ -33,6 +31,9 @@ impl Debug for Function {
             write!(f, "extern ")?;
         }
 
+        if !self.type_parameters.is_empty() {
+            write!(f, "<{}>", self.type_parameters.join(", "))?;
+        }
         write!(f, "{}(", self.name)?;
 
         let mut first = true;
@@ -98,6 +99,45 @@ impl Syntax for FunctionSyntax {
         };
 
 
+        // optional type parameters: fn<T, U> name(...)
+        let type_parameters = if let unpack_opt_tk!(
+            TokenType::Expression(ExpressionToken::Operator(crate::common::operator::Operator { tk: "<", .. })), _
+        ) = tokens.get(0) {
+            tokens.pop_front(); // consume '<'
+            let mut tps = Vec::new();
+            loop {
+                if let unpack_opt_tk!(
+                    TokenType::Expression(ExpressionToken::Operator(crate::common::operator::Operator { tk: ">", .. })), _
+                ) = tokens.get(0) {
+                    tokens.pop_front();
+                    break;
+                }
+                let next = tokens.pop_front();
+                if let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Identifier(tp)), _) = next {
+                    tps.push(tp);
+                } else {
+                    compiler.emit_compile_message(CompileMessage::expected_token_error(
+                        smap.clone(), "type parameter name", "generic function declaration", next,
+                    ));
+                    break;
+                }
+                if let unpack_opt_tk!(
+                    TokenType::Expression(ExpressionToken::Operator(crate::common::operator::Operator { tk: ">", .. })), _
+                ) = tokens.get(0) {
+                    tokens.pop_front();
+                    break;
+                }
+                if let unpack_opt_tk!(TokenType::Feature(FeatureToken::Comma), _) = tokens.get(0) {
+                    tokens.pop_front();
+                } else {
+                    break;
+                }
+            }
+            tps
+        } else {
+            Vec::new()
+        };
+
         //get the name next
         let next = tokens.pop_front();
         let name = if let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Identifier(s)), imap) = next {
@@ -115,9 +155,8 @@ impl Syntax for FunctionSyntax {
             return None;
         };
 
-
         let next = tokens.pop_front();
-        
+
 
         //expect an open parentheses
         let mut last_smap = if let unpack_opt_tk!(TokenType::Expression(ExpressionToken::OpenParentheses), imap) = next {
@@ -216,6 +255,7 @@ impl Syntax for FunctionSyntax {
             smap,
             data: Function{
                 name,
+                type_parameters,
                 parameters: args,
                 body: block,
                 ty,

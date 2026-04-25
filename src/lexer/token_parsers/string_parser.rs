@@ -10,6 +10,7 @@ lazy_static!{
             ("\"", '\"'),
             ("\'", '\''),
             ("\\", '\\'),
+            ("n", '\n'),
         ];
 
         res.sort_by(|(s1, _), (s2, _)| s2.len().cmp(&s1.len()));
@@ -89,7 +90,7 @@ impl Parser for StringLiteralParser {
 
                 if c == '\\' {
                     let Some((c, size)) = parse_escaped_char(&s[i..]) else {
-                        return Some((TokenType::CompileError(format!("Unknown escaped char: {}", s)), len + 2));
+                        return Some((TokenType::CompileError(format!("Unknown escaped char: {}", &s[i..])), len + 2));
                     };
                     i += size;
 

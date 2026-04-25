@@ -10,6 +10,7 @@ use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{ExpressionToken, FeatureToken, StatementToken, Token, TokenType};
 use crate::unpack_opt_tk;
 
+#[derive(Clone)]
 pub struct MethodDecl {
     pub name: String,
     pub has_self: bool,
@@ -33,6 +34,7 @@ impl Debug for MethodDecl {
     }
 }
 
+#[derive(Clone)]
 pub struct OperatorDecl {
     pub op_name: String, // "add", "sub", "mul", "div", "assign", "cmp", "drop"
     pub has_self: bool,
@@ -54,7 +56,9 @@ impl Debug for OperatorDecl {
     }
 }
 
+#[derive(Clone)]
 pub struct ModifyBlock {
+    pub type_parameters: Vec<String>,
     pub ty: Type,
     pub methods: Vec<MethodDecl>,
     pub operators: Vec<OperatorDecl>,
@@ -78,6 +82,45 @@ impl Syntax for ModifySyntax {
         };
         let unpack_opt_tk!(TokenType::Statement(StatementToken::ModifyKW), mut smap) = tokens.pop_front() else {
             unreachable!()
+        };
+
+        // optional type parameters: modify<T, U> Type { ... }
+        let type_parameters = if let Some(Token {
+            typ: TokenType::Expression(ExpressionToken::Operator(Operator { tk: "<", .. })), ..
+        }) = tokens.get(0) {
+            tokens.pop_front(); // consume '<'
+            let mut tps = Vec::new();
+            loop {
+                if let Some(Token {
+                    typ: TokenType::Expression(ExpressionToken::Operator(Operator { tk: ">", .. })), ..
+                }) = tokens.get(0) {
+                    tokens.pop_front();
+                    break;
+                }
+                let next = tokens.pop_front();
+                if let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Identifier(tp)), _) = next {
+                    tps.push(tp);
+                } else {
+                    compiler.emit_compile_message(CompileMessage::expected_token_error(
+                        smap.clone(), "type parameter name", "generic modify declaration", next,
+                    ));
+                    break;
+                }
+                if let Some(Token {
+                    typ: TokenType::Expression(ExpressionToken::Operator(Operator { tk: ">", .. })), ..
+                }) = tokens.get(0) {
+                    tokens.pop_front();
+                    break;
+                }
+                if let Some(Token { typ: TokenType::Feature(FeatureToken::Comma), .. }) = tokens.get(0) {
+                    tokens.pop_front();
+                } else {
+                    break;
+                }
+            }
+            tps
+        } else {
+            Vec::new()
         };
 
         // Parse the type being modified
@@ -131,7 +174,7 @@ impl Syntax for ModifySyntax {
                 break;
             }
 
-            // Optional 'public'
+            // Optional 'public' keyword — methods are private by default
             let (public, pub_smap) = if let Some(Token {
                 typ: TokenType::Statement(StatementToken::PublicKW), ..
             }) = tokens.get(0) {
@@ -390,7 +433,7 @@ impl Syntax for ModifySyntax {
 
         Some(ModifySyntax {
             smap,
-            data: ModifyBlock { ty, methods, operators },
+            data: ModifyBlock { type_parameters, ty, methods, operators },
         })
     }
 

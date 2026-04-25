@@ -135,12 +135,20 @@ pub fn eval_array_len_expr_uint(expr: &ExprSyntax, compiler: &mut Compiler) -> O
                     format!("Expected 1 argument, got {}", op.arguments.len()),
                     CompileMessageType::Error,
                 ));
-                
+
                 None
             } else {
                 let v = eval_array_len_expr_uint(&op.arguments[0], compiler)?;
                 Some(caller * v)
             }
+        }
+        Expr::GenericCall(_) => {
+            compiler.emit_compile_message(CompileMessage::new(
+                expr.smap.clone(),
+                "generic calls are not allowed in constant expressions".into(),
+                CompileMessageType::Error,
+            ));
+            None
         }
     }
 }

@@ -50,6 +50,13 @@ pub struct MemberAccessOperation {
 }
 
 #[derive(Hash, Clone)]
+pub struct GenericCallOperation {
+    pub callee: ExprSyntax,
+    pub type_args: Vec<Type>,
+    pub arguments: Vec<ExprSyntax>,
+}
+
+#[derive(Hash, Clone)]
 pub enum Expr {
     Identifier(String),
     Literal(LiteralValue),
@@ -64,6 +71,7 @@ pub enum Expr {
     CallOp(Box<CallOperation>),
     CastOp(Box<CastOperation>),
     MemberAccess(Box<MemberAccessOperation>),
+    GenericCall(Box<GenericCallOperation>),
 }
 
 
@@ -138,6 +146,23 @@ impl Debug for Expr {
             }
             Expr::MemberAccess(ma) => {
                 write!(f, "{:?}.{}", ma.object.data, ma.member)?;
+            }
+            Expr::GenericCall(gc) => {
+                write!(f, "{:?}.<", gc.callee.data)?;
+                let mut first = true;
+                for ty in &gc.type_args {
+                    if !first { write!(f, ", ")?; }
+                    first = false;
+                    write!(f, "{:?}", ty)?;
+                }
+                write!(f, ">(")?;
+                let mut first = true;
+                for arg in &gc.arguments {
+                    if !first { write!(f, ", ")?; }
+                    first = false;
+                    write!(f, "{:?}", arg.data)?;
+                }
+                write!(f, ")")?;
             }
         }
 
@@ -455,22 +480,78 @@ impl ExprSyntax {
                     lhs.smap.extend(emap);
                 }
                 ExpressionToken::Dot => {
-                    // member access: consume dot, expect identifier
+                    // member access or generic call: consume dot
                     let (_, dot_smap) = tokens.next_expression().unwrap();
-                    match tokens.next_expression() {
-                        Some((ExpressionToken::Identifier(member), msmap)) => {
-                            let old_lhs = lhs.clone();
-                            lhs.smap.extend(msmap);
-                            lhs.data = Expr::MemberAccess(Box::new(MemberAccessOperation {
-                                object: old_lhs,
-                                member,
-                            }));
+                    // peek: if '<' follows, this is a generic call expr.<T>(...)
+                    let is_generic = matches!(
+                        tokens.peek_expression(),
+                        Some((ExpressionToken::Operator(op), _)) if op.tk == "<"
+                    );
+                    if is_generic {
+                        tokens.next_expression(); // consume '<'
+                        let mut type_args = Vec::new();
+                        loop {
+                            // check for closing '>'
+                            if matches!(tokens.peek_expression(), Some((ExpressionToken::Operator(op), _)) if op.tk == ">") {
+                                tokens.next_expression();
+                                break;
+                            }
+                            match TypeSyntax::parse(tokens, compiler) {
+                                Some(t) => type_args.push(t.data),
+                                None => break,
+                            }
+                            if matches!(tokens.peek_expression(), Some((ExpressionToken::Operator(op), _)) if op.tk == ">") {
+                                tokens.next_expression();
+                                break;
+                            }
+                            if matches!(tokens.peek_feature(), Some((FeatureToken::Comma, _))) {
+                                tokens.next_feature();
+                            } else {
+                                break;
+                            }
                         }
-                        _ => return Outcome::Err(CompileMessage::new(
-                            dot_smap,
-                            "expected member name after '.'".into(),
-                            CompileMessageType::Error,
-                        )),
+                        // now expect '(' args ')'
+                        if !matches!(tokens.peek_expression(), Some((ExpressionToken::OpenParentheses, _))) {
+                            return Outcome::Err(CompileMessage::new(
+                                dot_smap,
+                                "expected '(' after generic type arguments in generic call".into(),
+                                CompileMessageType::Error,
+                            ));
+                        }
+                        let (args, emap) = match Self::parse_parentheses(
+                            tokens, compiler,
+                            &ExpressionToken::OpenParentheses, &ExpressionToken::CloseParentheses,
+                        )? {
+                            Some(args) => args,
+                            None => return Outcome::Err(CompileMessage::new(
+                                dot_smap,
+                                "expected ')' to close generic call arguments".into(),
+                                CompileMessageType::Error,
+                            )),
+                        };
+                        let callee = lhs.clone();
+                        lhs.smap.extend(emap);
+                        lhs.data = Expr::GenericCall(Box::new(GenericCallOperation {
+                            callee,
+                            type_args,
+                            arguments: args,
+                        }));
+                    } else {
+                        match tokens.next_expression() {
+                            Some((ExpressionToken::Identifier(member), msmap)) => {
+                                let old_lhs = lhs.clone();
+                                lhs.smap.extend(msmap);
+                                lhs.data = Expr::MemberAccess(Box::new(MemberAccessOperation {
+                                    object: old_lhs,
+                                    member,
+                                }));
+                            }
+                            _ => return Outcome::Err(CompileMessage::new(
+                                dot_smap,
+                                "expected member name after '.'".into(),
+                                CompileMessageType::Error,
+                            )),
+                        }
                     }
                 }
                 ExpressionToken::CloseParentheses => {

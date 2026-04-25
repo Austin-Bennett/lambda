@@ -1,7 +1,7 @@
 use crate::ast::statements::expressions::{Expr, ExprSyntax};
 use crate::common::sourcemap::SourceMap;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
-use crate::lexer::literal::{IntegerLiteral, LiteralValue};
+use crate::lexer::literal::LiteralValue;
 use crate::typed_ast::typing::scope::AvailableContext;
 use crate::typed_ast::typing::tcontext::TypeContext;
 use crate::typed_ast::typing::ty::{StructId, TypeId, TypeKind};
@@ -375,28 +375,6 @@ impl TypedExpr {
         None
     }
 
-    /// Find a user-defined cmp op entry, coercing a literal rhs type if needed.
-    /// Returns `(coerced_rhs_ty, mangled_name)`.
-    fn find_user_cmp(
-        user_cmp: &HashMap<TypeId, String>,
-        rhs_ty: TypeId,
-        context: &TypeContext,
-    ) -> Option<(TypeId, String)> {
-        if let Some(mangled) = user_cmp.get(&rhs_ty) {
-            return Some((rhs_ty, mangled.clone()));
-        }
-        if context.is_literal(rhs_ty) {
-            for (reg_ty, mangled) in user_cmp {
-                if context.get_by_id(*reg_ty)
-                    .map_or(false, |i| i.ops.from_literal.contains_key(&rhs_ty))
-                {
-                    return Some((*reg_ty, mangled.clone()));
-                }
-            }
-        }
-        None
-    }
-
     /// Build a call to a user-defined binary operator: `mangled(&lhs, rhs)`.
     fn make_user_binop_call(
         mangled: String,
@@ -426,63 +404,6 @@ impl TypedExpr {
             caller: fn_expr,
             arguments: vec![self_ref, rhs],
         })), result_ty))
-    }
-
-    /// Build a comparison using a user-defined `cmp` operator.
-    /// Generates `T__op_cmp(&lhs, rhs) OP 0` where OP is the original comparison.
-    fn make_user_cmp_call(
-        op_tk: &str,
-        mangled: String,
-        lhs: TypedExpr,
-        rhs: TypedExpr,
-        context: &AvailableContext<TypeId>,
-        compiler: &mut Compiler,
-        smap: SourceMap,
-    ) -> Option<(TypedExprNode, TypeId)> {
-        let fn_type_id = *context.get_identifier(&mangled)?;
-        let int8_id = compiler.type_context.int8;
-        let bool_id = compiler.type_context.bool;
-        let self_ref_ty = compiler.type_context.reference_to(lhs.ty);
-        let self_ref = TypedExpr {
-            smap: lhs.smap.clone(),
-            ty: self_ref_ty,
-            value: TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
-                op: UnaryOperator::Reference,
-                operand: lhs,
-            })),
-        };
-        let fn_expr = TypedExpr {
-            smap: smap.clone(),
-            ty: fn_type_id,
-            value: TypedExprNode::Identifier(mangled),
-        };
-        let cmp_call = TypedExpr {
-            ty: int8_id,
-            smap: smap.clone(),
-            value: TypedExprNode::CallOp(Box::new(TypedCallOperation {
-                caller: fn_expr,
-                arguments: vec![self_ref, rhs],
-            })),
-        };
-        let zero = TypedExpr {
-            ty: int8_id,
-            smap: smap.clone(),
-            value: TypedExprNode::Literal(LiteralValue::Integer(IntegerLiteral { value: 0, negative: false })),
-        };
-        let op_variant = match op_tk {
-            "==" => BinaryOperator::Eq,
-            "!=" => BinaryOperator::Ne,
-            "<"  => BinaryOperator::Lt,
-            ">"  => BinaryOperator::Gt,
-            "<=" => BinaryOperator::Le,
-            ">=" => BinaryOperator::Ge,
-            _    => unreachable!(),
-        };
-        Some((TypedExprNode::BinaryOp(Box::new(TypedBinaryOperation {
-            op: op_variant,
-            lhs: cmp_call,
-            rhs: zero,
-        })), bool_id))
     }
 
     pub fn from_node(expr: &ExprSyntax, compiler: &mut Compiler, context: &AvailableContext<TypeId>) -> Option<(TypedExprNode, TypeId)> {
@@ -666,42 +587,6 @@ impl TypedExpr {
 
                 if bin.op.tk != "=" {
                     Self::infer_literals_binary(&compiler.type_context, &mut lhs, &mut rhs);
-
-                    // Check user-defined binary/cmp operators (take priority over built-ins)
-                    match bin.op.tk {
-                        "+" | "-" | "*" | "/" => {
-                            let found = {
-                                let info = compiler.type_context.get_by_id(lhs.ty)?;
-                                let user_ops = match bin.op.tk {
-                                    "+" => &info.ops.user_add,
-                                    "-" => &info.ops.user_sub,
-                                    "*" => &info.ops.user_mul,
-                                    "/" => &info.ops.user_div,
-                                    _   => unreachable!(),
-                                };
-                                Self::find_user_binop(user_ops, rhs.ty, &compiler.type_context)
-                            };
-                            if let Some((coerced_ty, result_ty, mangled)) = found {
-                                rhs.ty = coerced_ty;
-                                return Some(Self::make_user_binop_call(
-                                    mangled, result_ty, lhs, rhs, context, compiler, expr.smap.clone(),
-                                )?);
-                            }
-                        }
-                        "==" | "!=" | "<" | ">" | "<=" | ">=" => {
-                            let found = {
-                                let info = compiler.type_context.get_by_id(lhs.ty)?;
-                                Self::find_user_cmp(&info.ops.user_cmp, rhs.ty, &compiler.type_context)
-                            };
-                            if let Some((coerced_ty, mangled)) = found {
-                                rhs.ty = coerced_ty;
-                                return Some(Self::make_user_cmp_call(
-                                    bin.op.tk, mangled, lhs, rhs, context, compiler, expr.smap.clone(),
-                                )?);
-                            }
-                        }
-                        _ => {}
-                    }
                 }
 
                 //lhs must have an operator overload that accepts rhs
@@ -1343,7 +1228,7 @@ impl TypedExpr {
                     .and_then(|info| info.methods.get(&op.member))
                     .cloned()
                 {
-                    if !public {
+                    if !public && compiler.current_self_type != Some(effective_ty) {
                         compiler.emit_compile_message(CompileMessage::new(
                             expr.smap.clone(),
                             format!("method '{}' is private", op.member),
@@ -1423,9 +1308,71 @@ impl TypedExpr {
                 let object = Self::coerce_ref(object, &compiler.type_context);
                 Some((TypedExprNode::MemberAccess(Box::new(TypedMemberAccess { object, member_index })), member_ty))
             }
+            Expr::GenericCall(gc) => {
+                // Resolve the callee to a plain identifier (template name)
+                let Expr::Identifier(fn_name) = &gc.callee.data else {
+                    compiler.emit_compile_message(CompileMessage::new(
+                        expr.smap.clone(),
+                        "generic call callee must be a plain identifier".into(),
+                        CompileMessageType::Error,
+                    ));
+                    return None;
+                };
+
+                // Resolve each type argument to a TypeId
+                let type_arg_ids: Vec<_> = gc.type_args.iter()
+                    .map(|t| compiler.resolve_type(t))
+                    .collect::<Option<_>>()?;
+
+                // Ensure the instantiation exists (queues body type-check if needed)
+                let (mangled, fn_type_id) = compiler.ensure_generic_fn(fn_name, type_arg_ids)?;
+
+                // Retrieve return type and parameter types from the registered signature
+                let ret_ty = compiler.type_context.get_by_id(fn_type_id)
+                    .and_then(|info| {
+                        if let TypeKind::Function { ret, .. } = info.kind { Some(ret) } else { None }
+                    })?;
+
+                let param_types: Vec<TypeId> = compiler.type_context.get_by_id(fn_type_id)
+                    .and_then(|info| {
+                        if let TypeKind::Function { ref params, .. } = info.kind {
+                            Some(params.clone())
+                        } else { None }
+                    })
+                    .unwrap_or_default();
+
+                // Type-check arguments
+                if gc.arguments.len() != param_types.len() {
+                    compiler.emit_compile_message(CompileMessage::new(
+                        expr.smap.clone(),
+                        format!("generic function '{}' expects {} arguments, got {}",
+                            fn_name, param_types.len(), gc.arguments.len()),
+                        CompileMessageType::Error,
+                    ));
+                    return None;
+                }
+
+                let mut typed_args = Vec::new();
+                for (arg_expr, &expected_ty) in gc.arguments.iter().zip(param_types.iter()) {
+                    let mut typed = TypedExpr::from_ast(arg_expr, compiler, context)?;
+                    typed = Self::coerce_literal(&compiler.type_context, typed, expected_ty);
+                    typed_args.push(typed);
+                }
+
+                let callee_expr = TypedExpr {
+                    value: TypedExprNode::Identifier(mangled.clone()),
+                    ty: fn_type_id,
+                    smap: gc.callee.smap.clone(),
+                };
+
+                Some((TypedExprNode::CallOp(Box::new(TypedCallOperation {
+                    caller: callee_expr,
+                    arguments: typed_args,
+                })), ret_ty))
+            }
         }
     }
-    
+
     pub fn from_ast(expr: &ExprSyntax, compiler: &mut Compiler, context: &AvailableContext<TypeId>) -> Option<Self> {
         let (value, ty) = TypedExpr::from_node(expr, compiler, context)?;
         

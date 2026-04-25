@@ -16,6 +16,7 @@ pub mod ret;
 pub mod if_stmt;
 pub mod while_stmt;
 
+#[derive(Clone)]
 pub enum Statement {
     VariableDeclaration(VarDeclSyntax),
     Expression(ExprSyntax),

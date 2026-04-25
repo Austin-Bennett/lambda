@@ -69,7 +69,7 @@ impl Function {
 
 
 impl Function {
-    fn from_parts(
+    pub fn from_parts(
         mangled_name: &str,
         has_self: bool,
         self_type_id: Option<TypeId>,
@@ -124,8 +124,12 @@ impl Function {
             params: param_types,
         };
 
+        let prev_self_type = compiler.current_self_type;
+        compiler.current_self_type = self_type_id;
+
         let code = if let Some(b) = body {
             let Some(typed) = TypedBlockSyntax::from_ast(b, ret, compiler, context) else {
+                compiler.current_self_type = prev_self_type;
                 context.pop_last_scope();
                 return None;
             };
@@ -134,6 +138,7 @@ impl Function {
             None
         };
 
+        compiler.current_self_type = prev_self_type;
         context.pop_last_scope();
 
         Some(Self { is_extern, signature: sig, code, params: param_names })

@@ -6,7 +6,7 @@ use crate::ast::statements::expressions::ExprSyntax;
 use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
 use crate::compiler::{CompileMessage, Compiler};
-use crate::lexer::token::{ExpressionToken, Token, TokenType};
+use crate::lexer::token::{ExpressionToken, FeatureToken, Token, TokenType};
 use crate::{unpack_opt_tk, unpack_tk};
 use crate::consteval::eval_array_len_expr_uint;
 use crate::typed_ast::typing::tcontext::TypeContext;
@@ -14,6 +14,7 @@ use crate::typed_ast::typing::tcontext::TypeContext;
 #[derive(PartialEq, Eq, Hash, Clone)]
 pub enum Type {
     Typename(String),
+    Generic { name: String, params: Vec<Type> },
     Reference(Box<Type>),
     Pointer(Box<Type>),
     Slice(Box<Type>),
@@ -26,6 +27,7 @@ impl Type {
     pub fn try_get_size(&self) -> Option<usize> {
         match self {
             Type::Typename(_) => None,
+            Type::Generic { .. } => None,
             Type::Reference(_) => Some(TypeContext::SIZE_POINTER),
             Type::Pointer(_) => Some(TypeContext::SIZE_POINTER),
             Type::Slice(_) => Some(TypeContext::SIZE_POINTER * 2),
@@ -42,6 +44,16 @@ impl Debug for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Type::Typename(mp) => write!(f, "{}", mp),
+            Type::Generic { name, params } => {
+                write!(f, "{}<", name)?;
+                let mut first = true;
+                for p in params {
+                    if !first { write!(f, ", ")?; }
+                    first = false;
+                    write!(f, "{:?}", p)?;
+                }
+                write!(f, ">")
+            }
             Type::Reference(r) => {
                 write!(f, "{:?}&", r)
             }
@@ -178,10 +190,43 @@ impl Syntax for TypeSyntax {
             })
         else { return None; };
 
-        let mut res = TypeSyntax::new(
-            Type::Typename(s),
-            smap
-        );
+        // Check for generic type params: Name<T, U, ...>
+        let base = if let Some(unpack_tk!(
+            TokenType::Expression(ExpressionToken::Operator(Operator { tk: "<", .. })), _
+        )) = tokens.get(0) {
+            tokens.pop_front(); // consume '<'
+            let mut params = Vec::new();
+            loop {
+                // allow trailing '>' with no params for now
+                if let Some(unpack_tk!(
+                    TokenType::Expression(ExpressionToken::Operator(Operator { tk: ">", .. })), _
+                )) = tokens.get(0) {
+                    tokens.pop_front();
+                    break;
+                }
+                match TypeSyntax::parse(tokens, compiler) {
+                    Some(p) => params.push(p.data),
+                    None => break,
+                }
+                // comma or '>'
+                if let Some(unpack_tk!(
+                    TokenType::Expression(ExpressionToken::Operator(Operator { tk: ">", .. })), _
+                )) = tokens.get(0) {
+                    tokens.pop_front();
+                    break;
+                }
+                if let Some(unpack_tk!(TokenType::Feature(FeatureToken::Comma), _)) = tokens.get(0) {
+                    tokens.pop_front();
+                } else {
+                    break;
+                }
+            }
+            Type::Generic { name: s, params }
+        } else {
+            Type::Typename(s)
+        };
+
+        let mut res = TypeSyntax::new(base, smap);
 
         loop {
             if !res.parse_next_modifier(tokens, compiler) { break; }

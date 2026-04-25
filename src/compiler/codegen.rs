@@ -38,7 +38,7 @@ impl Compiler {
         for (s, id) in &self.str_literal_reg.item_map {
             let global = module.add_global(
                 basic,
-                Some(AddressSpace::from(1u16)),
+                None,
                 "string_literal"
             );
 
@@ -58,24 +58,21 @@ impl Compiler {
                 internal_blob.as_pointer_value().into(),
             ]);
             global.set_initializer(&constant_struct);
+            global.set_linkage(Linkage::Private);
 
             string_literals.insert(*id, global);
         }
 
         let modules = mem::take(&mut self.typed_modules);
+        let mono_fns = mem::take(&mut self.pending_mono_fns);
 
         // First pass: declare all functions so they can be called before definition.
         for (_, tmod) in &modules {
             for func in &tmod.functions {
                 let ret_type = self.type_context.get_by_id(func.signature.ret).unwrap();
-
                 let llvm_params: Vec<BasicMetadataTypeEnum> = func.signature.params.iter()
-                    .map(|p| {
-                        let info = self.type_context.get_by_id(*p).unwrap();
-                        info.llvm_type.try_into().unwrap()
-                    })
+                    .map(|p| self.type_context.get_by_id(*p).unwrap().llvm_type.try_into().unwrap())
                     .collect();
-
                 let func_ty = match ret_type.llvm_type {
                     AnyTypeEnum::ArrayType(t)   => t.fn_type(&llvm_params, false),
                     AnyTypeEnum::FloatType(t)   => t.fn_type(&llvm_params, false),
@@ -85,14 +82,28 @@ impl Compiler {
                     AnyTypeEnum::VoidType(t)    => t.fn_type(&llvm_params, false),
                     _ => unreachable!(),
                 };
-
                 let fn_val: FunctionValue = module.add_function(&func.signature.name, func_ty,
-                                                                match func.is_extern {
-                                                                    true => Some(Linkage::External),
-                                                                    false => None,
-                                                                });
+                    if func.is_extern { Some(Linkage::External) } else { None });
                 globals.insert(func.signature.name.clone(), fn_val.into());
             }
+        }
+        for func in &mono_fns {
+            let ret_type = self.type_context.get_by_id(func.signature.ret).unwrap();
+            let llvm_params: Vec<BasicMetadataTypeEnum> = func.signature.params.iter()
+                .map(|p| self.type_context.get_by_id(*p).unwrap().llvm_type.try_into().unwrap())
+                .collect();
+            let func_ty = match ret_type.llvm_type {
+                AnyTypeEnum::ArrayType(t)   => t.fn_type(&llvm_params, false),
+                AnyTypeEnum::FloatType(t)   => t.fn_type(&llvm_params, false),
+                AnyTypeEnum::IntType(t)     => t.fn_type(&llvm_params, false),
+                AnyTypeEnum::PointerType(t) => t.fn_type(&llvm_params, false),
+                AnyTypeEnum::StructType(t)  => t.fn_type(&llvm_params, false),
+                AnyTypeEnum::VoidType(t)    => t.fn_type(&llvm_params, false),
+                _ => unreachable!(),
+            };
+            let fn_val: FunctionValue = module.add_function(&func.signature.name, func_ty,
+                if func.is_extern { Some(Linkage::External) } else { None });
+            globals.insert(func.signature.name.clone(), fn_val.into());
         }
 
         // Second pass: compile each function body.
@@ -102,9 +113,14 @@ impl Compiler {
                 self.compile_function(&mut builder, &globals, &string_literals, func, fn_val);
             }
         }
+        for func in &mono_fns {
+            let fn_val = globals[&func.signature.name].into_function_value();
+            self.compile_function(&mut builder, &globals, &string_literals, func, fn_val);
+        }
 
 
         self.typed_modules = modules;
+        self.pending_mono_fns = mono_fns;
 
         module
     }
@@ -587,7 +603,7 @@ impl Compiler {
                 let info = self.type_context.get_by_id(index.operand.ty).unwrap();
 
                 let maker = &info.ops.index[&index.index.ty].1;
-                Some(maker(builder, compiled_operand, compiled_index))
+                Some(maker(builder, globals, compiled_operand, compiled_index))
             },
 
             TypedExprNode::BinaryOp(bop) => {
@@ -681,19 +697,20 @@ impl Compiler {
 
                 // --- Compound assignment (a op= b) ---
                 let compound_inner_op: Option<fn(&inkwell::builder::Builder<'static>,
+                    &HashMap<String, AnyValueEnum<'static>>,
                     AnyValueEnum<'static>, AnyValueEnum<'static>,
                     &crate::typed_ast::typing::operator::OperatorOverloads,
                     crate::typed_ast::typing::ty::TypeId) -> Option<AnyValueEnum<'static>>>
                     = match &bop.op {
-                    BinaryOperator::AddAssign    => Some(|b,l,r,ops,rty| ops.add.get(&rty).map(|(_,m)| m(b,l,r))),
-                    BinaryOperator::SubAssign    => Some(|b,l,r,ops,rty| ops.sub.get(&rty).map(|(_,m)| m(b,l,r))),
-                    BinaryOperator::MulAssign    => Some(|b,l,r,ops,rty| ops.mul.get(&rty).map(|(_,m)| m(b,l,r))),
-                    BinaryOperator::DivAssign    => Some(|b,l,r,ops,rty| ops.div.get(&rty).map(|(_,m)| m(b,l,r))),
-                    BinaryOperator::BitAndAssign => Some(|b,l,r,ops,rty| ops.bit_and.get(&rty).map(|(_,m)| m(b,l,r))),
-                    BinaryOperator::BitOrAssign  => Some(|b,l,r,ops,rty| ops.bit_or.get(&rty).map(|(_,m)| m(b,l,r))),
-                    BinaryOperator::BitXorAssign => Some(|b,l,r,ops,rty| ops.bit_xor.get(&rty).map(|(_,m)| m(b,l,r))),
-                    BinaryOperator::ShlAssign    => Some(|b,l,r,ops,rty| ops.shl.get(&rty).map(|(_,m)| m(b,l,r))),
-                    BinaryOperator::ShrAssign    => Some(|b,l,r,ops,rty| ops.shr.get(&rty).map(|(_,m)| m(b,l,r))),
+                    BinaryOperator::AddAssign    => Some(|b,g,l,r,ops,rty| ops.add.get(&rty).map(|(_,m)| m(b,g,l,r))),
+                    BinaryOperator::SubAssign    => Some(|b,g,l,r,ops,rty| ops.sub.get(&rty).map(|(_,m)| m(b,g,l,r))),
+                    BinaryOperator::MulAssign    => Some(|b,g,l,r,ops,rty| ops.mul.get(&rty).map(|(_,m)| m(b,g,l,r))),
+                    BinaryOperator::DivAssign    => Some(|b,g,l,r,ops,rty| ops.div.get(&rty).map(|(_,m)| m(b,g,l,r))),
+                    BinaryOperator::BitAndAssign => Some(|b,g,l,r,ops,rty| ops.bit_and.get(&rty).map(|(_,m)| m(b,g,l,r))),
+                    BinaryOperator::BitOrAssign  => Some(|b,g,l,r,ops,rty| ops.bit_or.get(&rty).map(|(_,m)| m(b,g,l,r))),
+                    BinaryOperator::BitXorAssign => Some(|b,g,l,r,ops,rty| ops.bit_xor.get(&rty).map(|(_,m)| m(b,g,l,r))),
+                    BinaryOperator::ShlAssign    => Some(|b,g,l,r,ops,rty| ops.shl.get(&rty).map(|(_,m)| m(b,g,l,r))),
+                    BinaryOperator::ShrAssign    => Some(|b,g,l,r,ops,rty| ops.shr.get(&rty).map(|(_,m)| m(b,g,l,r))),
                     _ => None,
                 };
                 if let Some(inner_fn) = compound_inner_op {
@@ -705,7 +722,7 @@ impl Compiler {
                     let rhs_val = self.compile_expression(builder, ret_var, globals, string_literals, locals, &bop.rhs)?;
                     let new_val = {
                         let ops = &self.type_context.get_by_id(bop.lhs.ty).unwrap().ops;
-                        inner_fn(builder, current_val, rhs_val, ops, bop.rhs.ty)?
+                        inner_fn(builder, globals, current_val, rhs_val, ops, bop.rhs.ty)?
                     };
                     let basic_new: BasicValueEnum<'static> = new_val.try_into().ok().unwrap();
                     builder.build_store(alloca, basic_new).unwrap();
@@ -748,23 +765,23 @@ impl Compiler {
                 let result = {
                     let ops = &self.type_context.get_by_id(bop.lhs.ty).unwrap().ops;
                     match &bop.op {
-                        BinaryOperator::Add => ops.add.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
-                        BinaryOperator::Sub => ops.sub.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
-                        BinaryOperator::Mul => ops.mul.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
-                        BinaryOperator::Div => ops.div.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
-                        BinaryOperator::BitAnd => ops.bit_and.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
-                        BinaryOperator::BitOr  => ops.bit_or.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
-                        BinaryOperator::BitXor => ops.bit_xor.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
-                        BinaryOperator::Shl    => ops.shl.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
-                        BinaryOperator::Shr    => ops.shr.get(&bop.rhs.ty).map(|(_, m)| m(builder, lhs_val, rhs_val)),
+                        BinaryOperator::Add => ops.add.get(&bop.rhs.ty).map(|(_, m)| m(builder, globals, lhs_val, rhs_val)),
+                        BinaryOperator::Sub => ops.sub.get(&bop.rhs.ty).map(|(_, m)| m(builder, globals, lhs_val, rhs_val)),
+                        BinaryOperator::Mul => ops.mul.get(&bop.rhs.ty).map(|(_, m)| m(builder, globals, lhs_val, rhs_val)),
+                        BinaryOperator::Div => ops.div.get(&bop.rhs.ty).map(|(_, m)| m(builder, globals, lhs_val, rhs_val)),
+                        BinaryOperator::BitAnd => ops.bit_and.get(&bop.rhs.ty).map(|(_, m)| m(builder, globals, lhs_val, rhs_val)),
+                        BinaryOperator::BitOr  => ops.bit_or.get(&bop.rhs.ty).map(|(_, m)| m(builder, globals, lhs_val, rhs_val)),
+                        BinaryOperator::BitXor => ops.bit_xor.get(&bop.rhs.ty).map(|(_, m)| m(builder, globals, lhs_val, rhs_val)),
+                        BinaryOperator::Shl    => ops.shl.get(&bop.rhs.ty).map(|(_, m)| m(builder, globals, lhs_val, rhs_val)),
+                        BinaryOperator::Shr    => ops.shr.get(&bop.rhs.ty).map(|(_, m)| m(builder, globals, lhs_val, rhs_val)),
                         BinaryOperator::Assign => unreachable!("assign handled above"),
                         BinaryOperator::BoolAnd | BinaryOperator::BoolOr => unreachable!("handled above"),
-                        BinaryOperator::Eq => ops.cmp.get(&bop.rhs.ty).map(|c| (c.eq)(builder, lhs_val, rhs_val)),
-                        BinaryOperator::Ne => ops.cmp.get(&bop.rhs.ty).map(|c| (c.ne)(builder, lhs_val, rhs_val)),
-                        BinaryOperator::Lt => ops.cmp.get(&bop.rhs.ty).map(|c| (c.lt)(builder, lhs_val, rhs_val)),
-                        BinaryOperator::Gt => ops.cmp.get(&bop.rhs.ty).map(|c| (c.gt)(builder, lhs_val, rhs_val)),
-                        BinaryOperator::Le => ops.cmp.get(&bop.rhs.ty).map(|c| (c.le)(builder, lhs_val, rhs_val)),
-                        BinaryOperator::Ge => ops.cmp.get(&bop.rhs.ty).map(|c| (c.ge)(builder, lhs_val, rhs_val)),
+                        BinaryOperator::Eq => ops.cmp.get(&bop.rhs.ty).map(|c| (c.eq)(builder, globals, lhs_val, rhs_val)),
+                        BinaryOperator::Ne => ops.cmp.get(&bop.rhs.ty).map(|c| (c.ne)(builder, globals, lhs_val, rhs_val)),
+                        BinaryOperator::Lt => ops.cmp.get(&bop.rhs.ty).map(|c| (c.lt)(builder, globals, lhs_val, rhs_val)),
+                        BinaryOperator::Gt => ops.cmp.get(&bop.rhs.ty).map(|c| (c.gt)(builder, globals, lhs_val, rhs_val)),
+                        BinaryOperator::Le => ops.cmp.get(&bop.rhs.ty).map(|c| (c.le)(builder, globals, lhs_val, rhs_val)),
+                        BinaryOperator::Ge => ops.cmp.get(&bop.rhs.ty).map(|c| (c.ge)(builder, globals, lhs_val, rhs_val)),
                         _ => unreachable!("compound assign handled above"),
                     }
                 };
@@ -820,8 +837,8 @@ impl Compiler {
                 let result = {
                     let ops = &self.type_context.get_by_id(uop.operand.ty).unwrap().ops;
                     match &uop.op {
-                        UnaryOperator::Neg => ops.neg.as_ref().map(|(_, maker)| maker(builder, operand_val)),
-                        UnaryOperator::Not => ops.not.as_ref().map(|(_, maker)| maker(builder, operand_val)),
+                        UnaryOperator::Neg => ops.neg.as_ref().map(|(_, maker)| maker(builder, globals, operand_val)),
+                        UnaryOperator::Not => ops.not.as_ref().map(|(_, maker)| maker(builder, globals, operand_val)),
                         _ => unreachable!(),
                     }
                 };

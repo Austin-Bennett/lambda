@@ -9,11 +9,11 @@ use std::collections::HashMap;
 // Key in `from_literal` is the literal pseudo-type's TypeId (e.g. int_literal, float_literal).
 pub type LiteralMaker = Box<dyn Fn(&'static Context, &LiteralValue) -> AnyValueEnum<'static>>;
 
-// Binary operator: (builder, lhs_value, rhs_value) -> result_value
-pub type BinaryOperatorMaker = Box<dyn Fn(&Builder<'static>, AnyValueEnum<'static>, AnyValueEnum<'static>) -> AnyValueEnum<'static>>;
+// Binary operator: (builder, globals, lhs_value, rhs_value) -> result_value
+pub type BinaryOperatorMaker = Box<dyn Fn(&Builder<'static>, &HashMap<String, AnyValueEnum<'static>>, AnyValueEnum<'static>, AnyValueEnum<'static>) -> AnyValueEnum<'static>>;
 
-// Unary operator: (builder, operand_value) -> result_value
-pub type UnaryOperatorMaker = Box<dyn Fn(&Builder<'static>, AnyValueEnum<'static>) -> AnyValueEnum<'static>>;
+// Unary operator: (builder, globals, operand_value) -> result_value
+pub type UnaryOperatorMaker = Box<dyn Fn(&Builder<'static>, &HashMap<String, AnyValueEnum<'static>>, AnyValueEnum<'static>) -> AnyValueEnum<'static>>;
 
 // Conversion operator: (builder, value) -> converted_value
 pub type ConversionMaker = Box<dyn Fn(&Builder<'static>, AnyValueEnum<'static>) -> AnyValueEnum<'static>>;
@@ -52,14 +52,6 @@ pub struct OperatorOverloads {
     pub shl:     HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
     pub shr:     HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
 
-    // User-defined operator functions: rhs TypeId -> (result TypeId, mangled function name)
-    // These take priority over the built-in codegen callbacks above.
-    pub user_add: HashMap<TypeId, (TypeId, String)>,
-    pub user_sub: HashMap<TypeId, (TypeId, String)>,
-    pub user_mul: HashMap<TypeId, (TypeId, String)>,
-    pub user_div: HashMap<TypeId, (TypeId, String)>,
-    // cmp result is always int8; rhs TypeId -> mangled name
-    pub user_cmp: HashMap<TypeId, String>,
     // assign: rhs TypeId -> (result TypeId, mangled name)
     pub user_assign: HashMap<TypeId, (TypeId, String)>,
     // drop: mangled name of the drop function (no rhs, no return)
@@ -101,11 +93,6 @@ impl OperatorOverloads {
             shl:     HashMap::new(),
             shr:     HashMap::new(),
 
-            user_add: HashMap::new(),
-            user_sub: HashMap::new(),
-            user_mul: HashMap::new(),
-            user_div: HashMap::new(),
-            user_cmp: HashMap::new(),
             user_assign: HashMap::new(),
             drop: None,
 

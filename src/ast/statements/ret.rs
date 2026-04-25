@@ -7,6 +7,7 @@ use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{StatementToken, Token, TokenType};
 use crate::unpack_opt_tk;
 
+#[derive(Clone)]
 pub struct Return(pub ExprSyntax);
 
 impl Deref for Return {

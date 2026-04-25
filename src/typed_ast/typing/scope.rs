@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 
 
+#[derive(Clone)]
 pub struct ScopeContext<I> {
     locals: HashMap<String, I>,
 }
@@ -16,6 +17,7 @@ impl<I> ScopeContext<I> {
 }
 
 
+#[derive(Clone)]
 pub struct AvailableContext<I> {
     scopes: Vec<ScopeContext<I>>
 }
