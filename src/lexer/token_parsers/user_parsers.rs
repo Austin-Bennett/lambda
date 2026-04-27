@@ -11,11 +11,11 @@ impl Parser for CommentParser {
         //if s starts with /* go to the next */ or end
 
         if s.starts_with("//") {
-            let n = s.find('\n').unwrap_or(s.len());
+            let n = s.find('\n').map(|v| v + 1).unwrap_or(s.len());
 
             Some((TokenType::User(UserToken::Comment), n))
         } else if s.starts_with("/*") {
-            let n = s.find("*/").map(|v| v + 1).unwrap_or(s.len());
+            let n = s.find("*/").map(|v| v + 2).unwrap_or(s.len());
 
             Some((TokenType::User(UserToken::Comment), n))
         } else {

@@ -2,10 +2,15 @@
   "output": "main",
   "output_ir": "main.ll",
   "libs": [
-    "print"
+    "raylib",
+    "GL",
+    "pthread",
+    "dl",
+    "rt",
+    "X11"
   ],
   "lib_paths": [
-    "."
+
   ],
   "module_paths": [
     "../lib/"

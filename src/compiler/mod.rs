@@ -86,6 +86,8 @@ pub struct Compiler {
 
     pub str_literal_reg: Registry<String>,
 
+    pub cstr_literal_reg: Registry<Vec<u8>>,
+
     // Generic templates (items with type_parameters.len() > 0)
     pub generic_fns:      HashMap<String, FunctionSyntax>,
     pub generic_structs:  HashMap<String, StructureSyntax>,
@@ -126,6 +128,7 @@ impl Compiler {
             module_search_paths: vec![PathBuf::from("./")],
             intrinsics:          HashMap::new(),
             str_literal_reg:     Registry::new(),
+            cstr_literal_reg:    Registry::new(),
             generic_fns:         HashMap::new(),
             generic_structs:     HashMap::new(),
             generic_modifies:    HashMap::new(),
@@ -576,6 +579,9 @@ impl Compiler {
     }
 
     pub fn resolve_typename(&mut self, path: &String) -> Option<TypeId> {
+        if let Some(&id) = self.type_param_subst.get(path) {
+            return Some(id);
+        }
         if let Some(res) = unsafe { &mut *(&raw mut self.type_context) }.resolve_type(&Type::Typename(path.clone())) {
             Some(res)
         } else {
@@ -1090,10 +1096,13 @@ impl Compiler {
 impl Compiler {
     fn add_module_impl(&mut self, tokens: Tokens, added: &mut HashSet<ModulePath>) {
         let modp = ModulePath::from_path(&tokens.get_owner().name);
+        let parent_path = modp.to_path().parent().map(|p| p.to_owned()).unwrap_or("./".into());
 
         if self.untyped_modules.contains_key(&modp) || added.contains(&modp) {
             return;
         }
+
+
 
         let mut module_smap = SourceMap{
             owner: tokens.get_owner().clone(),
@@ -1122,7 +1131,14 @@ impl Compiler {
                         } else {
                             self.module_search_paths.iter()
                                 .map(|sp| sp.join(&rel))
-                                .find(|p| p.exists())
+                                .find(|p| p.exists()).or( {
+                                let p = parent_path.join(&rel);
+                                if p.exists() {
+                                    Some(p)
+                                } else {
+                                    None
+                                }
+                            })
                         };
                         match resolved {
                             Some(p) => match Tokens::tokenize(&p) {

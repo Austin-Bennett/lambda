@@ -293,6 +293,10 @@ impl ExprSyntax {
                 let id = compiler.str_literal_reg.add(s);
                 ExprSyntax{ data: Expr::Literal(LiteralValue::String(id)), smap }
             }
+            ExpressionToken::CStringLiteral(s) => {
+                let id = compiler.cstr_literal_reg.add(s);
+                ExprSyntax{ data: Expr::Literal(LiteralValue::CString(id)), smap }
+            }
             ExpressionToken::Operator(op) => {
 
                 if !op.bp.is_unary() {

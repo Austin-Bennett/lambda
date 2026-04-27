@@ -12,6 +12,7 @@ pub enum ExpressionToken {
     BoolLiteral(bool),
     FloatLiteral(f64),
     StringLiteral(String),
+    CStringLiteral(Vec<u8>),
     CharLiteral(char),
 
     

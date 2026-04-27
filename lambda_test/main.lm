@@ -1,6 +1,6 @@
-use std::imath
-
-extern fn cprint(s: str);
+use raylib
+use std::mem
+use std::list
 
 
 
@@ -8,7 +8,7 @@ extern fn cprint(s: str);
 
 fn main() = int8 {
 
+    let my_list = List<int32>.new();
 
-
-    return res as int8;
+    return 0;
 }

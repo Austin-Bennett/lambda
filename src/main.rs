@@ -153,7 +153,7 @@ fn main() -> Result<()> {
     let target = Target::from_triple(&triple)
         .map_err(|e| anyhow::anyhow!("Failed to get target: {}", e))?;
 
-    let reloc_mode = if args.get_shared() { RelocMode::PIC } else { RelocMode::Default };
+    //let reloc_mode = if args.get_shared() { RelocMode::PIC } else { RelocMode::Default };
 
     let opt_level = match args.get_optimize().as_ref() {
         "1" => OptimizationLevel::Less,
@@ -168,7 +168,7 @@ fn main() -> Result<()> {
             "generic",
             "",
             opt_level,
-            reloc_mode,
+            RelocMode::PIC,
             CodeModel::Default,
         )
         .ok_or_else(|| anyhow::anyhow!("Failed to create target machine"))?;
@@ -180,7 +180,7 @@ fn main() -> Result<()> {
         .write_to_file(&llvm_mod, FileType::Object, &obj_path)
         .map_err(|e| anyhow::anyhow!("Failed to write object file: {}", e))?;
 
-    // Link with the system C compiler (handles libc, crt, etc. automatically).
+    // Link with the system C compiler (handles libc.lm, crt, etc. automatically).
     let mut link_cmd = std::process::Command::new("cc");
     if args.get_shared() {
         link_cmd.arg("-shared");

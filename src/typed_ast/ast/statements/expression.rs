@@ -155,6 +155,7 @@ pub enum TypedExprNode {
     BoundMethod(Box<TypedBoundMethod>),
     SizeOf(TypeId),
     AlignOf(TypeId),
+    SliceLen(Box<TypedExpr>),
 }
 
 impl TypedExprNode {
@@ -268,6 +269,7 @@ impl Debug for TypedExprNode {
             }
             TypedExprNode::SizeOf(ty) => { write!(f, "sizeof({})", ty) }
             TypedExprNode::AlignOf(ty) => { write!(f, "alignof({})", ty) }
+            TypedExprNode::SliceLen(e) => { write!(f, "slen({:?})", e) }
         }
     }
 }
@@ -460,6 +462,7 @@ impl TypedExpr {
                     LiteralValue::Bool(_)    => compiler.type_context.bool,
                     LiteralValue::Char(_)    => compiler.type_context.char,
                     LiteralValue::String(_)  => compiler.type_context.str,
+                    LiteralValue::CString(_) => compiler.type_context.pointer_to(compiler.type_context.uint8),
                 };
                 Some((TypedExprNode::Literal(lit.clone()), ty))
             }
@@ -1087,8 +1090,35 @@ impl TypedExpr {
                         ));
                     }
 
-                    // sizeof(TypeName) → usize constant representing byte size of that type
-                    // alignof(TypeName) → usize constant representing alignment of that type
+                    // slen(slice) → usize length of a slice
+                    if name == "slen" {
+                        if call.arguments.len() != 1 {
+                            compiler.emit_compile_message(CompileMessage::new(
+                                expr.smap.clone(),
+                                format!("'slen' requires exactly 1 argument, got {}", call.arguments.len()),
+                                CompileMessageType::Error,
+                            ));
+                            return None;
+                        }
+                        let slice_expr = TypedExpr::from_ast(&call.arguments[0], compiler, context)?;
+                        match compiler.type_context.get_by_id(slice_expr.ty).map(|i| &i.kind) {
+                            Some(TypeKind::Slice(_)) => {}
+                            _ => {
+                                compiler.emit_compile_message(CompileMessage::new(
+                                    call.arguments[0].smap.clone(),
+                                    format!("'slen' argument must be a slice, got {}",
+                                        compiler.type_context.name_of(slice_expr.ty).unwrap_or_default()),
+                                    CompileMessageType::Error,
+                                ));
+                                return None;
+                            }
+                        }
+                        let usize_id = compiler.type_context.usize;
+                        return Some((TypedExprNode::SliceLen(Box::new(slice_expr)), usize_id));
+                    }
+
+                    // sizeof(type) → usize constant representing byte size of that type
+                    // alignof(type) → usize constant representing alignment of that type
                     if name == "sizeof" || name == "alignof" {
                         if call.arguments.len() != 1 {
                             compiler.emit_compile_message(CompileMessage::new(
@@ -1450,7 +1480,17 @@ impl TypedExpr {
                     .collect::<Option<_>>()?;
 
                 // Ensure the instantiation exists (queues body type-check if needed)
-                let (mangled, fn_type_id) = compiler.ensure_generic_fn(fn_name, type_arg_ids)?;
+                let (mangled, fn_type_id) = match compiler.ensure_generic_fn(fn_name, type_arg_ids) {
+                    Some(v) => v,
+                    None => {
+                        compiler.emit_compile_message(CompileMessage::new(
+                            expr.smap.clone(),
+                            format!("undefined generic function '{}'", fn_name),
+                            CompileMessageType::Error,
+                        ));
+                        return None;
+                    }
+                };
 
                 // Retrieve return type and parameter types from the registered signature
                 let ret_ty = compiler.type_context.get_by_id(fn_type_id)

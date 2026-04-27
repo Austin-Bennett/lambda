@@ -11,6 +11,7 @@ lazy_static!{
             ("\'", '\''),
             ("\\", '\\'),
             ("n", '\n'),
+            ("0", '\0'),
         ];
 
         res.sort_by(|(s1, _), (s2, _)| s2.len().cmp(&s1.len()));
@@ -32,6 +33,8 @@ pub fn parse_escaped_char(s: &str) -> Option<(char, usize)> {
 
 pub struct CharLiteralParser;
 pub struct StringLiteralParser;
+
+pub struct CStringLiteralParser;
 
 impl Parser for CharLiteralParser {
     fn parse(&self, s: &str) -> Option<(TokenType, usize)> {
@@ -101,6 +104,49 @@ impl Parser for StringLiteralParser {
             }
 
             Some((TokenType::Expression(ExpressionToken::StringLiteral(res)), len + 2))
+
+        } else {
+            None
+        }
+    }
+}
+
+impl Parser for CStringLiteralParser {
+    fn parse(&self, s: &str) -> Option<(TokenType, usize)> {
+        if s.starts_with("c\"") {
+
+            let Some(mut len) = s[2..].find('"') else {
+
+                return Some((TokenType::CompileError(format!("Unclosed string literal: {}", s)), s.len()));
+            };
+
+
+
+            let mut res = Vec::new();
+
+            //parse in each char
+            let mut i = 2;
+            while i < len + 2 {
+                let b = s.as_bytes()[i];
+                i += 1;
+
+
+
+                if b as char == '\\' {
+                    let Some((c, size)) = parse_escaped_char(&s[i..]) else {
+                        return Some((TokenType::CompileError(format!("Unknown escaped char: {}", &s[i..])), len + 2));
+                    };
+                    i += size;
+
+                    let b = c as u8;
+                    res.push(b)
+                } else {
+                    res.push(b);
+                }
+            }
+            res.push('\0' as u8);
+
+            Some((TokenType::Expression(ExpressionToken::CStringLiteral(res)), len + 3))
 
         } else {
             None

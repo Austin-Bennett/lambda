@@ -1,7 +1,7 @@
 
 
 fn main() = int8 {
-    let s = "hello, world!";
+    let s = c"Lambda PONG";
 
 
     return 0;

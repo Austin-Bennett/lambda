@@ -8,7 +8,7 @@ use anyhow::Result;
 use crate::common::source_owner::{SourceDescriptor, SourceOwner};
 use crate::common::sourcemap::SourceMap;
 use crate::lexer::token_parsers::keyword_parser::KeywordParser;
-use crate::lexer::token_parsers::string_parser::{CharLiteralParser, StringLiteralParser};
+use crate::lexer::token_parsers::string_parser::{CStringLiteralParser, CharLiteralParser, StringLiteralParser};
 use crate::lexer::token_parsers::use_parser::UseParser;
 use crate::lexer::token_parsers::user_parsers::{CommentParser, WhitespaceParser};
 
@@ -36,6 +36,7 @@ impl Tokens {
         &ColonParser::new(TokenType::Feature(FeatureToken::Colon)),
         &KeywordParser, // before UseParser so `usec` is matched as a keyword, not as `use c...`
         &UseParser,
+        &CStringLiteralParser,
         &StringLiteralParser,
         &CharLiteralParser,
         &BoolLiteralParser,   // before IdentifierParser — "true"/"false" are also valid identifiers

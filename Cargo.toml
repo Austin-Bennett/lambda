@@ -3,6 +3,15 @@ name = "lambda"
 version = "0.1.0"
 edition = "2024"
 
+
+[profile.release]
+opt-level = 3        # Full optimizations
+lto = "fat"          # Link Time Optimization: enable full LTO
+codegen-units = 1    # Reduce parallel code generation units for better optimization
+panic = "abort"      # Abort on panic, removes unwinding code
+strip = true         # Strip symbols from binary
+debug = false        # Disable debug info
+
 [dependencies]
 anyhow = "1.0.102"
 lazy_static = "1.5.0"

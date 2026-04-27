@@ -1,4 +1,8 @@
 # CLAUDE.md
+## THIS IS NOT A VIBE-CODED PROJECT
+**Claude is solely used to manage the project from a higher level, 
+the project was written and started by a human and will continue to be 
+written and tested and added to by humans**
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 

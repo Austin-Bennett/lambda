@@ -256,6 +256,7 @@ pub enum LiteralValue {
     Bool(bool),
     Char(char),
     String(u32), //stores its literal id
+    CString(u32),
 }
 
 impl std::hash::Hash for LiteralValue {
@@ -266,6 +267,7 @@ impl std::hash::Hash for LiteralValue {
             LiteralValue::Bool(b)           => { 2u8.hash(state); b.hash(state); }
             LiteralValue::Char(c)           => { 3u8.hash(state); c.hash(state); }
             LiteralValue::String(s)        => { 4u8.hash(state); s.hash(state); }
+            LiteralValue::CString(s)       => { 5u8.hash(state); s.hash(state); }
         }
     }
 }

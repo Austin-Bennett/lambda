@@ -8,14 +8,20 @@ use inkwell::builder::Builder;
 use inkwell::types::{AnyTypeEnum, AsTypeRef, BasicMetadataTypeEnum, BasicTypeEnum};
 use inkwell::values::{AnyValueEnum, ArrayValue, BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, IntValue, PointerValue};
 use std::collections::HashMap;
+use std::io::Read;
 use std::mem;
 use std::ops::Deref;
-use inkwell::AddressSpace;
+use inkwell::{AddressSpace, GlobalVisibility};
 use inkwell::basic_block::BasicBlock;
 use inkwell::module::Linkage;
 use crate::typed_ast::ast::block::TypedBlock;
 use crate::typed_ast::ast::statements::if_stmt::{TypedElseStatement, TypedIfSyntax};
 use crate::typed_ast::typing::scope::AvailableContext;
+
+pub struct GlobalVals {
+    strings: HashMap<u32, GlobalValue<'static>>,
+    cstrings: HashMap<u32, GlobalValue<'static>>,
+}
 
 impl Compiler {
 
@@ -25,6 +31,7 @@ impl Compiler {
 
         let mut globals: HashMap<String, AnyValueEnum> = HashMap::new();
         let mut string_literals: HashMap<u32, GlobalValue> = HashMap::new();
+        let mut c_string_literals: HashMap<u32, GlobalValue> = HashMap::new();
 
         let str_type = self.type_context.get_by_id(self.type_context.str).unwrap();
         let basic = str_type.llvm_type.into_struct_type();
@@ -62,6 +69,31 @@ impl Compiler {
 
             string_literals.insert(*id, global);
         }
+
+        for (s, id) in &self.cstr_literal_reg.item_map {
+            let bytes: Vec<_> = s.iter().map(|u| u8.const_int(*u as u64, false).into()).collect();
+
+            let const_array = u8.const_array(&bytes);
+
+            let global = module.add_global(
+                const_array.get_type(),
+                None,
+                "cstring_literal"
+            );
+
+
+            global.set_initializer(&const_array);
+            global.set_linkage(Linkage::Private);
+            global.set_constant(true);
+
+
+            c_string_literals.insert(*id, global);
+        }
+
+        let global_vals = GlobalVals{
+            strings: string_literals,
+            cstrings: c_string_literals,
+        };
 
         let modules = mem::take(&mut self.typed_modules);
         let mono_fns = mem::take(&mut self.pending_mono_fns);
@@ -110,12 +142,12 @@ impl Compiler {
         for (_, tmod) in &modules {
             for func in &tmod.functions {
                 let fn_val = globals[&func.signature.name].into_function_value();
-                self.compile_function(&mut builder, &globals, &string_literals, func, fn_val);
+                self.compile_function(&mut builder, &globals, &global_vals, func, fn_val);
             }
         }
         for func in &mono_fns {
             let fn_val = globals[&func.signature.name].into_function_value();
-            self.compile_function(&mut builder, &globals, &string_literals, func, fn_val);
+            self.compile_function(&mut builder, &globals, &global_vals, func, fn_val);
         }
 
 
@@ -129,7 +161,7 @@ impl Compiler {
         &mut self,
         builder: &mut Builder<'static>,
         globals: &HashMap<String, AnyValueEnum<'static>>,
-        strings: &HashMap<u32, GlobalValue<'static>>,
+        global_vals: &GlobalVals,
         func: &Function,
         fn_val: FunctionValue<'static>,
     ) {
@@ -172,7 +204,7 @@ impl Compiler {
             return_alloca,
             ret_block,
             globals,
-            strings,
+            global_vals,
             &mut locals,
             &func.code.as_ref().unwrap().data,
         );
@@ -215,7 +247,7 @@ impl Compiler {
                          ret_var: Option<PointerValue>,
                          ret_block: BasicBlock,
                          globals: &HashMap<String, AnyValueEnum<'static>>,
-                         strings: &HashMap<u32, GlobalValue<'static>>,
+                         global_vals: &GlobalVals,
                          locals: &mut AvailableContext<AnyValueEnum<'static>>,
                          block: &TypedBlock,
     ) -> BasicBlock<'_> {
@@ -247,7 +279,7 @@ impl Compiler {
                 ret_var,
                 drop_and_return_blk,
                 globals,
-                strings,
+                global_vals,
                 locals,
                 s
             )
@@ -269,7 +301,7 @@ impl Compiler {
                 builder,
                 ret_var,
                 globals,
-                strings,
+                global_vals,
                 locals,
                 d
             );
@@ -283,7 +315,7 @@ impl Compiler {
                 builder,
                 ret_var,
                 globals,
-                strings,
+                global_vals,
                 locals,
                 d
             );
@@ -302,7 +334,7 @@ impl Compiler {
         ret_var: Option<PointerValue>,
         ret_block: BasicBlock,
         globals: &HashMap<String, AnyValueEnum<'static>>,
-        strings: &HashMap<u32, GlobalValue<'static>>,
+        global_vals: &GlobalVals,
         locals: &mut AvailableContext<AnyValueEnum<'static>>,
         s: &TypedStatement,
     ) {
@@ -312,7 +344,7 @@ impl Compiler {
         }
         match s {
             TypedStatement::Expr(e) => {
-                self.compile_expression(builder, ret_var, globals, strings, locals, e);
+                self.compile_expression(builder, ret_var, globals, global_vals, locals, e);
                 
             }
 
@@ -330,7 +362,7 @@ impl Compiler {
 
                 // 1. Compute init first — may legitimately read the old value of `x`.
                 let init_val = if let Some(val_expr) = &vd.val {
-                    self.compile_expression(builder, ret_var, globals, strings, locals, val_expr)
+                    self.compile_expression(builder, ret_var, globals, global_vals, locals, val_expr)
                 } else {
                     None
                 };
@@ -360,7 +392,7 @@ impl Compiler {
             }
 
             TypedStatement::Return(ret) => {
-                let val = self.compile_expression(builder, ret_var, globals, strings, locals, &ret.0);
+                let val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &ret.0);
                 if let Some(val) = val {
                     if let Ok(basic_val) = BasicValueEnum::try_from(val) {
                         ret_var.map(|v| builder.build_store(v, basic_val));
@@ -372,7 +404,7 @@ impl Compiler {
             TypedStatement::If(i4) => {
 
                 self.compile_if_statement(
-                    builder, function, ret_var, ret_block, globals, strings, locals, i4
+                    builder, function, ret_var, ret_block, globals, global_vals, locals, i4
                 );
 
             }
@@ -392,7 +424,7 @@ impl Compiler {
                     builder,
                     ret_var,
                     globals,
-                    strings,
+                    global_vals,
                     locals,
                     &wh1le.data.condition
                 ).unwrap().into_int_value();
@@ -406,7 +438,7 @@ impl Compiler {
                     ret_var,
                     ret_block,
                     globals,
-                    strings,
+                    global_vals,
                     locals,
                     &wh1le.data.code.data
                 );
@@ -429,7 +461,7 @@ impl Compiler {
         ret_var: Option<PointerValue>,
         ret_block: BasicBlock,
         globals: &HashMap<String, AnyValueEnum<'static>>,
-        strings: &HashMap<u32, GlobalValue<'static>>,
+        global_vals: &GlobalVals,
         locals: &mut AvailableContext<AnyValueEnum<'static>>,
         i4: &TypedIfSyntax,
     ) {
@@ -437,7 +469,7 @@ impl Compiler {
         let else_block  = self.llvm_context.append_basic_block(function, "else");
         let merge_block = self.llvm_context.append_basic_block(function, "if_merge");
 
-        let pred = self.compile_expression(builder, ret_var, globals, strings, locals, &i4.data.predicate)
+        let pred = self.compile_expression(builder, ret_var, globals, global_vals, locals, &i4.data.predicate)
             .unwrap()
             .into_int_value();
 
@@ -450,7 +482,7 @@ impl Compiler {
             ret_var,
             ret_block,
             globals,
-            strings,
+            global_vals,
             locals,
             &i4.data.code.data
         );
@@ -475,7 +507,7 @@ impl Compiler {
                     // else_block is the entry point when the outer condition is false;
                     // the recursive if-statement's predicate must be emitted there.
                     builder.position_at_end(else_block);
-                    self.compile_if_statement(builder, function, ret_var, ret_block, globals, strings, locals, if_statement);
+                    self.compile_if_statement(builder, function, ret_var, ret_block, globals, global_vals, locals, if_statement);
                     // compile_if_statement leaves the builder at its own merge block; branch to ours.
                     if builder.get_insert_block().unwrap().get_terminator().is_none() {
                         builder.build_unconditional_branch(merge_block).unwrap();
@@ -489,7 +521,7 @@ impl Compiler {
                         ret_var,
                         ret_block,
                         globals,
-                        strings,
+                        global_vals,
                         locals,
                         &block.data
                     );
@@ -516,7 +548,7 @@ impl Compiler {
         builder: &mut Builder<'static>,
         ret_var: Option<PointerValue>,
         globals: &HashMap<String, AnyValueEnum<'static>>,
-        string_literals: &HashMap<u32, GlobalValue<'static>>,
+        global_vals: &GlobalVals,
         locals: &mut AvailableContext<AnyValueEnum<'static>>,
         e: &TypedExpr,
     ) -> Option<AnyValueEnum<'static>> {
@@ -531,12 +563,18 @@ impl Compiler {
                         Some(ctx.i32_type().const_int((*c as u32) as u64, false).into())
                     }
                     LiteralValue::String(s) => {
-                        let global: GlobalValue<'static> = string_literals[s];
+                        let global: GlobalValue<'static> = global_vals.strings[s];
                         let ptr: PointerValue<'static> = global.as_pointer_value();
                         let load: BasicValueEnum<'static> = builder.build_load(
                             self.type_context.create_slice_llvm_structure(), ptr, "string_literal").unwrap();
 
                         Some(load.into())
+                    }
+                    LiteralValue::CString(s) => {
+                        let global: GlobalValue<'static> = global_vals.cstrings[s];
+                        let ptr: PointerValue<'static> = global.as_pointer_value();
+
+                        Some(ptr.into())
                     }
                     LiteralValue::Integer(_) | LiteralValue::Float(_) => {
                         let literal_key = match lit {
@@ -553,7 +591,7 @@ impl Compiler {
 
             TypedExprNode::RefRead(inner) => {
                 // Evaluate the inner expr to get the reference pointer, then load through it.
-                let ref_ptr = self.compile_expression(builder, ret_var, globals, string_literals, locals, inner).unwrap();
+                let ref_ptr = self.compile_expression(builder, ret_var, globals, global_vals, locals, inner).unwrap();
                 let inner_ty: BasicTypeEnum<'static> = self
                     .type_context
                     .get_by_id(e.ty)
@@ -602,7 +640,7 @@ impl Compiler {
                         ], "elem")
                             .unwrap();
 
-                        let compiled_expr = self.compile_expression(builder, ret_var, globals, string_literals, locals, expr).unwrap();
+                        let compiled_expr = self.compile_expression(builder, ret_var, globals, global_vals, locals, expr).unwrap();
                         let basic: BasicValueEnum = compiled_expr.try_into().unwrap();
 
                         builder.build_store(elem_ptr, basic).unwrap();
@@ -613,8 +651,8 @@ impl Compiler {
 
             },
             TypedExprNode::Index(index) => {
-                let compiled_operand = self.compile_expression(builder, ret_var, globals, string_literals, locals, &index.operand).unwrap();
-                let compiled_index = self.compile_expression(builder, ret_var, globals, string_literals, locals, &index.index).unwrap();
+                let compiled_operand = self.compile_expression(builder, ret_var, globals, global_vals, locals, &index.operand).unwrap();
+                let compiled_index = self.compile_expression(builder, ret_var, globals, global_vals, locals, &index.index).unwrap();
 
                 let info = self.type_context.get_by_id(index.operand.ty).unwrap();
 
@@ -625,10 +663,10 @@ impl Compiler {
             TypedExprNode::BinaryOp(bop) => {
                 // --- Assign ---
                 if let BinaryOperator::Assign = &bop.op {
-                    let rhs_val = self.compile_expression(builder, ret_var, globals, string_literals, locals, &bop.rhs).unwrap();
+                    let rhs_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &bop.rhs).unwrap();
                     match &bop.lhs.value {
                         TypedExprNode::RefRead(ref_inner) => {
-                            let ref_ptr = self.compile_expression(builder, ret_var, globals, string_literals, locals, ref_inner).unwrap();
+                            let ref_ptr = self.compile_expression(builder, ret_var, globals, global_vals, locals, ref_inner).unwrap();
                             let basic: BasicValueEnum<'static> = rhs_val.try_into().ok().unwrap();
                             builder.build_store(ref_ptr.into_pointer_value(), basic).unwrap();
                         }
@@ -647,7 +685,7 @@ impl Compiler {
                             maker(builder, alloca, rhs_val);
                         }
                         TypedExprNode::UnaryOp(uop) if matches!(uop.op, UnaryOperator::Dereference) => {
-                            let ptr_val = self.compile_expression(builder, ret_var, globals, string_literals, locals, &uop.operand).unwrap();
+                            let ptr_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &uop.operand).unwrap();
                             let basic: BasicValueEnum<'static> = rhs_val.try_into().ok().unwrap();
                             builder.build_store(ptr_val.into_pointer_value(), basic).unwrap();
                         }
@@ -660,7 +698,7 @@ impl Compiler {
                                     builder.build_struct_gep(struct_ty, alloca, ma.member_index as u32, "field_ptr").ok().unwrap()
                                 }
                                 TypedExprNode::RefRead(inner) => {
-                                    let struct_ptr = self.compile_expression(builder, ret_var, globals, string_literals, locals, inner).unwrap().into_pointer_value();
+                                    let struct_ptr = self.compile_expression(builder, ret_var, globals, global_vals, locals, inner).unwrap().into_pointer_value();
                                     let TypeKind::Struct(sid) = self.type_context.get_by_id(ma.object.ty).unwrap().kind.clone() else { return None; };
                                     let struct_ty = self.type_context.structs[sid as usize].llvm_struct;
                                     builder.build_struct_gep(struct_ty, struct_ptr, ma.member_index as u32, "field_ptr").ok().unwrap()
@@ -678,14 +716,14 @@ impl Compiler {
                 // --- Short-circuit && ---
                 if let BinaryOperator::BoolAnd = &bop.op {
                     let function = builder.get_insert_block().unwrap().get_parent().unwrap();
-                    let lhs_val = self.compile_expression(builder, ret_var, globals, string_literals, locals, &bop.lhs)?.into_int_value();
+                    let lhs_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &bop.lhs)?.into_int_value();
                     let lhs_block = builder.get_insert_block().unwrap();
                     let rhs_block   = self.llvm_context.append_basic_block(function, "and_rhs");
                     let merge_block = self.llvm_context.append_basic_block(function, "and_merge");
                     builder.build_conditional_branch(lhs_val, rhs_block, merge_block).unwrap();
 
                     builder.position_at_end(rhs_block);
-                    let rhs_val = self.compile_expression(builder, ret_var, globals, string_literals, locals, &bop.rhs)?.into_int_value();
+                    let rhs_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &bop.rhs)?.into_int_value();
                     let rhs_final = builder.get_insert_block().unwrap();
                     builder.build_unconditional_branch(merge_block).unwrap();
 
@@ -700,14 +738,14 @@ impl Compiler {
                 // --- Short-circuit || ---
                 if let BinaryOperator::BoolOr = &bop.op {
                     let function = builder.get_insert_block().unwrap().get_parent().unwrap();
-                    let lhs_val = self.compile_expression(builder, ret_var, globals, string_literals, locals, &bop.lhs)?.into_int_value();
+                    let lhs_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &bop.lhs)?.into_int_value();
                     let lhs_block = builder.get_insert_block().unwrap();
                     let rhs_block   = self.llvm_context.append_basic_block(function, "or_rhs");
                     let merge_block = self.llvm_context.append_basic_block(function, "or_merge");
                     builder.build_conditional_branch(lhs_val, merge_block, rhs_block).unwrap();
 
                     builder.position_at_end(rhs_block);
-                    let rhs_val = self.compile_expression(builder, ret_var, globals, string_literals, locals, &bop.rhs)?.into_int_value();
+                    let rhs_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &bop.rhs)?.into_int_value();
                     let rhs_final = builder.get_insert_block().unwrap();
                     builder.build_unconditional_branch(merge_block).unwrap();
 
@@ -744,7 +782,7 @@ impl Compiler {
                     let lhs_ty: BasicTypeEnum<'static> = self.type_context
                         .get_by_id(bop.lhs.ty).unwrap().llvm_type.try_into().ok().unwrap();
                     let current_val: AnyValueEnum<'static> = builder.build_load(lhs_ty, alloca, "ca_load").unwrap().into();
-                    let rhs_val = self.compile_expression(builder, ret_var, globals, string_literals, locals, &bop.rhs)?;
+                    let rhs_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &bop.rhs)?;
                     let new_val = {
                         let ops = &self.type_context.get_by_id(bop.lhs.ty).unwrap().ops;
                         inner_fn(builder, globals, current_val, rhs_val, ops, bop.rhs.ty)?
@@ -771,7 +809,7 @@ impl Compiler {
                         builder.build_conditional_branch(lhs_val, merge_block, rhs_block).unwrap();
                     }
                     builder.position_at_end(rhs_block);
-                    let rhs_val = self.compile_expression(builder, ret_var, globals, string_literals, locals, &bop.rhs)?.into_int_value();
+                    let rhs_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &bop.rhs)?.into_int_value();
                     let rhs_final = builder.get_insert_block().unwrap();
                     builder.build_unconditional_branch(merge_block).unwrap();
                     builder.position_at_end(merge_block);
@@ -784,8 +822,8 @@ impl Compiler {
                 }
 
                 // --- Generic binary ops (both sides evaluated eagerly) ---
-                let lhs_val = self.compile_expression(builder, ret_var, globals, string_literals, locals, &bop.lhs).unwrap();
-                let rhs_val = self.compile_expression(builder, ret_var, globals, string_literals, locals, &bop.rhs).unwrap();
+                let lhs_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &bop.lhs).unwrap();
+                let rhs_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &bop.rhs).unwrap();
 
                 let result = {
                     let ops = &self.type_context.get_by_id(bop.lhs.ty).unwrap().ops;
@@ -830,19 +868,19 @@ impl Compiler {
                             }
                             TypedExprNode::Index(_) => {
                                 // Index maker returns the element pointer directly.
-                                return self.compile_expression(builder, ret_var, globals, string_literals, locals, &uop.operand);
+                                return self.compile_expression(builder, ret_var, globals, global_vals, locals, &uop.operand);
                             }
                             _ => return None,
                         }
                     }
                     UnaryOperator::Dereference => {
-                        let ptr_val = self.compile_expression(builder, ret_var, globals, string_literals, locals, &uop.operand).unwrap();
+                        let ptr_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &uop.operand).unwrap();
                         return Some(ptr_val)
                     }
                     UnaryOperator::Neg | UnaryOperator::Not => {}
                 }
 
-                let operand_val = self.compile_expression(builder, ret_var, globals, string_literals, locals, &uop.operand).unwrap();
+                let operand_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &uop.operand).unwrap();
 
                 let result = {
                     let ops = &self.type_context.get_by_id(uop.operand.ty).unwrap().ops;
@@ -856,17 +894,17 @@ impl Compiler {
             }
 
             TypedExprNode::Cast(cast) => {
-                let val = self.compile_expression(builder, ret_var, globals, string_literals, locals, &cast.expr).unwrap();
+                let val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &cast.expr).unwrap();
                 let ops = &self.type_context.get_by_id(cast.expr.ty).unwrap().ops;
                 ops.conversion_ops.get(&cast.target).map(|maker| maker(builder, val))
             }
             TypedExprNode::CallOp(call) => {
-                let caller_val = self.compile_expression(builder, ret_var, globals, string_literals, locals, &call.caller).unwrap();
+                let caller_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &call.caller).unwrap();
 
                 // Compile each argument.
                 let mut args: Vec<BasicMetadataValueEnum<'static>> = Vec::new();
                 for arg in &call.arguments {
-                    let val = self.compile_expression(builder, ret_var, globals, string_literals, locals, arg).unwrap();
+                    let val = self.compile_expression(builder, ret_var, globals, global_vals, locals, arg).unwrap();
                     let basic: BasicValueEnum<'static> = val.try_into().ok().unwrap();
                     args.push(basic.into());
                 }
@@ -895,8 +933,8 @@ impl Compiler {
                 let slice_ty = self.type_context.get_by_id(e.ty).unwrap().llvm_type
                     .try_into().ok().unwrap();
                 let BasicTypeEnum::StructType(slice_struct_ty) = slice_ty else { return None; };
-                let len_val: BasicValueEnum<'static> = self.compile_expression(builder, ret_var, globals, string_literals, locals, &sc.len)?.try_into().ok()?;
-                let ptr_val: BasicValueEnum<'static> = self.compile_expression(builder, ret_var, globals, string_literals, locals, &sc.ptr)?.try_into().ok()?;
+                let len_val: BasicValueEnum<'static> = self.compile_expression(builder, ret_var, globals, global_vals, locals, &sc.len)?.try_into().ok()?;
+                let ptr_val: BasicValueEnum<'static> = self.compile_expression(builder, ret_var, globals, global_vals, locals, &sc.ptr)?.try_into().ok()?;
                 let mut agg: BasicValueEnum<'static> = slice_struct_ty.get_undef().into();
                 agg = builder.build_insert_value(agg.into_struct_value(), len_val, 0, "sl_len").unwrap().into_struct_value().into();
                 agg = builder.build_insert_value(agg.into_struct_value(), ptr_val, 1, "sl_ptr").unwrap().into_struct_value().into();
@@ -906,7 +944,7 @@ impl Compiler {
                 let struct_ty = self.type_context.structs[sc.struct_id as usize].llvm_struct;
                 let mut agg: BasicValueEnum<'static> = struct_ty.get_undef().into();
                 for (i, field_expr) in sc.fields.iter().enumerate() {
-                    let val = self.compile_expression(builder, ret_var, globals, string_literals, locals, field_expr).unwrap();
+                    let val = self.compile_expression(builder, ret_var, globals, global_vals, locals, field_expr).unwrap();
                     let basic: BasicValueEnum<'static> = val.try_into().ok().unwrap();
                     agg = builder.build_insert_value(agg.into_struct_value(), basic, i as u32, "sf")
                         .unwrap()
@@ -917,7 +955,7 @@ impl Compiler {
             }
             TypedExprNode::MemberAccess(ma) => {
                 // object is always a plain struct value here (reference already unwrapped via RefRead)
-                let obj_val = self.compile_expression(builder, ret_var, globals, string_literals, locals, &ma.object).unwrap();
+                let obj_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &ma.object).unwrap();
                 let sv = BasicValueEnum::try_from(obj_val).ok().unwrap().into_struct_value();
                 Some(builder.build_extract_value(sv, ma.member_index as u32, "member").unwrap().into())
             }
@@ -932,10 +970,16 @@ impl Compiler {
                 };
 
                 let compiled_args: Vec<Option<AnyValueEnum<'static>>> = ci.args.iter()
-                    .map(|arg| self.compile_expression(builder, ret_var, globals, string_literals, locals, arg))
+                    .map(|arg| self.compile_expression(builder, ret_var, globals, global_vals, locals, arg))
                     .collect();
 
                 maker(builder, globals, locals, &ci.args, compiled_args)
+            }
+
+            TypedExprNode::SliceLen(slice_expr) => {
+                let slice_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, slice_expr)?;
+                let sv = BasicValueEnum::try_from(slice_val).ok()?.into_struct_value();
+                Some(builder.build_extract_value(sv, 0, "slen").unwrap().into())
             }
 
             TypedExprNode::SizeOf(ty_id) => {
