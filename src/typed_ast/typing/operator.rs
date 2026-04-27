@@ -44,6 +44,7 @@ pub struct OperatorOverloads {
     pub sub: HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
     pub mul: HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
     pub div: HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
+    pub rem: HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
 
     // bitwise binary: rhs TypeId -> (result TypeId, codegen callback)
     pub bit_and: HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
@@ -86,6 +87,7 @@ impl OperatorOverloads {
             sub: HashMap::new(),
             mul: HashMap::new(),
             div: HashMap::new(),
+            rem: HashMap::new(),
 
             bit_and: HashMap::new(),
             bit_or:  HashMap::new(),

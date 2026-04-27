@@ -57,6 +57,7 @@ pub enum StatementToken {
     ModifyKW,
     OperatorKW,
     LetKW,
+    UsecKW, // `usec "path/to/header.h"` — C header import keyword
 }
 
 #[derive(Clone, Debug)]

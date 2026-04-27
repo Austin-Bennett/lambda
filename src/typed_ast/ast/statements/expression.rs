@@ -11,13 +11,13 @@ use std::mem;
 use crate::typed_ast::typing::operator::BinaryOperatorMaker;
 
 pub enum BinaryOperator {
-    Add, Sub, Mul, Div,
+    Add, Sub, Mul, Div, Mod,
     Assign,
     Eq, Ne, Lt, Gt, Le, Ge,
     BitAnd, BitOr, BitXor, Shl, Shr,
     BoolAnd, BoolOr,
     // compound assignment: lhs op= rhs
-    AddAssign, SubAssign, MulAssign, DivAssign,
+    AddAssign, SubAssign, MulAssign, DivAssign, ModAssign,
     BitAndAssign, BitOrAssign, BitXorAssign, ShlAssign, ShrAssign,
     BoolAndAssign, BoolOrAssign,
 }
@@ -29,6 +29,7 @@ impl Debug for BinaryOperator {
             BinaryOperator::Sub => f.write_str("-"),
             BinaryOperator::Mul => f.write_str("*"),
             BinaryOperator::Div => f.write_str("/"),
+            BinaryOperator::Mod => f.write_str("%"),
             BinaryOperator::Assign => f.write_str("="),
             BinaryOperator::Eq  => f.write_str("=="),
             BinaryOperator::Ne  => f.write_str("!="),
@@ -47,6 +48,7 @@ impl Debug for BinaryOperator {
             BinaryOperator::SubAssign    => f.write_str("-="),
             BinaryOperator::MulAssign    => f.write_str("*="),
             BinaryOperator::DivAssign    => f.write_str("/="),
+            BinaryOperator::ModAssign    => f.write_str("%="),
             BinaryOperator::BitAndAssign => f.write_str("&="),
             BinaryOperator::BitOrAssign  => f.write_str("|="),
             BinaryOperator::BitXorAssign => f.write_str("^="),
@@ -151,6 +153,8 @@ pub enum TypedExprNode {
     StructConstruct(Box<TypedStructConstruct>),
     SliceConstruct(Box<TypedSliceConstruct>),
     BoundMethod(Box<TypedBoundMethod>),
+    SizeOf(TypeId),
+    AlignOf(TypeId),
 }
 
 impl TypedExprNode {
@@ -168,6 +172,25 @@ impl TypedExprNode {
             TypedExprNode::Identifier(name) => Some(name),
             _ => None,
         }
+    }
+}
+
+impl TypedExpr {
+    /// An lvalue is an expression that refers to a memory location:
+    /// identifiers, reference-typed expressions, or RefRead nodes.
+    pub fn is_lvalue(&self, context: &TypeContext) -> bool {
+        match &self.value {
+            TypedExprNode::Identifier(_) => true,
+            TypedExprNode::RefRead(_) => true,
+            _ => matches!(
+                context.get_by_id(self.ty).map(|i| &i.kind),
+                Some(TypeKind::Reference(_))
+            ),
+        }
+    }
+
+    pub fn is_rvalue(&self, context: &TypeContext) -> bool {
+        !self.is_lvalue(context)
     }
 }
 
@@ -243,6 +266,8 @@ impl Debug for TypedExprNode {
             TypedExprNode::CompilerIntrinsic(ci) => {
                 write!(f, "{}({:?})", ci.name, ci.args)
             }
+            TypedExprNode::SizeOf(ty) => { write!(f, "sizeof({})", ty) }
+            TypedExprNode::AlignOf(ty) => { write!(f, "alignof({})", ty) }
         }
     }
 }
@@ -526,7 +551,7 @@ impl TypedExpr {
 
                 // compound assignment: desugar a op= b → a = a op b, but just verify types here
                 // and tag with the compound variant; codegen handles the load-modify-store.
-                if matches!(bin.op.tk, "+=" | "-=" | "*=" | "/=" | "&=" | "|=" | "^=" | "<<=" | ">>=" | "&&=" | "||=") {
+                if matches!(bin.op.tk, "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>=" | "&&=" | "||=") {
                     // LHS must be a plain identifier for compound assign
                     let TypedExprNode::Identifier(_) = &lhs.value else {
                         compiler.emit_compile_message(CompileMessage::new(
@@ -546,6 +571,7 @@ impl TypedExpr {
                         "-"  => lhs_inf.ops.sub.contains_key(&rhs.ty),
                         "*"  => lhs_inf.ops.mul.contains_key(&rhs.ty),
                         "/"  => lhs_inf.ops.div.contains_key(&rhs.ty),
+                        "%"  => lhs_inf.ops.rem.contains_key(&rhs.ty),
                         "&"  => lhs_inf.ops.bit_and.contains_key(&rhs.ty),
                         "|"  => lhs_inf.ops.bit_or.contains_key(&rhs.ty),
                         "^"  => lhs_inf.ops.bit_xor.contains_key(&rhs.ty),
@@ -571,6 +597,7 @@ impl TypedExpr {
                         "-"  => BinaryOperator::SubAssign,
                         "*"  => BinaryOperator::MulAssign,
                         "/"  => BinaryOperator::DivAssign,
+                        "%"  => BinaryOperator::ModAssign,
                         "&"  => BinaryOperator::BitAndAssign,
                         "|"  => BinaryOperator::BitOrAssign,
                         "^"  => BinaryOperator::BitXorAssign,
@@ -697,6 +724,26 @@ impl TypedExpr {
                                 }
                             )
                         ), *div_res))
+                    }
+
+                    "%" => {
+                        let Some((rem_res, _)) = lhs_inf.ops.rem.get(&rhs.ty) else {
+                            compiler.emit_compile_message(
+                                CompileMessage::new(
+                                    expr.smap.clone(),
+                                    format!("Cannot take remainder of {} by {}",
+                                            compiler.type_context.name_of(lhs.ty).unwrap_or("UNKNOWN TYPE".to_string()),
+                                            compiler.type_context.name_of(rhs.ty).unwrap_or("UNKNOWN TYPE".to_string()),
+                                    ),
+                                    CompileMessageType::Error
+                                )
+                            );
+                            return None;
+                        };
+
+                        Some((TypedExprNode::BinaryOp(
+                            Box::new(TypedBinaryOperation { op: BinaryOperator::Mod, lhs, rhs })
+                        ), *rem_res))
                     }
 
                     "==" | "!=" | "<" | ">" | "<=" | ">=" => {
@@ -1035,6 +1082,48 @@ impl TypedExpr {
                             slice_ty,
                         ));
                     }
+
+                    // sizeof(TypeName) → usize constant representing byte size of that type
+                    // alignof(TypeName) → usize constant representing alignment of that type
+                    if name == "sizeof" || name == "alignof" {
+                        if call.arguments.len() != 1 {
+                            compiler.emit_compile_message(CompileMessage::new(
+                                expr.smap.clone(),
+                                format!("'{}' requires exactly 1 type argument, got {}", name, call.arguments.len()),
+                                CompileMessageType::Error,
+                            ));
+                            return None;
+                        }
+                        let arg = &call.arguments[0];
+                        let type_name = match &arg.data {
+                            Expr::Identifier(n) => n.clone(),
+                            _ => {
+                                compiler.emit_compile_message(CompileMessage::new(
+                                    arg.smap.clone(),
+                                    format!("'{}' argument must be a type name", name),
+                                    CompileMessageType::Error,
+                                ));
+                                return None;
+                            }
+                        };
+                        let ty_id = match compiler.resolve_typename(&type_name) {
+                            Some(id) => id,
+                            None => {
+                                compiler.emit_compile_message(CompileMessage::new(
+                                    arg.smap.clone(),
+                                    format!("unknown type '{}'", type_name),
+                                    CompileMessageType::Error,
+                                ));
+                                return None;
+                            }
+                        };
+                        let usize_id = compiler.type_context.usize;
+                        return if name == "sizeof" {
+                            Some((TypedExprNode::SizeOf(ty_id), usize_id))
+                        } else {
+                            Some((TypedExprNode::AlignOf(ty_id), usize_id))
+                        };
+                    }
                 }
 
                 let (caller, caller_ty) = TypedExpr::from_node(&call.caller, compiler, context)?;
@@ -1237,40 +1326,72 @@ impl TypedExpr {
                         return None;
                     }
 
-                    // A static method's first param is NOT the self-reference type.
-                    // Detect this and return a plain identifier — no receiver binding needed.
+                    // Determine calling convention from first param type:
+                    //   T&  → by-reference instance method (lvalue required)
+                    //   T   → by-value instance method (any receiver)
+                    //   other → static method
                     let self_ref_ty = compiler.type_context.reference_to(effective_ty);
-                    let is_static = match compiler.type_context.get_by_id(fn_type_id).map(|i| i.kind.clone()) {
-                        Some(TypeKind::Function { params, .. }) => params.first() != Some(&self_ref_ty),
-                        _ => false,
-                    };
+                    let first_param = compiler.type_context.get_by_id(fn_type_id)
+                        .and_then(|i| if let TypeKind::Function { ref params, .. } = i.kind { params.first().copied() } else { None });
 
-                    if is_static {
+                    let is_by_ref = first_param == Some(self_ref_ty);
+                    let is_by_val = first_param == Some(effective_ty);
+
+                    if !is_by_ref && !is_by_val {
+                        // static method — return function pointer, no receiver
                         return Some((TypedExprNode::Identifier(mangled), fn_type_id));
                     }
 
-                    // Instance method: self must be an lvalue so we can take its address.
-                    let TypedExprNode::Identifier(_) = &object.value else {
-                        compiler.emit_compile_message(CompileMessage::new(
-                            op.object.smap.clone(),
-                            "method receiver must be a variable".into(),
-                            CompileMessageType::Error,
-                        ));
-                        return None;
-                    };
+                    if is_by_ref {
+                        // Reference self: receiver must be an lvalue
+                        if !object.is_lvalue(&compiler.type_context) {
+                            compiler.emit_compile_message(CompileMessage::new(
+                                expr.smap.clone(),
+                                format!("method '{}' takes self by reference: receiver must be an lvalue", op.member),
+                                CompileMessageType::Error,
+                            ));
+                            return None;
+                        }
+                        // Also require identifier for now (codegen only supports alloca-of-identifier)
+                        if !matches!(object.value, TypedExprNode::Identifier(_)) && object.ty == effective_ty {
+                            compiler.emit_compile_message(CompileMessage::new(
+                                expr.smap.clone(),
+                                "method receiver must be a variable".into(),
+                                CompileMessageType::Error,
+                            ));
+                            return None;
+                        }
+                        let self_expr = if object.ty == effective_ty {
+                            // direct value — take address
+                            TypedExpr {
+                                smap: object.smap.clone(),
+                                ty: self_ref_ty,
+                                value: TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
+                                    op: UnaryOperator::Reference,
+                                    operand: object,
+                                })),
+                            }
+                        } else {
+                            // already a reference — pass as-is
+                            object
+                        };
+                        return Some((TypedExprNode::BoundMethod(Box::new(TypedBoundMethod {
+                            self_expr,
+                            mangled_name: mangled,
+                        })), fn_type_id));
+                    }
+
+                    // Value self: pass receiver by value (no address-of needed)
                     let self_expr = if object.ty == effective_ty {
-                        // direct struct — take address
+                        // direct value — pass as-is
+                        object
+                    } else {
+                        // reference-typed receiver — auto-deref to get the value
                         TypedExpr {
                             smap: object.smap.clone(),
-                            ty: self_ref_ty,
-                            value: TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
-                                op: UnaryOperator::Reference,
-                                operand: object,
-                            })),
+                            ty: effective_ty,
+                            value: TypedExprNode::RefRead(Box::new(object)),
                         }
-                    } else {
-                        // already a reference — pass as-is
-                        object
                     };
                     return Some((TypedExprNode::BoundMethod(Box::new(TypedBoundMethod {
                         self_expr,

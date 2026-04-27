@@ -34,8 +34,8 @@ impl Tokens {
         &CloseBraceParser::new(TokenType::Feature(FeatureToken::CloseBrace)),
         &CommaParser::new(TokenType::Feature(FeatureToken::Comma)),
         &ColonParser::new(TokenType::Feature(FeatureToken::Colon)),
+        &KeywordParser, // before UseParser so `usec` is matched as a keyword, not as `use c...`
         &UseParser,
-        &KeywordParser,
         &StringLiteralParser,
         &CharLiteralParser,
         &BoolLiteralParser,   // before IdentifierParser — "true"/"false" are also valid identifiers

@@ -57,11 +57,13 @@ impl TypeInfo {
         sub: BinaryOperatorMaker,
         mul: BinaryOperatorMaker,
         div: BinaryOperatorMaker,
+        rem: BinaryOperatorMaker,
     ) {
         self.ops.add.insert(self_id, (self_id, add));
         self.ops.sub.insert(self_id, (self_id, sub));
         self.ops.mul.insert(self_id, (self_id, mul));
         self.ops.div.insert(self_id, (self_id, div));
+        self.ops.rem.insert(self_id, (self_id, rem));
 
         // For arithmetic types, `x(y)` is sugar for multiplication.
         self.ops.call.insert(vec![self_id], self_id);

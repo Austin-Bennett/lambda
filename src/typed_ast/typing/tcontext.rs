@@ -128,10 +128,15 @@ impl TypeContext {
                         .unwrap()
                         .into()
                 });
+                let rem: BinaryOperatorMaker = Box::new(|b, _g, l, r| {
+                    b.build_int_signed_rem(l.into_int_value(), r.into_int_value(), "irem")
+                        .unwrap()
+                        .into()
+                });
                 let neg: UnaryOperatorMaker = Box::new(|b, _g, v| {
                     b.build_int_neg(v.into_int_value(), "ineg").unwrap().into()
                 });
-                self.types[id as usize].enable_arithmetic_operators(id, add, sub, mul, div);
+                self.types[id as usize].enable_arithmetic_operators(id, add, sub, mul, div, rem);
                 self.types[id as usize].enable_neg_operator(id, neg);
             }
 
@@ -157,10 +162,15 @@ impl TypeContext {
                         .unwrap()
                         .into()
                 });
+                let rem: BinaryOperatorMaker = Box::new(|b, _g, l, r| {
+                    b.build_int_unsigned_rem(l.into_int_value(), r.into_int_value(), "urem")
+                        .unwrap()
+                        .into()
+                });
                 let neg: UnaryOperatorMaker = Box::new(|b, _g, v| {
                     b.build_int_neg(v.into_int_value(), "uneg").unwrap().into()
                 });
-                self.types[id as usize].enable_arithmetic_operators(id, add, sub, mul, div);
+                self.types[id as usize].enable_arithmetic_operators(id, add, sub, mul, div, rem);
                 self.types[id as usize].enable_neg_operator(id, neg);
             }
 
@@ -186,10 +196,15 @@ impl TypeContext {
                         .unwrap()
                         .into()
                 });
+                let rem: BinaryOperatorMaker = Box::new(|b, _g, l, r| {
+                    b.build_float_rem(l.into_float_value(), r.into_float_value(), "frem")
+                        .unwrap()
+                        .into()
+                });
                 let neg: UnaryOperatorMaker = Box::new(|b, _g, v| {
                     b.build_float_neg(v.into_float_value(), "fneg").unwrap().into()
                 });
-                self.types[id as usize].enable_arithmetic_operators(id, add, sub, mul, div);
+                self.types[id as usize].enable_arithmetic_operators(id, add, sub, mul, div, rem);
                 self.types[id as usize].enable_neg_operator(id, neg);
             }
 

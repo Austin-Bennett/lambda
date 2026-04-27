@@ -30,16 +30,12 @@ impl<'a, I> AvailableContext<I> {
     }
     
     pub fn get_identifier(&self, id: &String) -> Option<&I> {
-        //walk through all scopes looking for the id
-
-        for scope in &self.scopes {
+        for scope in self.scopes.iter().rev() {
             if let Some(ty) = scope.locals.get(id) {
                 return Some(ty);
             }
         }
-
         None
-
     }
 
     pub fn push_new_scope(&mut self) {

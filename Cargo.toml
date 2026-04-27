@@ -6,7 +6,12 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.102"
 lazy_static = "1.5.0"
+llvm-sys = { version = "211.0.1", features = ["prefer-dynamic"] }
+serde = { version = "1.0.228", features = ["derive"] }
 
+[dependencies.serde_json]
+version = "1.0.149"
+features = ["default"]
 
 [dependencies.inkwell]
 version = "0.8.0"
@@ -16,3 +21,6 @@ features = ["llvm21-1"]
 [dependencies.clap]
 version = "4.5.47"
 features = ["default", "derive"]
+
+[dependencies.lang-c]
+version = "0.6"

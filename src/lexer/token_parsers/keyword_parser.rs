@@ -22,7 +22,8 @@ lazy_static!{
             ("public", TokenType::Statement(StatementToken::PublicKW)),
             ("modify", TokenType::Statement(StatementToken::ModifyKW)),
             ("operator", TokenType::Statement(StatementToken::OperatorKW)),
-            ("let", TokenType::Statement(StatementToken::LetKW))
+            ("let", TokenType::Statement(StatementToken::LetKW)),
+            ("usec", TokenType::Statement(StatementToken::UsecKW))
         ];
 
         res.sort_by(|(s1, _), (s2, _)| s2.len().cmp(&s1.len()));

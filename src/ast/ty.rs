@@ -24,6 +24,22 @@ pub enum Type {
 impl Type {
     //some types have a known size at compile time without
     //having to resolve their typenames
+    /// Returns a stable string suitable for use as a mangled name prefix.
+    pub fn mangle_name(&self) -> String {
+        match self {
+            Type::Typename(n)            => n.clone(),
+            Type::Reference(t)           => format!("{}_ref",         t.mangle_name()),
+            Type::Pointer(t)             => format!("{}_ptr",         t.mangle_name()),
+            Type::Slice(t)               => format!("{}_slice",       t.mangle_name()),
+            Type::Array { ty, size }     => format!("{}_array_{}", ty.mangle_name(), size),
+            Type::Generic { name, params } => {
+                let mut s = name.clone();
+                for p in params { s.push('_'); s.push_str(&p.mangle_name()); }
+                s
+            }
+        }
+    }
+
     pub fn try_get_size(&self) -> Option<usize> {
         match self {
             Type::Typename(_) => None,

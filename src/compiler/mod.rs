@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
-use std::mem;
+use std::{fs, mem};
 use std::ops::Deref;
 use std::path::PathBuf;
 use inkwell::AddressSpace;
@@ -9,12 +9,12 @@ use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::BasicValueEnum;
 use crate::typed_ast::typing::operator::{BinaryOperatorMaker, ComparisonMakers};
 use crate::ast::items::function::FunctionSyntax;
-use crate::ast::items::modify::ModifySyntax;
+use crate::ast::items::modify::{ModifySyntax, SelfMode};
 use crate::ast::items::structure::StructureSyntax;
-use crate::common::source_owner::SourceOwner;
+use crate::common::source_owner::{SourceDescriptor, SourceOwner};
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::modulepath::ModulePath;
-use crate::lexer::token::{StatementToken, Token, TokenType};
+use crate::lexer::token::{ExpressionToken, StatementToken, Token, TokenType};
 use crate::lexer::tokenizer::Tokens;
 pub use compile_message::CompileMessage;
 
@@ -263,15 +263,7 @@ impl Compiler {
                     if !modify.data.type_parameters.is_empty() {
                         continue;
                     }
-                    let crate::ast::ty::Type::Typename(type_name) = &modify.data.ty else {
-                        self.emit_compile_message(CompileMessage::new(
-                            modify.smap.clone(),
-                            "modify blocks only support named types (e.g. Point, int32)".into(),
-                            CompileMessageType::Error,
-                        ));
-                        continue;
-                    };
-                    let type_name = type_name.clone();
+                    let type_name = modify.data.ty.mangle_name();
                     let Some(type_id) = self.resolve_type(&modify.data.ty) else {
                         self.emit_compile_message(CompileMessage::new(
                             modify.smap.clone(),
@@ -301,9 +293,10 @@ impl Compiler {
                         };
 
                         let mut params = Vec::new();
-                        if method.has_self {
-                            let self_ref_ty = self.type_context.reference_to(type_id);
-                            params.push(self_ref_ty);
+                        match method.self_mode {
+                            SelfMode::ByRef => params.push(self.type_context.reference_to(type_id)),
+                            SelfMode::Value => params.push(type_id),
+                            SelfMode::None => {}
                         }
                         for p in &method.params {
                             if let Some(pty) = p.data.ty.as_ref() {
@@ -336,9 +329,10 @@ impl Compiler {
                         };
 
                         let mut params = Vec::new();
-                        if op.has_self {
-                            let self_ref_ty = self.type_context.reference_to(type_id);
-                            params.push(self_ref_ty);
+                        match op.self_mode {
+                            SelfMode::ByRef => params.push(self.type_context.reference_to(type_id)),
+                            SelfMode::Value => params.push(type_id),
+                            SelfMode::None => {}
                         }
                         for p in &op.params {
                             if let Some(pty) = p.data.ty.as_ref() {
@@ -357,27 +351,30 @@ impl Compiler {
                         context.declare_identifier_in_scope(op_mangled.clone(), fn_type_id);
 
                         // Determine rhs type (first non-self param)
-                        let rhs_ty = if op.has_self && params.len() > 1 {
+                        let rhs_ty = if op.self_mode.has_self() && params.len() > 1 {
                             params[1]
-                        } else if !op.has_self && !params.is_empty() {
+                        } else if !op.self_mode.has_self() && !params.is_empty() {
                             params[0]
                         } else {
                             self.type_context.none
                         };
 
-                        let self_llvm_ty: BasicTypeEnum<'static> = self.type_context
-                            .get_by_id(type_id).unwrap().llvm_type.try_into().unwrap();
                         let bool_llvm = self.type_context.types[self.type_context.bool as usize]
                             .llvm_type.into_int_type();
 
                         match op.op_name.as_str() {
                             "add" | "sub" | "mul" | "div" => {
+                                if op.self_mode == SelfMode::ByRef {
+                                    self.emit_compile_message(CompileMessage::new(
+                                        modify.smap.clone(),
+                                        format!("operator '{}' must take self by value, not by reference", op.op_name),
+                                        CompileMessageType::Error,
+                                    ));
+                                }
                                 let mangled = op_mangled.clone();
                                 let closure: BinaryOperatorMaker = Box::new(move |b, g, l, r| {
                                     let fn_val = g[&mangled].into_function_value();
-                                    let alloca = b.build_alloca(self_llvm_ty, "tmp_self").unwrap();
-                                    b.build_store(alloca, BasicValueEnum::try_from(l).unwrap()).unwrap();
-                                    let res = b.build_call(fn_val, &[alloca.into(), BasicValueEnum::try_from(r).unwrap().into()], "user_binop").unwrap();
+                                    let res = b.build_call(fn_val, &[BasicValueEnum::try_from(l).unwrap().into(), BasicValueEnum::try_from(r).unwrap().into()], "user_binop").unwrap();
                                     res.try_as_basic_value().basic().unwrap().into()
                                 });
                                 let type_info = self.type_context.get_by_id_mut(type_id).unwrap();
@@ -390,12 +387,17 @@ impl Compiler {
                                 }
                             }
                             "cmp" => {
+                                if op.self_mode == SelfMode::ByRef {
+                                    self.emit_compile_message(CompileMessage::new(
+                                        modify.smap.clone(),
+                                        format!("operator 'cmp' must take self by value, not by reference"),
+                                        CompileMessageType::Error,
+                                    ));
+                                }
                                 let mk = |pred: IntPredicate, mname: String| -> BinaryOperatorMaker {
                                     Box::new(move |b, g, l, r| {
                                         let fn_val = g[&mname].into_function_value();
-                                        let alloca = b.build_alloca(self_llvm_ty, "tmp_self").unwrap();
-                                        b.build_store(alloca, BasicValueEnum::try_from(l).unwrap()).unwrap();
-                                        let cmp_result = b.build_call(fn_val, &[alloca.into(), BasicValueEnum::try_from(r).unwrap().into()], "user_cmp")
+                                        let cmp_result = b.build_call(fn_val, &[BasicValueEnum::try_from(l).unwrap().into(), BasicValueEnum::try_from(r).unwrap().into()], "user_cmp")
                                             .unwrap().try_as_basic_value().basic().unwrap().into_int_value();
                                         let zero = cmp_result.get_type().const_int(0, false);
                                         b.build_int_z_extend(
@@ -419,6 +421,13 @@ impl Compiler {
                                     .ops.user_assign.insert(rhs_ty, (ret, op_mangled));
                             }
                             "drop" => {
+                                if op.self_mode != SelfMode::ByRef {
+                                    self.emit_compile_message(CompileMessage::new(
+                                        modify.smap.clone(),
+                                        format!("operator 'drop' must take self by reference (self&), not by value"),
+                                        CompileMessageType::Error,
+                                    ));
+                                }
                                 self.type_context.get_by_id_mut(type_id).unwrap().ops.drop = Some(op_mangled);
                             }
                             other => {
@@ -452,7 +461,7 @@ impl Compiler {
                 let mut fn_context = context.clone();
                 if let Some(tf) = TypedFunction::from_parts(
                     &mangled,
-                    false,
+                    SelfMode::None,
                     None,
                     &template.data.parameters,
                     template.data.ty.as_ref(),
@@ -801,9 +810,10 @@ impl Compiler {
             };
 
             let mut params = Vec::new();
-            if method.has_self {
-                let self_ref_ty = self.type_context.reference_to(type_id);
-                params.push(self_ref_ty);
+            match method.self_mode {
+                SelfMode::ByRef => params.push(self.type_context.reference_to(type_id)),
+                SelfMode::Value => params.push(type_id),
+                SelfMode::None => {}
             }
             for p in &method.params {
                 if let Some(pty) = p.data.ty.as_ref() {
@@ -834,9 +844,10 @@ impl Compiler {
             };
 
             let mut params = Vec::new();
-            if op.has_self {
-                let self_ref_ty = self.type_context.reference_to(type_id);
-                params.push(self_ref_ty);
+            match op.self_mode {
+                SelfMode::ByRef => params.push(self.type_context.reference_to(type_id)),
+                SelfMode::Value => params.push(type_id),
+                SelfMode::None => {}
             }
             for p in &op.params {
                 if let Some(pty) = p.data.ty.as_ref() {
@@ -852,27 +863,30 @@ impl Compiler {
                 params: params.clone(),
             });
 
-            let rhs_ty = if op.has_self && params.len() > 1 {
+            let rhs_ty = if op.self_mode.has_self() && params.len() > 1 {
                 params[1]
-            } else if !op.has_self && !params.is_empty() {
+            } else if !op.self_mode.has_self() && !params.is_empty() {
                 params[0]
             } else {
                 self.type_context.none
             };
 
-            let self_llvm_ty: BasicTypeEnum<'static> = self.type_context
-                .get_by_id(type_id).unwrap().llvm_type.try_into().unwrap();
             let bool_llvm = self.type_context.types[self.type_context.bool as usize]
                 .llvm_type.into_int_type();
 
             match op.op_name.as_str() {
                 "add" | "sub" | "mul" | "div" => {
+                    if op.self_mode == SelfMode::ByRef {
+                        self.emit_compile_message(CompileMessage::new(
+                            modify.smap.clone(),
+                            format!("operator '{}' must take self by value, not by reference", op.op_name),
+                            CompileMessageType::Error,
+                        ));
+                    }
                     let mangled = op_mangled.clone();
                     let closure: BinaryOperatorMaker = Box::new(move |b, g, l, r| {
                         let fn_val = g[&mangled].into_function_value();
-                        let alloca = b.build_alloca(self_llvm_ty, "tmp_self").unwrap();
-                        b.build_store(alloca, BasicValueEnum::try_from(l).unwrap()).unwrap();
-                        let res = b.build_call(fn_val, &[alloca.into(), BasicValueEnum::try_from(r).unwrap().into()], "user_binop").unwrap();
+                        let res = b.build_call(fn_val, &[BasicValueEnum::try_from(l).unwrap().into(), BasicValueEnum::try_from(r).unwrap().into()], "user_binop").unwrap();
                         res.try_as_basic_value().basic().unwrap().into()
                     });
                     let type_info = self.type_context.get_by_id_mut(type_id).unwrap();
@@ -885,12 +899,17 @@ impl Compiler {
                     }
                 }
                 "cmp" => {
+                    if op.self_mode == SelfMode::ByRef {
+                        self.emit_compile_message(CompileMessage::new(
+                            modify.smap.clone(),
+                            format!("operator 'cmp' must take self by value, not by reference"),
+                            CompileMessageType::Error,
+                        ));
+                    }
                     let mk = |pred: IntPredicate, mname: String| -> BinaryOperatorMaker {
                         Box::new(move |b, g, l, r| {
                             let fn_val = g[&mname].into_function_value();
-                            let alloca = b.build_alloca(self_llvm_ty, "tmp_self").unwrap();
-                            b.build_store(alloca, BasicValueEnum::try_from(l).unwrap()).unwrap();
-                            let cmp_result = b.build_call(fn_val, &[alloca.into(), BasicValueEnum::try_from(r).unwrap().into()], "user_cmp")
+                            let cmp_result = b.build_call(fn_val, &[BasicValueEnum::try_from(l).unwrap().into(), BasicValueEnum::try_from(r).unwrap().into()], "user_cmp")
                                 .unwrap().try_as_basic_value().basic().unwrap().into_int_value();
                             let zero = cmp_result.get_type().const_int(0, false);
                             b.build_int_z_extend(
@@ -914,6 +933,13 @@ impl Compiler {
                         .ops.user_assign.insert(rhs_ty, (ret, op_mangled));
                 }
                 "drop" => {
+                    if op.self_mode != SelfMode::ByRef {
+                        self.emit_compile_message(CompileMessage::new(
+                            modify.smap.clone(),
+                            format!("operator 'drop' must take self by reference (self&), not by value"),
+                            CompileMessageType::Error,
+                        ));
+                    }
                     self.type_context.get_by_id_mut(type_id).unwrap().ops.drop = Some(op_mangled);
                 }
                 _ => {}
@@ -1000,7 +1026,8 @@ impl Compiler {
     }
     
     fn print_message(&self, msg: &CompileMessage, ty: &str) {
-        let source_string = &self.source_map[&msg.source.owner];
+
+        let source_string = self.source_map.get(&msg.source.owner).cloned().unwrap_or(format!("UNKNOWN SOURCE: {:?}", msg.source.owner));
         
         //first print the source
         println!("Compiler {} at {:?} {} at line {} character {}:",
@@ -1081,7 +1108,8 @@ impl Compiler {
         let mut tks: VecDeque<Token> = VecDeque::new();
         let mut dependencies = Vec::new();
         //iterate through the tokens and find module dependencies
-        for tk in tokens {
+        let mut iter = tokens.peekable();
+        while let Some(tk) = iter.next() {
             module_smap.extend(&tk.smap);
 
             match &tk.typ {
@@ -1098,7 +1126,12 @@ impl Compiler {
                         };
                         match resolved {
                             Some(p) => match Tokens::tokenize(&p) {
-                                Ok(tks) => self.add_module_impl(tks, added),
+                                Ok(tks) => {
+                                    self.source_map.insert(tks.get_owner().clone(),
+                                        fs::read_to_string(p).unwrap()
+                                    );
+                                    self.add_module_impl(tks, added)
+                                },
                                 Err(e) => self.emit_compile_message(CompileMessage::new(
                                     tk.smap.clone(),
                                     format!("Failed to load module {:?}: {}", p, e),
@@ -1113,6 +1146,31 @@ impl Compiler {
                         }
                     }
                     dependencies.push(mod_path);
+                },
+
+                TokenType::Statement(StatementToken::UsecKW) => {
+                    // Skip whitespace between `usec` and the path string literal
+                    while matches!(iter.peek().map(|t| &t.typ), Some(TokenType::User(_))) {
+                        iter.next();
+                    }
+                    // The header path follows as a StringLiteral token
+                    let is_str = matches!(
+                        iter.peek().map(|t| &t.typ),
+                        Some(TokenType::Expression(ExpressionToken::StringLiteral(_)))
+                    );
+                    let _path_str = if is_str {
+                        iter.next().and_then(|t| {
+                            if let TokenType::Expression(ExpressionToken::StringLiteral(p)) = t.typ {
+                                Some(p)
+                            } else {
+                                None
+                            }
+                        })
+                    } else {
+                        None
+                    };
+
+                    todo!("C header parsing")
                 },
 
                 TokenType::User(_) => {},
@@ -1138,10 +1196,10 @@ impl Compiler {
             }
 
 
-
         }
 
         let module = LModule::parse_untyped(modp.clone(), tks, module_smap, dependencies, self);
+
         self.untyped_modules.insert(
             modp,
             module

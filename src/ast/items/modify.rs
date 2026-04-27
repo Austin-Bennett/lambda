@@ -10,10 +10,24 @@ use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::token::{ExpressionToken, FeatureToken, StatementToken, Token, TokenType};
 use crate::unpack_opt_tk;
 
+/// How a method's `self` parameter is passed.
+#[derive(Clone, PartialEq, Debug)]
+pub enum SelfMode {
+    None,   // no self parameter (static method)
+    Value,  // fn method(self)  — receiver passed by value
+    ByRef,  // fn method(self&) — receiver passed by reference (lvalue required)
+}
+
+impl SelfMode {
+    pub fn has_self(&self) -> bool {
+        !matches!(self, SelfMode::None)
+    }
+}
+
 #[derive(Clone)]
 pub struct MethodDecl {
     pub name: String,
-    pub has_self: bool,
+    pub self_mode: SelfMode,
     pub params: Vec<VarDeclSyntax>,
     pub ret: Option<Type>,
     pub body: Option<BlockSyntax>,
@@ -24,7 +38,11 @@ impl Debug for MethodDecl {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.public { write!(f, "public ")?; }
         write!(f, "{}(", self.name)?;
-        if self.has_self { write!(f, "self")?; }
+        match self.self_mode {
+            SelfMode::None => {}
+            SelfMode::Value => { write!(f, "self")?; }
+            SelfMode::ByRef => { write!(f, "self&")?; }
+        }
         for p in &self.params {
             write!(f, ", {:?}", p.data)?;
         }
@@ -37,7 +55,7 @@ impl Debug for MethodDecl {
 #[derive(Clone)]
 pub struct OperatorDecl {
     pub op_name: String, // "add", "sub", "mul", "div", "assign", "cmp", "drop"
-    pub has_self: bool,
+    pub self_mode: SelfMode,
     pub params: Vec<VarDeclSyntax>,
     pub ret: Option<Type>,
     pub body: Option<BlockSyntax>,
@@ -46,7 +64,11 @@ pub struct OperatorDecl {
 impl Debug for OperatorDecl {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "operator {}(", self.op_name)?;
-        if self.has_self { write!(f, "self")?; }
+        match self.self_mode {
+            SelfMode::None => {}
+            SelfMode::Value => { write!(f, "self")?; }
+            SelfMode::ByRef => { write!(f, "self&")?; }
+        }
         for p in &self.params {
             write!(f, ", {:?}", p.data)?;
         }
@@ -233,17 +255,25 @@ impl Syntax for ModifySyntax {
                     continue;
                 }
 
-                // Optional 'self'
-                let has_self = if let Some(Token {
+                // Optional 'self' or 'self&'
+                let self_mode = if let Some(Token {
                     typ: TokenType::Expression(ExpressionToken::Identifier(s)), ..
                 }) = tokens.get(0) && s == "self" {
                     tokens.pop_front();
+                    let mode = if let Some(Token {
+                        typ: TokenType::Expression(ExpressionToken::Operator(Operator { tk: "&", .. })), ..
+                    }) = tokens.get(0) {
+                        tokens.pop_front();
+                        SelfMode::ByRef
+                    } else {
+                        SelfMode::Value
+                    };
                     if let Some(Token { typ: TokenType::Feature(FeatureToken::Comma), .. }) = tokens.get(0) {
                         tokens.pop_front();
                     }
-                    true
+                    mode
                 } else {
-                    false
+                    SelfMode::None
                 };
 
                 // Parse remaining params
@@ -295,7 +325,7 @@ impl Syntax for ModifySyntax {
                 smap.extend(opsmap);
                 operators.push(OperatorDecl {
                     op_name,
-                    has_self,
+                    self_mode,
                     params: op_params,
                     ret: op_ret,
                     body,
@@ -332,24 +362,30 @@ impl Syntax for ModifySyntax {
                 continue;
             };
 
-            // Check for bare 'self' as first parameter
-            let has_self = if let Some(Token {
+            // Check for bare 'self' or 'self&' as first parameter
+            let self_mode = if let Some(Token {
                 typ: TokenType::Expression(ExpressionToken::Identifier(s)), ..
             }) = tokens.get(0)
                 && s == "self"
             {
                 tokens.pop_front(); // consume 'self'
-
-                // If followed by ',', consume it and parse remaining params normally
+                let mode = if let Some(Token {
+                    typ: TokenType::Expression(ExpressionToken::Operator(Operator { tk: "&", .. })), ..
+                }) = tokens.get(0) {
+                    tokens.pop_front(); // consume '&'
+                    SelfMode::ByRef
+                } else {
+                    SelfMode::Value
+                };
                 if let Some(Token {
                     typ: TokenType::Feature(FeatureToken::Comma), ..
                 }) = tokens.get(0)
                 {
                     tokens.pop_front();
                 }
-                true
+                mode
             } else {
-                false
+                SelfMode::None
             };
 
             // Parse remaining parameters
@@ -423,7 +459,7 @@ impl Syntax for ModifySyntax {
             smap.extend(msmap);
             methods.push(MethodDecl {
                 name: method_name,
-                has_self,
+                self_mode,
                 params,
                 ret,
                 body,

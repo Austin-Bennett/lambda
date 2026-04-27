@@ -1,6 +1,6 @@
 use crate::ast::block::BlockSyntax;
 use crate::ast::function::FunctionSyntax;
-use crate::ast::items::modify::{MethodDecl, OperatorDecl};
+use crate::ast::items::modify::{MethodDecl, OperatorDecl, SelfMode};
 use crate::ast::statements::vardecl::VarDeclSyntax;
 use crate::ast::ty::Type;
 use crate::common::sourcemap::SourceMap;
@@ -71,7 +71,7 @@ impl Function {
 impl Function {
     pub fn from_parts(
         mangled_name: &str,
-        has_self: bool,
+        self_mode: SelfMode,
         self_type_id: Option<TypeId>,
         params: &[VarDeclSyntax],
         ret_ty: Option<&Type>,
@@ -102,11 +102,20 @@ impl Function {
         let mut param_names = Vec::new();
         let mut param_types = Vec::new();
 
-        if has_self {
-            let self_ref_ty = compiler.type_context.reference_to(self_type_id.unwrap());
-            context.declare_identifier_in_scope("self".to_string(), self_ref_ty);
-            param_names.push("self".to_string());
-            param_types.push(self_ref_ty);
+        match self_mode {
+            SelfMode::ByRef => {
+                let self_ref_ty = compiler.type_context.reference_to(self_type_id.unwrap());
+                context.declare_identifier_in_scope("self".to_string(), self_ref_ty);
+                param_names.push("self".to_string());
+                param_types.push(self_ref_ty);
+            }
+            SelfMode::Value => {
+                let self_ty = self_type_id.unwrap();
+                context.declare_identifier_in_scope("self".to_string(), self_ty);
+                param_names.push("self".to_string());
+                param_types.push(self_ty);
+            }
+            SelfMode::None => {}
         }
 
         for p in params {
@@ -153,7 +162,7 @@ impl Function {
     ) -> Option<Self> {
         Self::from_parts(
             mangled_name,
-            method.has_self,
+            method.self_mode.clone(),
             Some(self_type_id),
             &method.params,
             method.ret.as_ref(),
@@ -174,7 +183,7 @@ impl Function {
     ) -> Option<Self> {
         Self::from_parts(
             mangled_name,
-            op.has_self,
+            op.self_mode.clone(),
             Some(self_type_id),
             &op.params,
             op.ret.as_ref(),
@@ -189,7 +198,7 @@ impl Function {
     pub fn from_ast(func: &FunctionSyntax, compiler: &mut Compiler, context: &mut AvailableContext<TypeId>) -> Option<Self> {
         let result = Self::from_parts(
             &func.data.name,
-            false,
+            SelfMode::None,
             None,
             &func.data.parameters,
             func.data.ty.as_ref(),

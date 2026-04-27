@@ -1,279 +1,383 @@
 # Lambda
-Compiled language based on LLVM, compiler written in rust
+Compiled language based on LLVM, compiler written in Rust.
 
-## Usage
+## Usage for building by command line
 ```
-lambda 
-[--output, -o <output> (default: a.out)]
-[--shared]
-[-l, --link <shared library>]
-[-L <linkage directory>]
-[--optimize, -O <none, 1, 2, 3>]
-files...
+lambda
+  [-o, --output <path>]          output file (default: a.out)
+  [-O, --optimize <none|1|2|3>]  optimization level (default: 2)
+  [-l, --link <lib>]             link a shared library (repeatable)
+  [-L <path>]                    add a library search path (repeatable)
+  [-M, --modules <path>]         add a module search path (repeatable)
+  [--shared]                     compile as a shared library (.so / .dll)
+  <files...>                     .lm source files and/or linker inputs
 ```
-**Debug Options**
+
+**Debug options**
 ```
-[--output-ir <path>]
-[--debug-ast]
-[--no-codegen]
- ```
+  [--output-ir <path>]   write generated LLVM IR to a file
+  [--debug-ast]          print the untyped and typed ASTs
+  [--no-codegen]         stop after AST generation (no object/binary output)
+```
+
+
 
 ### Compile options
-**output:** the output file path
 
-**debug-ast:** print the AST as a debug step
+**output:** output file path.
 
-**shared:** compile this as a shared (.so or .dll) library
+**optimize:** optimization level applied to the generated LLVM IR.
 
-**link:** link to a shared library, can pass this argument more than once
+**link / L:** pass `-l`/`-L` flags to the linker. Can be repeated.
 
-**L:** specify a linkage directory for linking to a file
+**modules / M:** add directories to the module search path. Can be repeated.
 
-**optimize:** optimization level to apply to the generated IR
+**shared:** produce a shared library instead of an executable.
 
-**files:** files to compile
+**files:** a mix of `.lm` Lambda source files and linker inputs. Any file whose
+extension is not `.lm` (e.g. `.o`, `.a`, `.so`) is passed directly to the
+linker, making it easy to link against pre-compiled C, C++, or Rust objects:
 
-### Debug Options
-
-**output-ir:** output the generated llvm ir to the specified path
-
-**no-codegen:** Tell the compiler to stop after AST generation
-
-
-## Lang features
-
-### Structures
-
-**Syntax:**
-
+## Building with a json file
 ```lambda
-struct MyStruct {
-  x: int32,
-  y: uint32,
-}
+  --build, -B <file>
 ```
 
-**Allows the programmer to define their own data types**
+**build:** grabs compiler arguments from json file
 
-*Note: There is no syntax for constructing a structure yet*
+```bash
+# Compile a C file to an object
+clang -c mylib.c -o mylib.o
 
+# Link it alongside Lambda source
+lambda -o myapp main.lm mylib.o -l m
+```
+
+---
+
+## Module system
+
+Source files can import other modules with `use`:
+
+```lambda
+use mymodule;
+use core::imath;
+```
+
+The compiler searches for `mymodule.lm` in every directory on the module search
+path (`-M` flags, plus `./` by default). Nested paths use `::` separators
+(`core::imath` → `core/imath.lm`).
+
+---
+
+## Language features
+
+### Primitive types
+
+| Type      | Description                  |
+|-----------|------------------------------|
+| `int8`    | 8-bit signed integer         |
+| `int16`   | 16-bit signed integer        |
+| `int32`   | 32-bit signed integer        |
+| `int64`   | 64-bit signed integer        |
+| `uint8`   | 8-bit unsigned integer       |
+| `uint16`  | 16-bit unsigned integer      |
+| `uint32`  | 32-bit unsigned integer      |
+| `uint64`  | 64-bit unsigned integer      |
+| `float32` | 32-bit floating-point        |
+| `float64` | 64-bit floating-point        |
+| `bool`    | boolean (`true` / `false`)   |
+| `str`     | immutable string slice       |
+
+Type modifiers compose right-to-left:
+- `T&` — reference to T
+- `T*` — pointer to T
+- `T[]` — slice of T
+- `T[N]` — array of N T's
+
+---
+
+### Variable declarations
+
+**Explicit type:**
+```lambda
+x: int32 = 42;
+name: str = "hello";
+```
+
+**Inferred type (let):**
+```lambda
+let y = x + 1;
+let flag = true;
+```
+
+`let` requires an initialiser; the type is inferred from the expression.
+
+---
 
 ### Functions
 
-**Syntax:**
-
 ```lambda
-[extern] fn add(a: int32, b: int32) = int32 {
-  return a + b;
+fn add(a: int32, b: int32) = int32 {
+    return a + b;
+}
+
+// void (no = ReturnType)
+fn print_sum(a: int32, b: int32) {
+    cprint("done\n");
 }
 ```
 
-**A function is a callable item of code**
+**Extern functions** declare a symbol defined in another object file / shared
+library, or mark a symbol for export from a shared library:
 
-declare using the following structure:
-`[extern] fn NAME(arg1: type1, arg2: type2 ... argn: typen) = return_type`
-**Extern tells the compiler either a) the symbol is defined elsewhere or b) this symbol should be exported to a shared library**
-
-
-### Statements
-
-#### Expressions
-
-An expression is anything that performs actions on values, for example, `a+b` is an expression, `2b` is an expression, and `add(a, b)` is also an expression
-
-**Notes:**
-
-putting a number in front of any identifier (such as the `2b` example) is the same as multiplication
-all primitive types can use the syntax `a(b)` for multiplication as well (i.e `2(2)` will return `4`)
-
-
-#### Operators
-
-|                         Name                          | Token |
-|:-----------------------------------------------------:|:-----:|
-|                       Addition                        |   +   |
-|                Subtraction / Negation                 |   -   |
-|             Multiplication / Dereference              |   *   |
-|                       Division                        |   /   |
-|                        Assign                         |   =   |
-| Address Of / Bitwise AND / Boolean NS<sup>1</sup> AND |   &   |
-|        Bitwise OR / Boolean NS<sup>1</sup> OR         |  \|   |
-|                      Bitwise XOR                      |   ^   |
-|                 Bitwise / Boolean NOT                 |   !   |
-|                  Bitwise Shift Right                  |  \>>  |
-|                  Bitwise Shift Left                   |  <<   |
-|                      Boolean AND                      |  &&   |
-|                      Boolean OR                       | \|\|  |
-
-1. NS stands for Non-Short Circuiting
-2. Bitwise operators can only be applied to integer types
-3. All of these operators have assignment variants (+=)
-
-#### Variable Declarations
-
-
-**Syntax:**
-
-`a: int32 = 2 + 2;`
-
-Declare any variable using the structure:
-
-`NAME: TYPE = EXPRESSION`
-
-
-#### Return Statements
-
-**Syntax:**
-
-`return 2a; //return 2 * a`
-
-returns a value from a function
-
-#### Casting
-
-**Syntax**
 ```lambda
-a: i32 = 2;
-b: i64 = a as i64 + 2
+extern fn cprint(s: str);
 ```
 
-casts a value to the specified type if it can
-the structure is:
-
-`VALUE as TYPE`
-
-**Notes:**
-any primitive (floatN, intN, uintN) can be cast between each-other
-any pointer can be cast to a usize, and any integer to a pointer
-and a boolean can be cast as a uint8 but not vice-versa
-
-#### Pointer arithmetic
-
-`&ident` gives a reference to an identifier
-
-`ref as *type` casts a reference to a pointer
-
-`*ptr` turns the pointer into a reference again
-
-`*ref` reads the reference
+**Entry point:** `main` must return `int8` (the process exit code).
 
 ```lambda
-a: i32 = 10;
-a_ref: i32& = &a;
-a_ptr = a_ref as i32*;
-a_ref_2 = *a_ptr;
-a_clone: i32 = *a_ref_2;
-a_clone = 3;
-*a_ref = a_clone;
-```
-
-
-
-#### if statements
-```lambda
-if [boolean] {
-    ...code
-} else <if [boolean]> {
-    ...code
-} ...
-```
-
-#### while statements
-```lambda
-while boolean {
-    ...code
+fn main() = int8 {
+    return 0;
 }
 ```
 
-#### structure initialization
+---
 
-*Syntax:*
+### Generics (templates)
+
+Type parameters are declared with `<T, U, ...>` immediately after the keyword.
+Lambda uses **monomorphization** — a separate concrete copy is generated for
+each unique combination of type arguments.
+
+#### Generic functions
+
 ```lambda
-struct myStruct {
-    //public makes this member usable outside the structures context
-    public a: int32,
-    b: int32,
+fn<T> identity(x: T) = T {
+    return x;
 }
 
-//initializer is basically a function that takes 
-//input variables and returns the structure
-//like rust- custom constructors must be made as static methods
-my_struct: myStruct = myStruct(1, 2);
-
-//the . operator allows one to access a structures inner members
-a: int32 = myStruct.a;
+fn<T> max(a: T, b: T) = T {
+    if a > b { return a; }
+    return b;
+}
 ```
 
+**Calling a generic function** uses `.< >` syntax at the call site:
 
+```lambda
+let v  = identity.<int32>(5);
+let mx = max.<float64>(1.5, 2.5);
+```
 
+Generic functions can call other generic functions:
 
-#### modify blocks
+```lambda
+fn<T> double_identity(x: T) = T {
+    return identity.<T>(x);
+}
+```
 
-similar to a rust impl block, but can be added to any type even outside its defining module
+#### Generic structs
 
-*Syntax*
+```lambda
+struct<T> Pair {
+    a: T,
+    b: T,
+}
+
+// Instantiate by using the type:
+p: Pair<int32>;
+p.a = 7;
+p.b = 13;
+```
+
+#### Generic modify blocks
+
+```lambda
+modify<T> Pair<T> {
+    public fn sum(self) = T {
+        return self.a + self.b;
+    }
+}
+```
+
+Pattern matching in the modify type lets you restrict instantiation:
+
+```lambda
+// Only applies when the second type arg is int32
+modify<T> Pair<T> { ... }          // applies to Pair<anything>
+modify<T> Pair<T, int32> { ... }   // applies only when second arg is int32
+```
+
+---
+
+### Structures
+
+```lambda
+struct Vec2 {
+    x: float32,
+    y: float32,
+}
+```
+
+Members are private by default. Use `public` to expose them:
 
 ```lambda
 struct Point {
-    public float32 x;
-    public float32 y;
+    public x: float32,
+    public y: float32,
 }
+```
 
-modify Point {
-    public length2(self) = float32 {
-        //self is a reference to this object
+Access members with `.`:
+
+```lambda
+v: Vec2;
+v.x = 1.0;
+v.y = 2.0;
+```
+
+---
+
+### Modify blocks
+
+A `modify` block adds methods and operator overloads to any type. It can appear
+anywhere — even in a different file from the type definition.
+
+```lambda
+modify Vec2 {
+    // Methods are private by default; public makes them callable from outside
+    public fn length_sq(self) = float32 {
         return self.x * self.x + self.y * self.y;
     }
-}
 
-//modify primitive types too- you can modify any valid type
-modify int32 {
-    public max(self, other: int32) = int32 {
-        if *self > other {
-            return *self;
-        }
-        return other;
+    // Private helper — only callable from within other Vec2 methods
+    fn internal_helper(self) = float32 { ... }
+}
+```
+
+`self` inside a method is a reference to the receiver; mutating it mutates the
+original value.
+
+#### Operator overloads
+
+Operator overloads are declared inside a modify block using `fn operator`:
+
+```lambda
+modify Vec2 {
+    fn operator add(self, rhs: Vec2) = Vec2 {
+        r: Vec2;
+        r.x = self.x + rhs.x;
+        r.y = self.y + rhs.y;
+        return r;
+    }
+
+    // cmp: return negative / zero / positive (int8)
+    fn operator cmp(self, rhs: Vec2) = int8 {
+        if self.x < rhs.x { return -1; }
+        if self.x > rhs.x { return  1; }
+        return 0;
     }
 }
 ```
 
+Operator overloads are always publicly accessible.
 
-*Operator Overloading*
+**Available operators:**
 
-this is also done inside a modify block:
+| Name     | Token(s)              | Notes |
+|----------|-----------------------|-------|
+| `add`    | `a + b`               | |
+| `sub`    | `a - b`               | |
+| `mul`    | `a * b`               | |
+| `div`    | `a / b`               | |
+| `cmp`    | `==` `!=` `<` `>` `<=` `>=` | return `int8`: negative / zero / positive |
+| `assign` | `a = b`               | overrides copy/move for structs |
+| `drop`   | (destructor)          | called when value goes out of scope |
 
-*Syntax*
+---
+
+### Statements
+
+#### Operators
+
+| Name                         | Token(s)         | Notes |
+|------------------------------|------------------|-------|
+| Addition                     | `+`              | |
+| Subtraction / Negation       | `-`              | |
+| Multiplication / Dereference | `*`              | |
+| Division                     | `/`              | |
+| Assignment                   | `=`              | |
+| Address-of / Bitwise AND / Non-short-circuit AND | `&` | |
+| Bitwise OR / Non-short-circuit OR | `\|`        | |
+| Bitwise XOR                  | `^`              | |
+| Bitwise / Boolean NOT        | `!`              | |
+| Shift right                  | `>>`             | integers only |
+| Shift left                   | `<<`             | integers only |
+| Boolean AND (short-circuit)  | `&&`             | |
+| Boolean OR (short-circuit)   | `\|\|`           | |
+
+All binary operators have compound-assignment variants: `+=`, `-=`, `*=`, `/=`,
+`&=`, `|=`, `^=`, `>>=`, `<<=`, `&&=`, `||=`.
+
+#### Casting
+
 ```lambda
-//operator overloads are always public, if a public is put before a operator method
-//its allowed, but will cause a compiler warning
-operator operator_name(self, args...) = result { ... }
+big: int64 = 300;
+let small = big as int32;   // 300
+let byte  = big as int8;    // 44  (300 mod 256)
+
+fl: float32 = 7.9;
+let i = fl as int32;        // 7 (truncate toward zero)
 ```
 
-*Operator methods:*
+Any primitive (`intN`, `uintN`, `floatN`, `bool`) can be cast to any other
+primitive. Pointers and integers are mutually castable.
+
+#### if / else
 
 ```lambda
-//addition, a + b = c
-operator add(self, other: T) = R { ... }
-
-//subtraction, a - b = c
-operator sub(self, other: T) = R { ... }
-
-//multiplication, a * b = c
-operator mul(self, other: T) = R { ... }
-
-//division, a / b = c
-operator div(self, other: T) = R { ... }
-
-//assignment, a = b
-//note that if T is Self, then it overrides the default move/copy operator for struct types, 
-//you cannot override it on primitives however, no other operator supports this besides assign
-operator assign(self, other: T) = R { ... }
-
-//comparison operator, a < b, a <= b, a > b, a >= b, a == b, a != b
-//returns 0 if equal, 1 if greater than, and -1 if less than
-//maybe todo: implement enums in lambda and replace this with a enum
-operator cmp(self, other: T) = int8 { ... }
-
-//drop operator / destructor operator
-operator drop(self) { ... }
+if condition {
+    ...
+} else if other {
+    ...
+} else {
+    ...
+}
 ```
+
+#### while
+
+```lambda
+while condition {
+    ...
+}
+```
+
+#### Pointer / reference operations
+
+```lambda
+a: int32 = 10;
+r: int32& = &a;          // reference to a
+p: int32* = r as int32*; // reference -> pointer
+r2: int32& = *p;         // pointer -> reference
+let val: int32 = *r2;    // read through reference
+*r = 99;                 // write through reference
+```
+
+---
+
+### FFI
+
+Declare external C / system functions with `extern fn`:
+
+```lambda
+extern fn printf(fmt: str) = int32;
+```
+
+Link against pre-compiled object files, archives, or shared libraries by
+passing them on the command line alongside `.lm` files (see **Compile options**
+above). The compiler routes by extension — anything that isn't `.lm` goes
+straight to the linker.

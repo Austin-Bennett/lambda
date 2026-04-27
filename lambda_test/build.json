@@ -1,0 +1,16 @@
+{
+  "output": "main",
+  "output_ir": "main.ll",
+  "libs": [
+    "print"
+  ],
+  "lib_paths": [
+    "."
+  ],
+  "module_paths": [
+    "../lib/"
+  ],
+  "files": [
+    "main.lm"
+  ]
+}

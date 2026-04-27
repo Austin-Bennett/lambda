@@ -10,8 +10,10 @@ use clap::Parser;
 use inkwell::targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine};
 use inkwell::OptimizationLevel;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{exit};
+use crate::build_args::{Arguments, BuildJSON, CompilerArgs};
+use crate::intrinsics::add_intrinsics;
 
 pub mod lexer;
 pub mod common;
@@ -20,71 +22,42 @@ pub mod ast;
 
 pub mod typed_ast;
 pub mod consteval;
+pub mod intrinsics;
+pub mod build_args;
 
 
-
-#[derive(Parser)]
-pub struct Arguments {
-    /// Output path
-    #[arg(short, long, default_value = "a.out")]
-    output: String,
-
-    ///optimization level
-    #[arg(long, short='O', value_parser = ["none", "1", "2", "3"], default_value = "2")]
-    optimize: String,
-
-    /// print the ast as debug output
-    #[arg(long, default_value = "false")]
-    debug_ast: bool,
-
-    /// dont do codegen, only generate ast and ir
-    #[arg(long, default_value = "false")]
-    no_codegen: bool,
-
-    /// generate ir in the specified output file
-    #[arg(long)]
-    output_ir: Option<String>,
-
-    /// Compile as a shared library (.so / .dll)
-    #[arg(long)]
-    shared: bool,
-
-    /// Link against a shared library (e.g. -l pthread)
-    #[arg(short = 'l', long="link", value_name = "LIB", action = clap::ArgAction::Append)]
-    libs: Vec<String>,
-
-    /// Add a library search path (e.g. -L /usr/local/lib)
-    #[arg(short = 'L', value_name = "PATH", action = clap::ArgAction::Append)]
-    lib_paths: Vec<String>,
-
-    /// Add a module search path (e.g. -M ./stdlib)
-    #[arg(short = 'M', long = "modules", value_name = "PATH", action = clap::ArgAction::Append)]
-    module_paths: Vec<String>,
-
-    ///files to compile
-    #[arg(num_args = 1.., required = true, value_name = "FILE")]
-    files: Vec<String>,
-}
 
 
 
 
 fn main() -> Result<()> {
     let args = Arguments::parse();
+    
+    let args: Box<dyn CompilerArgs> = if let Some(bjson) = args.build {
+        Box::new(BuildJSON::from_file(bjson))
+    } else {
+        Box::new(args)
+    };
+
+
+
 
     let context = RuntimeStatic::new(inkwell::context::Context::create());
     let mut compiler = Compiler::new(RuntimeStatic::static_ref(&context));
 
-    
+    add_intrinsics(&mut compiler);
 
-    for path in &args.module_paths {
+
+
+
+    for path in args.get_module_paths() {
         compiler.module_search_paths.push(std::path::PathBuf::from(path));
     }
     let search_paths = compiler.module_search_paths.clone();
 
     let mut extra_link_inputs: Vec<String> = Vec::new();
 
-    for file in &args.files {
+    for file in args.get_files() {
         let path = Path::new(file);
         match path.extension().and_then(|e| e.to_str()) {
             Some("lm") | None => {
@@ -100,7 +73,7 @@ fn main() -> Result<()> {
                             SourceOwner::new(SourceDescriptor::File, p.to_string_lossy().into_owned()),
                             f,
                         ),
-                        Err(e) => eprintln!("{}: {:?}", file, e),
+                        Err(e) => eprintln!("Failed to read file: {} due to error: {:?}", file, e),
                     },
                     None => eprintln!("{}: file not found in any module search path", file),
                 }
@@ -118,7 +91,7 @@ fn main() -> Result<()> {
     }
 
 
-    if args.debug_ast {
+    if args.get_debug_ast() {
         println!("Untyped AST:");
         for (mp, md) in compiler.get_untyped_modules() {
             println!("Module {}:", mp);
@@ -136,7 +109,7 @@ fn main() -> Result<()> {
         exit(-1);
     }
 
-    if args.debug_ast {
+    if args.get_debug_ast() {
         println!("Typed AST:");
         for (mp, md) in compiler.get_typed_modules() {
             println!("Module {}:", mp);
@@ -146,7 +119,7 @@ fn main() -> Result<()> {
         }
     }
 
-    if args.no_codegen {
+    if args.get_no_codegen() {
         return Ok(());
     }
 
@@ -160,7 +133,7 @@ fn main() -> Result<()> {
         exit(-1);
     }
 
-    if let Some(ir) = args.output_ir {
+    if let Some(ir) = args.get_output_ir() {
         llvm_mod.print_to_file(ir).unwrap();
     }
 
@@ -180,9 +153,9 @@ fn main() -> Result<()> {
     let target = Target::from_triple(&triple)
         .map_err(|e| anyhow::anyhow!("Failed to get target: {}", e))?;
 
-    let reloc_mode = if args.shared { RelocMode::PIC } else { RelocMode::Default };
+    let reloc_mode = if args.get_shared() { RelocMode::PIC } else { RelocMode::Default };
 
-    let opt_level = match args.optimize.as_ref() {
+    let opt_level = match args.get_optimize().as_ref() {
         "1" => OptimizationLevel::Less,
         "2" => OptimizationLevel::Default,
         "3" => OptimizationLevel::Aggressive,
@@ -201,7 +174,7 @@ fn main() -> Result<()> {
         .ok_or_else(|| anyhow::anyhow!("Failed to create target machine"))?;
 
     // Write a temporary object file alongside the output.
-    let obj_path = Path::new(&args.output).with_extension("o");
+    let obj_path = Path::new(&args.get_output()).with_extension("o");
 
     machine
         .write_to_file(&llvm_mod, FileType::Object, &obj_path)
@@ -209,7 +182,7 @@ fn main() -> Result<()> {
 
     // Link with the system C compiler (handles libc, crt, etc. automatically).
     let mut link_cmd = std::process::Command::new("cc");
-    if args.shared {
+    if args.get_shared() {
         link_cmd.arg("-shared");
     }
     
@@ -217,17 +190,20 @@ fn main() -> Result<()> {
     for input in &extra_link_inputs {
         link_cmd.arg(input);
     }
-    link_cmd.args(["-o", &args.output]);
-    for path in &args.lib_paths {
+    link_cmd.args(["-o", &args.get_output()]);
+    for path in args.get_lib_paths() {
         link_cmd.args(["-L", path]);
     }
-    if !args.shared && !args.libs.is_empty() {
+    if !args.get_shared() && !args.get_libs().is_empty() {
         link_cmd.arg("-Wl,-rpath,$ORIGIN");
     }
     
-    for lib in &args.libs {
+    for lib in args.get_libs() {
         link_cmd.args(["-l", lib]);
     }
+
+    #[cfg(target_os = "linux")]
+    link_cmd.args(["-l", "m"]);
 
     let link_status = link_cmd
         .status()
@@ -242,8 +218,8 @@ fn main() -> Result<()> {
         );
     }
 
-    let artifact = if args.shared { "shared library" } else { "executable" };
-    println!("Successfully compiled {}: {} [optimization level: {}]", artifact, args.output, args.optimize);
+    let artifact = if args.get_shared() { "shared library" } else { "executable" };
+    println!("Successfully compiled {}: {} [optimization level: {}]", artifact, args.get_output(), args.get_optimize());
 
     Ok(())
 }

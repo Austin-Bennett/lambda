@@ -118,6 +118,8 @@ impl Operator {
     pub const SUB: Self = Operator { tk: "-", bp: Operator::ADDITIVE_BP.to_binary_or_unary() };
     pub const MUL: Self = Operator { tk: "*", bp: Operator::MULTIPLICATIVE_BP.to_binary_or_unary() };
     pub const DIV: Self = Operator { tk: "/", bp: Operator::MULTIPLICATIVE_BP };
+    pub const MOD: Self = Operator { tk: "%", bp: Operator::MULTIPLICATIVE_BP };
+    pub const MOD_ASSIGN: Self = Operator { tk: "%=", bp: Operator::MIN_BINARY_BP };
 
     // unary-only
     pub const NOT: Self = Operator { tk: "!", bp: BindingPower::Unary };

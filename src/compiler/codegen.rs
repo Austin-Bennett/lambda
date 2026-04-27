@@ -5,7 +5,7 @@ use crate::typed_ast::ast::statements::expression::{BinaryOperator, TypedExpr, T
 use crate::typed_ast::ast::statements::TypedStatement;
 use crate::typed_ast::typing::ty::TypeKind;
 use inkwell::builder::Builder;
-use inkwell::types::{AnyTypeEnum, BasicMetadataTypeEnum, BasicTypeEnum};
+use inkwell::types::{AnyTypeEnum, AsTypeRef, BasicMetadataTypeEnum, BasicTypeEnum};
 use inkwell::values::{AnyValueEnum, ArrayValue, BasicMetadataValueEnum, BasicValueEnum, FunctionValue, GlobalValue, IntValue, PointerValue};
 use std::collections::HashMap;
 use std::mem;
@@ -317,15 +317,32 @@ impl Compiler {
             }
 
             TypedStatement::VarDecl(vd) => {
-                // Resolve the LLVM type before taking any mutable borrow.
                 let basic_ty: BasicTypeEnum<'static> = self
                     .type_context
                     .get_by_id(vd.ty)
                     .and_then(|info| info.llvm_type.try_into().ok())
                     .unwrap();
 
-                // Always emit allocas in the function entry block so that loop bodies
-                // don't adjust rsp on every iteration, which would overflow the stack.
+                // Save old alloca before init (needed for shadowed drop).
+                let old_alloca = vd.shadowed_drop.as_ref()
+                    .and_then(|_| locals.get_identifier(&vd.name))
+                    .map(|v| v.into_pointer_value());
+
+                // 1. Compute init first — may legitimately read the old value of `x`.
+                let init_val = if let Some(val_expr) = &vd.val {
+                    self.compile_expression(builder, ret_var, globals, strings, locals, val_expr)
+                } else {
+                    None
+                };
+
+                // 2. Drop old value after init is computed but before new alloca is stored.
+                if let (Some(old_ptr), Some((_, drop_mangled))) = (old_alloca, &vd.shadowed_drop) {
+                    if let Some(&drop_fn) = globals.get(drop_mangled.as_str()) {
+                        builder.build_call(drop_fn.into_function_value(), &[old_ptr.into()], "").unwrap();
+                    }
+                }
+
+                // 3. Always emit the alloca in the function entry block (loop-body safety).
                 let current_block = builder.get_insert_block().unwrap();
                 let entry_block = function.get_first_basic_block().unwrap();
                 builder.position_at_end(entry_block);
@@ -334,11 +351,10 @@ impl Compiler {
 
                 locals.declare_identifier_in_scope(vd.name.clone(), alloca.into());
 
-                if let Some(val_expr) = &vd.val {
-                    if let Some(val) = self.compile_expression(builder, ret_var, globals, strings, locals, val_expr) {
-                        if let Ok(basic_val) = BasicValueEnum::try_from(val) {
-                            builder.build_store(alloca, basic_val).unwrap();
-                        }
+                // 4. Store init value.
+                if let Some(val) = init_val {
+                    if let Ok(basic_val) = BasicValueEnum::try_from(val) {
+                        builder.build_store(alloca, basic_val).unwrap();
                     }
                 }
             }
@@ -618,6 +634,14 @@ impl Compiler {
                         }
                         TypedExprNode::Identifier(name) => {
                             let alloca = locals.get_identifier(name).unwrap().into_pointer_value();
+                            // Drop old value AFTER rhs_val is already computed, BEFORE storing.
+                            let drop_fn = self.type_context.get_by_id(bop.lhs.ty)
+                                .and_then(|info| info.ops.drop.as_ref())
+                                .and_then(|drop_name| globals.get(drop_name.as_str()))
+                                .copied();
+                            if let Some(drop_fn_any) = drop_fn {
+                                builder.build_call(drop_fn_any.into_function_value(), &[alloca.into()], "").unwrap();
+                            }
                             let ops = &self.type_context.get_by_id(bop.lhs.ty).unwrap().ops;
                             let maker = ops.assign.get(&bop.rhs.ty).unwrap();
                             maker(builder, alloca, rhs_val);
@@ -706,6 +730,7 @@ impl Compiler {
                     BinaryOperator::SubAssign    => Some(|b,g,l,r,ops,rty| ops.sub.get(&rty).map(|(_,m)| m(b,g,l,r))),
                     BinaryOperator::MulAssign    => Some(|b,g,l,r,ops,rty| ops.mul.get(&rty).map(|(_,m)| m(b,g,l,r))),
                     BinaryOperator::DivAssign    => Some(|b,g,l,r,ops,rty| ops.div.get(&rty).map(|(_,m)| m(b,g,l,r))),
+                    BinaryOperator::ModAssign    => Some(|b,g,l,r,ops,rty| ops.rem.get(&rty).map(|(_,m)| m(b,g,l,r))),
                     BinaryOperator::BitAndAssign => Some(|b,g,l,r,ops,rty| ops.bit_and.get(&rty).map(|(_,m)| m(b,g,l,r))),
                     BinaryOperator::BitOrAssign  => Some(|b,g,l,r,ops,rty| ops.bit_or.get(&rty).map(|(_,m)| m(b,g,l,r))),
                     BinaryOperator::BitXorAssign => Some(|b,g,l,r,ops,rty| ops.bit_xor.get(&rty).map(|(_,m)| m(b,g,l,r))),
@@ -769,6 +794,7 @@ impl Compiler {
                         BinaryOperator::Sub => ops.sub.get(&bop.rhs.ty).map(|(_, m)| m(builder, globals, lhs_val, rhs_val)),
                         BinaryOperator::Mul => ops.mul.get(&bop.rhs.ty).map(|(_, m)| m(builder, globals, lhs_val, rhs_val)),
                         BinaryOperator::Div => ops.div.get(&bop.rhs.ty).map(|(_, m)| m(builder, globals, lhs_val, rhs_val)),
+                        BinaryOperator::Mod => ops.rem.get(&bop.rhs.ty).map(|(_, m)| m(builder, globals, lhs_val, rhs_val)),
                         BinaryOperator::BitAnd => ops.bit_and.get(&bop.rhs.ty).map(|(_, m)| m(builder, globals, lhs_val, rhs_val)),
                         BinaryOperator::BitOr  => ops.bit_or.get(&bop.rhs.ty).map(|(_, m)| m(builder, globals, lhs_val, rhs_val)),
                         BinaryOperator::BitXor => ops.bit_xor.get(&bop.rhs.ty).map(|(_, m)| m(builder, globals, lhs_val, rhs_val)),
@@ -926,6 +952,38 @@ impl Compiler {
                     .collect();
 
                 maker(builder, globals, locals, &ci.args, compiled_args)
+            }
+
+            TypedExprNode::SizeOf(ty_id) => {
+                use llvm_sys::target::{LLVMABISizeOfType, LLVMGetModuleDataLayout};
+                use inkwell::values::AsValueRef;
+                let llvm_ty = self.type_context.get_by_id(*ty_id).unwrap().llvm_type;
+                let basic_ty: inkwell::types::BasicTypeEnum = llvm_ty.try_into().ok()?;
+                let size_bytes = unsafe {
+                    let module_ref = llvm_sys::core::LLVMGetGlobalParent(
+                        builder.get_insert_block()?.get_parent()?.as_value_ref(),
+                    );
+                    let td = LLVMGetModuleDataLayout(module_ref);
+                    LLVMABISizeOfType(td, basic_ty.as_type_ref())
+                };
+                let usize_ty = self.type_context.get_by_id(self.type_context.usize).unwrap().llvm_type.into_int_type();
+                Some(usize_ty.const_int(size_bytes, false).into())
+            }
+
+            TypedExprNode::AlignOf(ty_id) => {
+                use llvm_sys::target::{LLVMABIAlignmentOfType, LLVMGetModuleDataLayout};
+                use inkwell::values::AsValueRef;
+                let llvm_ty = self.type_context.get_by_id(*ty_id).unwrap().llvm_type;
+                let basic_ty: inkwell::types::BasicTypeEnum = llvm_ty.try_into().ok()?;
+                let align_bytes = unsafe {
+                    let module_ref = llvm_sys::core::LLVMGetGlobalParent(
+                        builder.get_insert_block()?.get_parent()?.as_value_ref(),
+                    );
+                    let td = LLVMGetModuleDataLayout(module_ref);
+                    LLVMABIAlignmentOfType(td, basic_ty.as_type_ref()) as u64
+                };
+                let usize_ty = self.type_context.get_by_id(self.type_context.usize).unwrap().llvm_type.into_int_type();
+                Some(usize_ty.const_int(align_bytes, false).into())
             }
         }
     }

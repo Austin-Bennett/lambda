@@ -79,10 +79,8 @@ impl LTypedModule {
                 ast::Item::Modify(modify) => {
                     // generic modify blocks are handled on-demand; skip them here
                     if !modify.data.type_parameters.is_empty() { continue; }
-                    //todo: allow any type, including compound types like arrays or pointers
-                    let Type::Typename(type_name) = &modify.data.ty else { continue; };
 
-                    let type_name = type_name.clone();
+                    let type_name = modify.data.ty.mangle_name();
                     let Some(type_id) = compiler.resolve_type(&modify.data.ty) else { continue; };
                     for method in &modify.data.methods {
                         let mangled = format!("{}_{}", type_name, method.name);

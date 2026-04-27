@@ -9,7 +9,10 @@ pub struct TypedVarDecl {
     pub name: String,
     pub smap: SourceMap,
     pub ty: TypeId,
-    pub val: Option<TypedExpr>
+    pub val: Option<TypedExpr>,
+    /// Set when this declaration shadows a droppable variable in the same scope.
+    /// Codegen drops the old value AFTER computing the init expression.
+    pub shadowed_drop: Option<(TypeId, String)>,
 }
 
 
@@ -41,6 +44,7 @@ impl TypedVarDecl {
                 ty,
                 val: Some(e),
                 smap: vd.smap.clone(),
+                shadowed_drop: None,
             });
         }
 
@@ -89,6 +93,7 @@ impl TypedVarDecl {
             ty,
             val: expr,
             smap: vd.smap.clone(),
+            shadowed_drop: None,
         })
     }
 }
