@@ -959,8 +959,12 @@ impl TypedExpr {
                                 })), ref_type))
                             }
                             TypedExprNode::Index(_) => {
-                                // &arr[i] → T& (reference to element)
-                                let ref_type = compiler.type_context.reference_to(lhs_ty);
+                                // &arr[i] → T& (reference to element).
+                                // Index already returns T&, so just propagate that type.
+                                let ref_type = match compiler.type_context.get_by_id(lhs_ty).map(|i| i.kind.clone()) {
+                                    Some(TypeKind::Reference(_)) => lhs_ty,
+                                    _ => compiler.type_context.reference_to(lhs_ty),
+                                };
                                 Some((TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
                                     op: UnaryOperator::Reference,
                                     operand: TypedExpr { value: lhs, ty: ref_type, smap: expr.smap.clone() },
@@ -1496,14 +1500,8 @@ impl TypedExpr {
 
     pub fn from_ast(expr: &ExprSyntax, compiler: &mut Compiler, context: &AvailableContext<TypeId>) -> Option<Self> {
         let (value, ty) = TypedExpr::from_node(expr, compiler, context)?;
-        
-
-        Some(
-            Self{
-                value,
-                ty,
-                smap: expr.smap.clone(),
-            }
-        )
+        let typed = Self { value, ty, smap: expr.smap.clone() };
+        // Auto-deref index results (T&) so they appear as T in value contexts.
+        Some(Self::coerce_ref(typed, &compiler.type_context))
     }
 }

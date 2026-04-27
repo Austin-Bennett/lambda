@@ -828,25 +828,9 @@ impl Compiler {
                                 }
                                 return None;
                             }
-                            TypedExprNode::Index(idx) => {
-                                // &arr[i] — GEP without load
-                                let array_ptr = self.compile_expression(builder, ret_var, globals, string_literals, locals, &idx.operand)
-                                    .unwrap().into_pointer_value();
-                                let idx_val: inkwell::values::IntValue<'static> = self
-                                    .compile_expression(builder, ret_var, globals, string_literals, locals, &idx.index)
-                                    .unwrap().try_into().ok().unwrap();
-                                let array_info = self.type_context.get_by_id(idx.operand.ty).unwrap();
-                                let elem_ty_id = match array_info.kind {
-                                    TypeKind::Array { ty, .. } => ty,
-                                    TypeKind::Slice(ty) => ty,
-                                    _ => return None,
-                                };
-                                let elem_llvm: BasicTypeEnum<'static> = self.type_context
-                                    .get_by_id(elem_ty_id).unwrap().llvm_type.try_into().unwrap();
-                                let elem_ptr = unsafe {
-                                    builder.build_gep(elem_llvm, array_ptr, &[idx_val], "elem_ptr").unwrap()
-                                };
-                                return Some(elem_ptr.into());
+                            TypedExprNode::Index(_) => {
+                                // Index maker returns the element pointer directly.
+                                return self.compile_expression(builder, ret_var, globals, string_literals, locals, &uop.operand);
                             }
                             _ => return None,
                         }

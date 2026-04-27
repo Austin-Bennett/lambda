@@ -1,14 +1,14 @@
-use core::imath
+use std::imath
 
 extern fn cprint(s: str);
 
 
 
+
+
 fn main() = int8 {
-    let i = 35;
-    let i = i.signum();
 
-    cprint("Hello, World!\n");
 
-    return i as int8;
+
+    return res as int8;
 }

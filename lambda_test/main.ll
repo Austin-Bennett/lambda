@@ -3916,13 +3916,999 @@ drop_and_merge_:                                  ; No predecessors!
   br label %return
 }
 
+define i64 @isize_abs(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i64, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %ilt = icmp slt i64 %self1, 0
+  br i1 %ilt, label %then, label %else
+
+drop_and_return_:                                 ; preds = %if_merge, %drop_and_return_3
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+
+then:                                             ; preds = %code_
+  br label %code_2
+
+else:                                             ; preds = %code_
+  br label %if_merge
+
+if_merge:                                         ; preds = %else, %drop_and_merge_4
+  %self6 = load i64, ptr %self, align 4
+  store i64 %self6, ptr %return_var, align 4
+  br label %drop_and_return_
+
+code_2:                                           ; preds = %then
+  %self5 = load i64, ptr %self, align 4
+  %ineg = sub i64 0, %self5
+  store i64 %ineg, ptr %return_var, align 4
+  br label %drop_and_return_3
+
+drop_and_return_3:                                ; preds = %code_2
+  br label %drop_and_return_
+
+drop_and_merge_4:                                 ; No predecessors!
+  br label %if_merge
+}
+
+define i64 @isize_min(i64 %0, i64 %1) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %other = alloca i64, align 8
+  store i64 %1, ptr %other, align 4
+  %return_var = alloca i64, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %other2 = load i64, ptr %other, align 4
+  %ilt = icmp slt i64 %self1, %other2
+  br i1 %ilt, label %then, label %else
+
+drop_and_return_:                                 ; preds = %if_merge, %drop_and_return_4
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+
+then:                                             ; preds = %code_
+  br label %code_3
+
+else:                                             ; preds = %code_
+  br label %if_merge
+
+if_merge:                                         ; preds = %else, %drop_and_merge_5
+  %other7 = load i64, ptr %other, align 4
+  store i64 %other7, ptr %return_var, align 4
+  br label %drop_and_return_
+
+code_3:                                           ; preds = %then
+  %self6 = load i64, ptr %self, align 4
+  store i64 %self6, ptr %return_var, align 4
+  br label %drop_and_return_4
+
+drop_and_return_4:                                ; preds = %code_3
+  br label %drop_and_return_
+
+drop_and_merge_5:                                 ; No predecessors!
+  br label %if_merge
+}
+
+define i64 @isize_max(i64 %0, i64 %1) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %other = alloca i64, align 8
+  store i64 %1, ptr %other, align 4
+  %return_var = alloca i64, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %other2 = load i64, ptr %other, align 4
+  %igt = icmp sgt i64 %self1, %other2
+  br i1 %igt, label %then, label %else
+
+drop_and_return_:                                 ; preds = %if_merge, %drop_and_return_4
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+
+then:                                             ; preds = %code_
+  br label %code_3
+
+else:                                             ; preds = %code_
+  br label %if_merge
+
+if_merge:                                         ; preds = %else, %drop_and_merge_5
+  %other7 = load i64, ptr %other, align 4
+  store i64 %other7, ptr %return_var, align 4
+  br label %drop_and_return_
+
+code_3:                                           ; preds = %then
+  %self6 = load i64, ptr %self, align 4
+  store i64 %self6, ptr %return_var, align 4
+  br label %drop_and_return_4
+
+drop_and_return_4:                                ; preds = %code_3
+  br label %drop_and_return_
+
+drop_and_merge_5:                                 ; No predecessors!
+  br label %if_merge
+}
+
+define i64 @isize_clamp(i64 %0, i64 %1, i64 %2) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %min = alloca i64, align 8
+  store i64 %1, ptr %min, align 4
+  %max = alloca i64, align 8
+  store i64 %2, ptr %max, align 4
+  %return_var = alloca i64, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %max2 = load i64, ptr %max, align 4
+  %call = call i64 @isize_min(i64 %self1, i64 %max2)
+  %min3 = load i64, ptr %min, align 4
+  %call4 = call i64 @isize_max(i64 %call, i64 %min3)
+  store i64 %call4, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i1 @isize_even(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i1, align 1
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i1, ptr %return_var, align 1
+  ret i1 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %band = and i64 %self1, 1
+  %ieq = icmp eq i64 %band, 0
+  store i1 %ieq, ptr %return_var, align 1
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i1 @isize_odd(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i1, align 1
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i1, ptr %return_var, align 1
+  ret i1 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %band = and i64 %self1, 1
+  %igt = icmp sgt i64 %band, 0
+  store i1 %igt, ptr %return_var, align 1
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i64 @isize_signum(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i64, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %ilt = icmp slt i64 %self1, 0
+  br i1 %ilt, label %then, label %else
+
+drop_and_return_:                                 ; preds = %if_merge7, %drop_and_return_10, %drop_and_return_3
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+
+then:                                             ; preds = %code_
+  br label %code_2
+
+else:                                             ; preds = %code_
+  br label %if_merge
+
+if_merge:                                         ; preds = %else, %drop_and_merge_4
+  %self8 = load i64, ptr %self, align 4
+  %igt = icmp sgt i64 %self8, 0
+  br i1 %igt, label %then5, label %else6
+
+code_2:                                           ; preds = %then
+  store i32 -1, ptr %return_var, align 4
+  br label %drop_and_return_3
+
+drop_and_return_3:                                ; preds = %code_2
+  br label %drop_and_return_
+
+drop_and_merge_4:                                 ; No predecessors!
+  br label %if_merge
+
+then5:                                            ; preds = %if_merge
+  br label %code_9
+
+else6:                                            ; preds = %if_merge
+  br label %if_merge7
+
+if_merge7:                                        ; preds = %else6, %drop_and_merge_11
+  store i64 0, ptr %return_var, align 4
+  br label %drop_and_return_
+
+code_9:                                           ; preds = %then5
+  store i64 1, ptr %return_var, align 4
+  br label %drop_and_return_10
+
+drop_and_return_10:                               ; preds = %code_9
+  br label %drop_and_return_
+
+drop_and_merge_11:                                ; No predecessors!
+  br label %if_merge7
+}
+
+define i1 @isize_positive(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i1, align 1
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i1, ptr %return_var, align 1
+  ret i1 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %igt = icmp sgt i64 %self1, 0
+  store i1 %igt, ptr %return_var, align 1
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i1 @isize_negative(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i1, align 1
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i1, ptr %return_var, align 1
+  ret i1 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %ilt = icmp slt i64 %self1, 0
+  store i1 %ilt, ptr %return_var, align 1
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i64 @isize_sqrt(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i64, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %sitofp = sitofp i64 %self1 to double
+  %intr = call double @llvm.sqrt.f64(double %sitofp)
+  %fptosi = fptosi double %intr to i64
+  store i64 %fptosi, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i64 @isize_pow(i64 %0, i32 %1) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %pow = alloca i32, align 4
+  store i32 %1, ptr %pow, align 4
+  %return_var = alloca i64, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %sitofp = sitofp i64 %self1 to double
+  %pow2 = load i32, ptr %pow, align 4
+  %uitofp = uitofp i32 %pow2 to double
+  %intr = call double @llvm.pow.f64(double %sitofp, double %uitofp)
+  %fptosi = fptosi double %intr to i64
+  store i64 %fptosi, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i64 @isize_ln(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i64, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %sitofp = sitofp i64 %self1 to double
+  %intr = call double @llvm.log.f64(double %sitofp)
+  %fptosi = fptosi double %intr to i64
+  store i64 %fptosi, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i64 @isize_log2(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i64, align 8
+  %lns = alloca double, align 8
+  %ln2 = alloca double, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %sitofp = sitofp i64 %self1 to double
+  %intr = call double @llvm.log.f64(double %sitofp)
+  store double %intr, ptr %lns, align 8
+  %intr2 = call double @llvm.log.f64(double 2.000000e+00)
+  store double %intr2, ptr %ln2, align 8
+  %lns3 = load double, ptr %lns, align 8
+  %ln24 = load double, ptr %ln2, align 8
+  %fdiv = fdiv double %lns3, %ln24
+  %fptosi = fptosi double %fdiv to i64
+  store i64 %fptosi, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i64 @isize_log10(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i64, align 8
+  %lns = alloca double, align 8
+  %ln10 = alloca double, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %sitofp = sitofp i64 %self1 to double
+  %intr = call double @llvm.log.f64(double %sitofp)
+  store double %intr, ptr %lns, align 8
+  %intr2 = call double @llvm.log.f64(double 1.000000e+01)
+  store double %intr2, ptr %ln10, align 8
+  %lns3 = load double, ptr %lns, align 8
+  %ln104 = load double, ptr %ln10, align 8
+  %fdiv = fdiv double %lns3, %ln104
+  %fptosi = fptosi double %fdiv to i64
+  store i64 %fptosi, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i64 @isize_log(i64 %0, i64 %1) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %base = alloca i64, align 8
+  store i64 %1, ptr %base, align 4
+  %return_var = alloca i64, align 8
+  %lns = alloca double, align 8
+  %lnb = alloca double, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %sitofp = sitofp i64 %self1 to double
+  %intr = call double @llvm.log.f64(double %sitofp)
+  store double %intr, ptr %lns, align 8
+  %base2 = load i64, ptr %base, align 4
+  %sitofp3 = sitofp i64 %base2 to double
+  %intr4 = call double @llvm.log.f64(double %sitofp3)
+  store double %intr4, ptr %lnb, align 8
+  %lns5 = load double, ptr %lns, align 8
+  %lnb6 = load double, ptr %lnb, align 8
+  %fdiv = fdiv double %lns5, %lnb6
+  %fptosi = fptosi double %fdiv to i64
+  store i64 %fptosi, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i64 @usize_abs(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i64, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  store i64 %self1, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i64 @usize_min(i64 %0, i64 %1) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %other = alloca i64, align 8
+  store i64 %1, ptr %other, align 4
+  %return_var = alloca i64, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %other2 = load i64, ptr %other, align 4
+  %ult = icmp ult i64 %self1, %other2
+  br i1 %ult, label %then, label %else
+
+drop_and_return_:                                 ; preds = %if_merge, %drop_and_return_4
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+
+then:                                             ; preds = %code_
+  br label %code_3
+
+else:                                             ; preds = %code_
+  br label %if_merge
+
+if_merge:                                         ; preds = %else, %drop_and_merge_5
+  %other7 = load i64, ptr %other, align 4
+  store i64 %other7, ptr %return_var, align 4
+  br label %drop_and_return_
+
+code_3:                                           ; preds = %then
+  %self6 = load i64, ptr %self, align 4
+  store i64 %self6, ptr %return_var, align 4
+  br label %drop_and_return_4
+
+drop_and_return_4:                                ; preds = %code_3
+  br label %drop_and_return_
+
+drop_and_merge_5:                                 ; No predecessors!
+  br label %if_merge
+}
+
+define i64 @usize_max(i64 %0, i64 %1) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %other = alloca i64, align 8
+  store i64 %1, ptr %other, align 4
+  %return_var = alloca i64, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %other2 = load i64, ptr %other, align 4
+  %ugt = icmp ugt i64 %self1, %other2
+  br i1 %ugt, label %then, label %else
+
+drop_and_return_:                                 ; preds = %if_merge, %drop_and_return_4
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+
+then:                                             ; preds = %code_
+  br label %code_3
+
+else:                                             ; preds = %code_
+  br label %if_merge
+
+if_merge:                                         ; preds = %else, %drop_and_merge_5
+  %other7 = load i64, ptr %other, align 4
+  store i64 %other7, ptr %return_var, align 4
+  br label %drop_and_return_
+
+code_3:                                           ; preds = %then
+  %self6 = load i64, ptr %self, align 4
+  store i64 %self6, ptr %return_var, align 4
+  br label %drop_and_return_4
+
+drop_and_return_4:                                ; preds = %code_3
+  br label %drop_and_return_
+
+drop_and_merge_5:                                 ; No predecessors!
+  br label %if_merge
+}
+
+define i64 @usize_clamp(i64 %0, i64 %1, i64 %2) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %min = alloca i64, align 8
+  store i64 %1, ptr %min, align 4
+  %max = alloca i64, align 8
+  store i64 %2, ptr %max, align 4
+  %return_var = alloca i64, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %max2 = load i64, ptr %max, align 4
+  %call = call i64 @usize_min(i64 %self1, i64 %max2)
+  %min3 = load i64, ptr %min, align 4
+  %call4 = call i64 @usize_max(i64 %call, i64 %min3)
+  store i64 %call4, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i1 @usize_even(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i1, align 1
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i1, ptr %return_var, align 1
+  ret i1 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %band = and i64 %self1, 1
+  %ueq = icmp eq i64 %band, 0
+  store i1 %ueq, ptr %return_var, align 1
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i1 @usize_odd(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i1, align 1
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i1, ptr %return_var, align 1
+  ret i1 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %band = and i64 %self1, 1
+  %ugt = icmp ugt i64 %band, 0
+  store i1 %ugt, ptr %return_var, align 1
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i64 @usize_signum(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i64, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %ugt = icmp ugt i64 %self1, 0
+  br i1 %ugt, label %then, label %else
+
+drop_and_return_:                                 ; preds = %if_merge, %drop_and_return_3
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+
+then:                                             ; preds = %code_
+  br label %code_2
+
+else:                                             ; preds = %code_
+  br label %if_merge
+
+if_merge:                                         ; preds = %else, %drop_and_merge_4
+  store i64 0, ptr %return_var, align 4
+  br label %drop_and_return_
+
+code_2:                                           ; preds = %then
+  store i64 1, ptr %return_var, align 4
+  br label %drop_and_return_3
+
+drop_and_return_3:                                ; preds = %code_2
+  br label %drop_and_return_
+
+drop_and_merge_4:                                 ; No predecessors!
+  br label %if_merge
+}
+
+define i1 @usize_positive(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i1, align 1
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i1, ptr %return_var, align 1
+  ret i1 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %ugt = icmp ugt i64 %self1, 0
+  store i1 %ugt, ptr %return_var, align 1
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i64 @usize_sqrt(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i64, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %uitofp = uitofp i64 %self1 to double
+  %intr = call double @llvm.sqrt.f64(double %uitofp)
+  %fptoui = fptoui double %intr to i64
+  store i64 %fptoui, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i64 @usize_pow(i64 %0, i32 %1) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %pow = alloca i32, align 4
+  store i32 %1, ptr %pow, align 4
+  %return_var = alloca i64, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %uitofp = uitofp i64 %self1 to double
+  %pow2 = load i32, ptr %pow, align 4
+  %uitofp3 = uitofp i32 %pow2 to double
+  %intr = call double @llvm.pow.f64(double %uitofp, double %uitofp3)
+  %fptoui = fptoui double %intr to i64
+  store i64 %fptoui, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i64 @usize_ln(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i64, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %uitofp = uitofp i64 %self1 to double
+  %intr = call double @llvm.log.f64(double %uitofp)
+  %fptoui = fptoui double %intr to i64
+  store i64 %fptoui, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i64 @usize_log2(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i64, align 8
+  %lns = alloca double, align 8
+  %ln2 = alloca double, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %uitofp = uitofp i64 %self1 to double
+  %intr = call double @llvm.log.f64(double %uitofp)
+  store double %intr, ptr %lns, align 8
+  %intr2 = call double @llvm.log.f64(double 2.000000e+00)
+  store double %intr2, ptr %ln2, align 8
+  %lns3 = load double, ptr %lns, align 8
+  %ln24 = load double, ptr %ln2, align 8
+  %fdiv = fdiv double %lns3, %ln24
+  %fptoui = fptoui double %fdiv to i64
+  store i64 %fptoui, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i64 @usize_log10(i64 %0) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %return_var = alloca i64, align 8
+  %lns = alloca double, align 8
+  %ln10 = alloca double, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %uitofp = uitofp i64 %self1 to double
+  %intr = call double @llvm.log.f64(double %uitofp)
+  store double %intr, ptr %lns, align 8
+  %intr2 = call double @llvm.log.f64(double 1.000000e+01)
+  store double %intr2, ptr %ln10, align 8
+  %lns3 = load double, ptr %lns, align 8
+  %ln104 = load double, ptr %ln10, align 8
+  %fdiv = fdiv double %lns3, %ln104
+  %fptoui = fptoui double %fdiv to i64
+  store i64 %fptoui, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define i64 @usize_log(i64 %0, i64 %1) {
+entry:
+  %self = alloca i64, align 8
+  store i64 %0, ptr %self, align 4
+  %base = alloca i64, align 8
+  store i64 %1, ptr %base, align 4
+  %return_var = alloca i64, align 8
+  %lns = alloca double, align 8
+  %lnb = alloca double, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i64, ptr %return_var, align 4
+  ret i64 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load i64, ptr %self, align 4
+  %uitofp = uitofp i64 %self1 to double
+  %intr = call double @llvm.log.f64(double %uitofp)
+  store double %intr, ptr %lns, align 8
+  %base2 = load i64, ptr %base, align 4
+  %uitofp3 = uitofp i64 %base2 to double
+  %intr4 = call double @llvm.log.f64(double %uitofp3)
+  store double %intr4, ptr %lnb, align 8
+  %lns5 = load double, ptr %lns, align 8
+  %lnb6 = load double, ptr %lnb, align 8
+  %fdiv = fdiv double %lns5, %lnb6
+  %fptoui = fptoui double %fdiv to i64
+  store i64 %fptoui, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
 declare void @cprint(<{ i64, ptr }>)
+
+declare ptr @aligned_alloc(i64, i64)
+
+declare void @free(ptr)
 
 define i8 @main() {
 entry:
   %return_var = alloca i8, align 1
   %i = alloca i32, align 4
   %i2 = alloca i32, align 4
+  %v = alloca ptr, align 8
+  %ray = alloca <{ i64, ptr }>, align 8
+  %i5 = alloca i32, align 4
+  %res = alloca i32, align 4
   br label %code_
 
 return:                                           ; preds = %drop_and_merge_, %drop_and_return_
@@ -3934,18 +4920,61 @@ code_:                                            ; preds = %entry
   %i1 = load i32, ptr %i, align 4
   %call = call i32 @int32_signum(i32 %i1)
   store i32 %call, ptr %i2, align 4
-  %string_literal = load <{ i64, ptr }>, ptr @string_literal, align 1
-  call void @cprint(<{ i64, ptr }> %string_literal)
-  %i3 = load i32, ptr %i2, align 4
-  %trunc = trunc i32 %i3 to i8
-  store i8 %trunc, ptr %return_var, align 1
-  br label %drop_and_return_
+  %call3 = call ptr @aligned_alloc(i64 4, i64 40)
+  store ptr %call3, ptr %v, align 8
+  %v4 = load ptr, ptr %v, align 8
+  %sl_ptr = insertvalue <{ i64, ptr }> <{ i64 10, ptr undef }>, ptr %v4, 1
+  store <{ i64, ptr }> %sl_ptr, ptr %ray, align 1
+  store i32 0, ptr %i5, align 4
+  br label %loop_start
 
-drop_and_return_:                                 ; preds = %code_
+drop_and_return_:                                 ; preds = %loop_merge, %drop_and_return_8
   br label %return
 
 drop_and_merge_:                                  ; No predecessors!
   br label %return
+
+loop_start:                                       ; preds = %drop_and_merge_9, %code_
+  %i6 = load i32, ptr %i5, align 4
+  %ilt = icmp slt i32 %i6, 10
+  br i1 %ilt, label %loop, label %loop_merge
+
+loop:                                             ; preds = %loop_start
+  br label %code_7
+
+loop_merge:                                       ; preds = %loop_start
+  %string_literal = load <{ i64, ptr }>, ptr @string_literal, align 1
+  call void @cprint(<{ i64, ptr }> %string_literal)
+  %ray14 = load <{ i64, ptr }>, ptr %ray, align 1
+  %sl_ptr15 = extractvalue <{ i64, ptr }> %ray14, 1
+  %sl_elem_ptr16 = getelementptr i32, ptr %sl_ptr15, i64 4
+  %refread = load i32, ptr %sl_elem_ptr16, align 4
+  store i32 %refread, ptr %res, align 4
+  %v17 = load ptr, ptr %v, align 8
+  call void @free(ptr %v17)
+  %res18 = load i32, ptr %res, align 4
+  %trunc = trunc i32 %res18 to i8
+  store i8 %trunc, ptr %return_var, align 1
+  br label %drop_and_return_
+
+code_7:                                           ; preds = %loop
+  %i10 = load i32, ptr %i5, align 4
+  %ray11 = load <{ i64, ptr }>, ptr %ray, align 1
+  %i12 = load i32, ptr %i5, align 4
+  %sext = sext i32 %i12 to i64
+  %sl_ptr13 = extractvalue <{ i64, ptr }> %ray11, 1
+  %sl_elem_ptr = getelementptr i32, ptr %sl_ptr13, i64 %sext
+  store i32 %i10, ptr %sl_elem_ptr, align 4
+  %ca_load = load i32, ptr %i5, align 4
+  %iadd = add i32 %ca_load, 1
+  store i32 %iadd, ptr %i5, align 4
+  br label %drop_and_merge_9
+
+drop_and_return_8:                                ; No predecessors!
+  br label %drop_and_return_
+
+drop_and_merge_9:                                 ; preds = %code_7
+  br label %loop_start
 }
 
 ; Function Attrs: nocallback nocreateundeforpoison nofree nosync nounwind speculatable willreturn memory(none)

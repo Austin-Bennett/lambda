@@ -214,38 +214,36 @@ impl TypeContext {
         }
     }
 
+    fn enable_slice_operator(&mut self, id: TypeId) {
+        let TypeKind::Slice(elem_ty) = self.types[id as usize].kind.clone() else { return; };
+        let inner_info = self.types[elem_ty as usize].llvm_type;
+        let ref_ty = self.reference_to(elem_ty);
+        self.types[id as usize].enable_index_operator(
+            self.usize,
+            ref_ty,
+            Box::new(move |b, _g, slice_val, index| unsafe {
+                let ptr = b.build_extract_value(slice_val.into_struct_value(), 1, "sl_ptr")
+                    .unwrap().into_pointer_value();
+                let elem_basic: BasicTypeEnum = inner_info.try_into().unwrap();
+                let elem_ptr = b.build_gep(elem_basic, ptr, &[index.try_into().unwrap()], "sl_elem_ptr").unwrap();
+                elem_ptr.into()
+            })
+        );
+    }
+
     fn enable_array_operator(&mut self, id: TypeId) {
         let TypeKind::Array { ty: array_ty, .. } = self.types[id as usize].kind.clone() else { return; };
         let inner_info = self.types[array_ty as usize].llvm_type;
-
-
-
-
+        let ref_ty = self.reference_to(array_ty);
         self.types[id as usize].enable_index_operator(
             self.usize,
-            array_ty,
-            Box::new(
-                move |b, _g, array, index| unsafe {
-
-                    let basic: BasicTypeEnum = inner_info.try_into().unwrap();
-
-
-
-                    let elem_ptr = b.build_gep(basic,
-                                array.into_pointer_value(),
-                                &[
-                                    index.try_into().unwrap()
-                                ],
-                                "array_element_ptr"
-                    ).unwrap();
-
-                    b.build_load(basic, elem_ptr, "array_element")
-                        .unwrap()
-                        .into()
-                }
-            )
+            ref_ty,
+            Box::new(move |b, _g, array, index| unsafe {
+                let basic: BasicTypeEnum = inner_info.try_into().unwrap();
+                let elem_ptr = b.build_gep(basic, array.into_pointer_value(), &[index.try_into().unwrap()], "array_element_ptr").unwrap();
+                elem_ptr.into()
+            })
         );
-
     }
 
     fn enable_from_int_literal(&mut self, id: TypeId, width: u32, signed: bool) {
@@ -552,6 +550,7 @@ impl TypeContext {
             TypeInfo::new(TypeKind::Slice(self.char), self.create_slice_llvm_structure().into())
         );
         self.str = id;
+        self.enable_slice_operator(id);
 
         //FLOATING-POINT
 
@@ -896,7 +895,9 @@ impl TypeContext {
         let usize_llvm: inkwell::types::BasicTypeEnum<'static> = self.get_by_id(self.usize).unwrap().llvm_type.try_into().unwrap();
         let ptr_llvm = self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).as_basic_type_enum();
         let llvm = self.llvm_context.struct_type(&[usize_llvm, ptr_llvm], true).into();
-        self.add(slice_ty, TypeInfo::new(TypeKind::Slice(inner_ty), llvm))
+        let id = self.add(slice_ty, TypeInfo::new(TypeKind::Slice(inner_ty), llvm));
+        self.enable_slice_operator(id);
+        id
     }
 
     pub fn array_of(&mut self, array_ty: TypeId, size: usize) -> TypeId {
