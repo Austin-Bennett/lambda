@@ -419,10 +419,6 @@ impl Compiler {
                                 };
                                 self.type_context.get_by_id_mut(type_id).unwrap().ops.cmp.insert(rhs_ty, makers);
                             }
-                            "assign" => {
-                                self.type_context.get_by_id_mut(type_id).unwrap()
-                                    .ops.user_assign.insert(rhs_ty, (ret, op_mangled));
-                            }
                             "drop" => {
                                 if op.self_mode != SelfMode::ByRef {
                                     self.emit_compile_message(CompileMessage::new(
@@ -436,7 +432,7 @@ impl Compiler {
                             other => {
                                 self.emit_compile_message(CompileMessage::new(
                                     modify.smap.clone(),
-                                    format!("unknown operator '{}'; valid operators: add, sub, mul, div, cmp, assign, drop", other),
+                                    format!("unknown operator '{}'; valid operators: add, sub, mul, div, cmp, drop", other),
                                     CompileMessageType::Error,
                                 ));
                             }
@@ -616,8 +612,12 @@ impl Compiler {
                 }
                 Type::Reference(t) => {
                     if let Some(id) = self.resolve_type(t) {
+                        // Use the resolved inner type's canonical AST form as cache key so that
+                        // Reference(Typename("T")) with T=int32 produces the same TypeId as
+                        // reference_to(int32_id), which uses Reference(Typename("int32")).
+                        let inner_ty = self.type_context.type_ids[&id].clone();
                         Some(self.type_context.add(
-                            Type::Reference(t.clone()),
+                            Type::Reference(Box::new(inner_ty)),
                             TypeInfo::new(
                                 TypeKind::Reference(id),
                                 self.llvm_context
@@ -631,8 +631,9 @@ impl Compiler {
                 }
                 Type::Pointer(t) => {
                     if let Some(id) = self.resolve_type(t) {
+                        let inner_ty = self.type_context.type_ids[&id].clone();
                         Some(self.type_context.add(
-                            Type::Pointer(t.clone()),
+                            Type::Pointer(Box::new(inner_ty)),
                             TypeInfo::new(
                                 TypeKind::Pointer(id),
                                 self.llvm_context
@@ -646,10 +647,11 @@ impl Compiler {
                 }
                 Type::Slice(t) => {
                     if let Some(id) = self.resolve_type(t) {
+                        let inner_ty = self.type_context.type_ids[&id].clone();
                         let slice_struct =
                             self.type_context.create_slice_llvm_structure().into();
                         Some(self.type_context.add(
-                            Type::Slice(t.clone()),
+                            Type::Slice(Box::new(inner_ty)),
                             TypeInfo::new(
                                 TypeKind::Slice(id),
                                 slice_struct
@@ -661,14 +663,14 @@ impl Compiler {
                 }
                 Type::Array { ty: t, size } => {
                     if let Some(id) = self.resolve_type(t) {
+                        let inner_ty = self.type_context.type_ids[&id].clone();
                         let ray_typ;
 
                         let ti = &self.type_context.types[id as usize];
                         let typ: BasicTypeEnum = ti.llvm_type.try_into().unwrap();
                         ray_typ = typ.array_type(*size as u32);
 
-
-                        let res = self.type_context.add(t.deref().clone(), TypeInfo::new(
+                        let res = self.type_context.add(Type::Array { ty: Box::new(inner_ty), size: *size }, TypeInfo::new(
                             TypeKind::Array { ty: id, size: *size },
                             ray_typ.into()
                         ));
@@ -680,6 +682,30 @@ impl Compiler {
                 }
                 Type::Generic { name, params } => {
                     self.monomorphize_struct(name.clone(), params.clone())
+                }
+                Type::FnPtr { ret, params } => {
+                    let ret_id = self.resolve_type(ret)?;
+                    let param_ids: Vec<TypeId> = params.iter()
+                        .map(|p| self.resolve_type(p))
+                        .collect::<Option<_>>()?;
+                    // Normalize the cache key using resolved canonical forms.
+                    let ret_canon = self.type_context.type_ids[&ret_id].clone();
+                    let param_canons: Vec<Type> = param_ids.iter()
+                        .map(|&id| self.type_context.type_ids[&id].clone())
+                        .collect();
+                    let canon_key = Type::FnPtr {
+                        ret: Box::new(ret_canon),
+                        params: param_canons,
+                    };
+                    if let Some(&cached) = self.type_context.type_lookup.get(&canon_key) {
+                        return Some(cached);
+                    }
+                    let mut info = TypeInfo::new(
+                        TypeKind::FnPtr { params: param_ids.clone(), ret: ret_id },
+                        self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into(),
+                    );
+                    info.ops.call.insert(param_ids, ret_id);
+                    Some(self.type_context.add(canon_key, info))
                 }
             }
         }
@@ -933,10 +959,6 @@ impl Compiler {
                         ge: mk(IntPredicate::SGE, op_mangled.clone()),
                     };
                     self.type_context.get_by_id_mut(type_id).unwrap().ops.cmp.insert(rhs_ty, makers);
-                }
-                "assign" => {
-                    self.type_context.get_by_id_mut(type_id).unwrap()
-                        .ops.user_assign.insert(rhs_ty, (ret, op_mangled));
                 }
                 "drop" => {
                     if op.self_mode != SelfMode::ByRef {

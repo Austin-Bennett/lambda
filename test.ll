@@ -1,17 +1,84 @@
 ; ModuleID = 'lambda_program'
 source_filename = "lambda_program"
 
-declare ptr @aligned_alloc(i64, i64)
+define { i32 } @Counter_new() {
+entry:
+  %return_var = alloca { i32 }, align 8
+  br label %code_
 
-declare void @free(ptr)
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load { i32 }, ptr %return_var, align 4
+  ret { i32 } %return_val
 
-declare void @exit(i32)
+code_:                                            ; preds = %entry
+  store { i32 } zeroinitializer, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define void @Counter_tick(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  ret void
+
+code_:                                            ; preds = %entry
+  %self1 = load ptr, ptr %self, align 8
+  %field_ptr = getelementptr inbounds nuw { i32 }, ptr %self1, i32 0, i32 0
+  %ca_load = load i32, ptr %field_ptr, align 4
+  %iadd = add i32 %ca_load, 1
+  store i32 %iadd, ptr %field_ptr, align 4
+  br label %drop_and_merge_
+
+drop_and_return_:                                 ; No predecessors!
+  br label %return
+
+drop_and_merge_:                                  ; preds = %code_
+  br label %return
+}
+
+define i32 @plusone(i32 %0) {
+entry:
+  %a = alloca i32, align 4
+  store i32 %0, ptr %a, align 4
+  %return_var = alloca i32, align 4
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i32, ptr %return_var, align 4
+  ret i32 %return_val
+
+code_:                                            ; preds = %entry
+  %a1 = load i32, ptr %a, align 4
+  %iadd = add i32 %a1, 1
+  store i32 %iadd, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
 
 define i8 @main() {
 entry:
   %return_var = alloca i8, align 1
   %my_list = alloca { ptr, i64, i64 }, align 8
   %my_list2 = alloca { ptr, i64, i64 }, align 8
+  %my_func = alloca ptr, align 8
+  %my_generic_func = alloca ptr, align 8
+  %my_static_method_func = alloca ptr, align 8
+  %my_method_func = alloca ptr, align 8
+  %my_generic_method = alloca ptr, align 8
   br label %code_
 
 return:                                           ; preds = %drop_and_merge_, %drop_and_return_
@@ -24,10 +91,6 @@ code_:                                            ; preds = %entry
   %call1 = call { ptr, i64, i64 } @List_int32_new()
   call void @List_int32__op_drop(ptr %my_list)
   store { ptr, i64, i64 } %call1, ptr %my_list2, align 8
-  call void @List_int32_add(ptr %my_list2, i32 1)
-  call void @List_int32_add(ptr %my_list2, i32 2)
-  call void @List_int32_add(ptr %my_list2, i32 3)
-  call void @List_int32_add(ptr %my_list2, i32 4)
   store i8 0, ptr %return_var, align 1
   br label %drop_and_return_
 
@@ -37,6 +100,12 @@ drop_and_return_:                                 ; preds = %code_
 drop_and_merge_:                                  ; No predecessors!
   br label %return
 }
+
+declare ptr @aligned_alloc(i64, i64)
+
+declare void @free(ptr)
+
+declare void @exit(i32)
 
 define { ptr, i64, i64 } @List_int32_new() {
 entry:
@@ -97,20 +166,20 @@ else:                                             ; preds = %code_
   br label %if_merge
 
 if_merge:                                         ; preds = %else, %drop_and_merge_7
-  %val55 = load i32, ptr %val, align 4
-  %self56 = load ptr, ptr %self, align 8
-  %refread57 = load { ptr, i64, i64 }, ptr %self56, align 8
-  %member58 = extractvalue { ptr, i64, i64 } %refread57, 0
-  %self59 = load ptr, ptr %self, align 8
-  %refread60 = load { ptr, i64, i64 }, ptr %self59, align 8
-  %member61 = extractvalue { ptr, i64, i64 } %refread60, 2
-  %ptr_add = getelementptr i8, ptr %member58, i64 %member61
-  store i32 %val55, ptr %ptr_add, align 4
-  %self62 = load ptr, ptr %self, align 8
-  %field_ptr63 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self62, i32 0, i32 2
-  %ca_load64 = load i64, ptr %field_ptr63, align 4
-  %uadd65 = add i64 %ca_load64, 1
-  store i64 %uadd65, ptr %field_ptr63, align 4
+  %val54 = load i32, ptr %val, align 4
+  %self55 = load ptr, ptr %self, align 8
+  %refread56 = load { ptr, i64, i64 }, ptr %self55, align 8
+  %member57 = extractvalue { ptr, i64, i64 } %refread56, 0
+  %self58 = load ptr, ptr %self, align 8
+  %refread59 = load { ptr, i64, i64 }, ptr %self58, align 8
+  %member60 = extractvalue { ptr, i64, i64 } %refread59, 2
+  %ptr_add = getelementptr i8, ptr %member57, i64 %member60
+  store i32 %val54, ptr %ptr_add, align 4
+  %self61 = load ptr, ptr %self, align 8
+  %field_ptr62 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self61, i32 0, i32 2
+  %ca_load = load i64, ptr %field_ptr62, align 4
+  %uadd63 = add i64 %ca_load, 1
+  store i64 %uadd63, ptr %field_ptr62, align 4
   br label %drop_and_merge_
 
 code_5:                                           ; preds = %then
@@ -148,14 +217,14 @@ else15:                                           ; preds = %code_5
   br label %if_merge16
 
 if_merge16:                                       ; preds = %else15, %drop_and_merge_22
-  %new_size50 = load i64, ptr %new_size, align 4
-  %self51 = load ptr, ptr %self, align 8
-  %field_ptr = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self51, i32 0, i32 1
-  store i64 %new_size50, ptr %field_ptr, align 4
-  %new_alloc52 = load ptr, ptr %new_alloc, align 8
-  %self53 = load ptr, ptr %self, align 8
-  %field_ptr54 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self53, i32 0, i32 0
-  store ptr %new_alloc52, ptr %field_ptr54, align 8
+  %new_size49 = load i64, ptr %new_size, align 4
+  %self50 = load ptr, ptr %self, align 8
+  %field_ptr = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self50, i32 0, i32 1
+  store i64 %new_size49, ptr %field_ptr, align 4
+  %new_alloc51 = load ptr, ptr %new_alloc, align 8
+  %self52 = load ptr, ptr %self, align 8
+  %field_ptr53 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self52, i32 0, i32 0
+  store ptr %new_alloc51, ptr %field_ptr53, align 8
   br label %drop_and_merge_7
 
 code_20:                                          ; preds = %then14
@@ -189,10 +258,10 @@ loop:                                             ; preds = %loop_start
   br label %code_35
 
 loop_merge:                                       ; preds = %loop_start
-  %self47 = load ptr, ptr %self, align 8
-  %refread48 = load { ptr, i64, i64 }, ptr %self47, align 8
-  %member49 = extractvalue { ptr, i64, i64 } %refread48, 0
-  call void @dealloc_int32(ptr %member49)
+  %self46 = load ptr, ptr %self, align 8
+  %refread47 = load { ptr, i64, i64 }, ptr %self46, align 8
+  %member48 = extractvalue { ptr, i64, i64 } %refread47, 0
+  call void @dealloc_int32(ptr %member48)
   br label %drop_and_merge_22
 
 code_35:                                          ; preds = %loop
@@ -206,9 +275,6 @@ code_35:                                          ; preds = %loop
   %sl_ptr44 = extractvalue <{ i64, ptr }> %new_alloc_slice42, 1
   %sl_elem_ptr45 = getelementptr i32, ptr %sl_ptr44, i64 %i43
   store i32 %refread41, ptr %sl_elem_ptr45, align 4
-  %ca_load = load i64, ptr %i, align 4
-  %uadd46 = add i64 %ca_load, 1
-  store i64 %uadd46, ptr %i, align 4
   br label %drop_and_merge_37
 
 drop_and_return_36:                               ; No predecessors!

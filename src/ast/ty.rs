@@ -19,6 +19,7 @@ pub enum Type {
     Pointer(Box<Type>),
     Slice(Box<Type>),
     Array{ty: Box<Type>, size: usize},
+    FnPtr { ret: Box<Type>, params: Vec<Type> },
 }
 
 impl Type {
@@ -37,6 +38,11 @@ impl Type {
                 for p in params { s.push('_'); s.push_str(&p.mangle_name()); }
                 s
             }
+            Type::FnPtr { ret, params } => {
+                let mut s = format!("fn_{}", ret.mangle_name());
+                for p in params { s.push('_'); s.push_str(&p.mangle_name()); }
+                s
+            }
         }
     }
 
@@ -48,6 +54,7 @@ impl Type {
             Type::Pointer(_) => Some(TypeContext::SIZE_POINTER),
             Type::Slice(_) => Some(TypeContext::SIZE_POINTER * 2),
             Type::Array { .. } => None,
+            Type::FnPtr { .. } => Some(TypeContext::SIZE_POINTER),
         }
     }
     
@@ -81,6 +88,16 @@ impl Debug for Type {
             }
             Type::Array { ty, size } => {
                 write!(f, "{:?}[{:?}]", ty, size)
+            }
+            Type::FnPtr { ret, params } => {
+                write!(f, "{:?}(", ret)?;
+                let mut first = true;
+                for p in params {
+                    if !first { write!(f, ", ")?; }
+                    first = false;
+                    write!(f, "{:?}", p)?;
+                }
+                write!(f, ")")
             }
         }
     }
@@ -185,6 +202,46 @@ impl TypeSyntax {
                 true
             }
 
+
+            unpack_tk!(TokenType::Expression(ExpressionToken::OpenParentheses), _) => {
+                let unpack_opt_tk!(_, smap) = tokens.pop_front() else { unreachable!() };
+                self.smap.extend(smap);
+
+                let mut params = Vec::new();
+                loop {
+                    if let Some(unpack_tk!(TokenType::Expression(ExpressionToken::CloseParentheses), _)) = tokens.get(0) {
+                        break;
+                    }
+                    match TypeSyntax::parse(tokens, compiler) {
+                        Some(p) => params.push(p.data),
+                        None => break,
+                    }
+                    if let Some(unpack_tk!(TokenType::Feature(FeatureToken::Comma), _)) = tokens.get(0) {
+                        tokens.pop_front();
+                    } else {
+                        break;
+                    }
+                }
+
+                let close = tokens.pop_front();
+                if let unpack_opt_tk!(TokenType::Expression(ExpressionToken::CloseParentheses), smap) = close {
+                    self.smap.extend(smap);
+                } else {
+                    compiler.emit_compile_message(CompileMessage::expected_token_error(
+                        self.smap.clone(), "')'", "'('", close,
+                    ));
+                    return false;
+                }
+
+                unsafe {
+                    ptr::write(&raw mut self.data, Type::FnPtr {
+                        ret: Box::new(ptr::read(&raw mut self.data)),
+                        params,
+                    })
+                }
+
+                true
+            }
 
             _ => false
         }

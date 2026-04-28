@@ -543,6 +543,46 @@ impl Compiler {
         builder.position_at_end(merge_block);
     }
 
+    /// Return the pointer (address) for any lvalue expression.
+    /// Mirrors the cases in `TypedExpr::is_lvalue`.
+    pub fn compile_lvalue(
+        &mut self,
+        builder: &mut Builder<'static>,
+        ret_var: Option<PointerValue>,
+        globals: &HashMap<String, AnyValueEnum<'static>>,
+        global_vals: &GlobalVals,
+        locals: &mut AvailableContext<AnyValueEnum<'static>>,
+        e: &TypedExpr,
+    ) -> Option<PointerValue<'static>> {
+        match &e.value {
+            TypedExprNode::Identifier(name) => {
+                Some(locals.get_identifier(name)?.into_pointer_value())
+            }
+            TypedExprNode::MemberAccess(ma) => {
+                let obj_ptr = self.compile_lvalue(builder, ret_var, globals, global_vals, locals, &ma.object)?;
+                let TypeKind::Struct(sid) = self.type_context.get_by_id(ma.object.ty)?.kind.clone() else { return None; };
+                let struct_ty = self.type_context.structs[sid as usize].llvm_struct;
+                builder.build_struct_gep(struct_ty, obj_ptr, ma.member_index as u32, "field_ptr").ok()
+            }
+            TypedExprNode::Index(_) => {
+                // Index makers return the element pointer directly as an AnyValueEnum.
+                self.compile_expression(builder, ret_var, globals, global_vals, locals, e)
+                    .map(|v| v.into_pointer_value())
+            }
+            TypedExprNode::RefRead(inner) => {
+                // `inner` has reference type T& — compiling it yields the pointer (the reference value).
+                self.compile_expression(builder, ret_var, globals, global_vals, locals, inner)
+                    .map(|v| v.into_pointer_value())
+            }
+            TypedExprNode::UnaryOp(uop) if matches!(uop.op, UnaryOperator::Dereference) => {
+                // *ptr — the pointer operand is the address.
+                self.compile_expression(builder, ret_var, globals, global_vals, locals, &uop.operand)
+                    .map(|v| v.into_pointer_value())
+            }
+            _ => None,
+        }
+    }
+
     pub fn compile_expression(
         &mut self,
         builder: &mut Builder<'static>,
@@ -582,6 +622,8 @@ impl Compiler {
                             LiteralValue::Float(_)   => self.type_context.float_literal,
                             _    => unreachable!(),
                         };
+
+                        //todo: fix panic when doing something weird like 0 as T*
                         self.type_context.get_by_id(e.ty)
                             .and_then(|info| info.ops.from_literal.get(&literal_key))
                             .map(|maker| maker(ctx, lit))
@@ -664,51 +706,24 @@ impl Compiler {
                 // --- Assign ---
                 if let BinaryOperator::Assign = &bop.op {
                     let rhs_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &bop.rhs).unwrap();
-                    match &bop.lhs.value {
-                        TypedExprNode::RefRead(ref_inner) => {
-                            let ref_ptr = self.compile_expression(builder, ret_var, globals, global_vals, locals, ref_inner).unwrap();
-                            let basic: BasicValueEnum<'static> = rhs_val.try_into().ok().unwrap();
-                            builder.build_store(ref_ptr.into_pointer_value(), basic).unwrap();
+                    let lhs_ptr = self.compile_lvalue(builder, ret_var, globals, global_vals, locals, &bop.lhs)?;
+                    let basic: BasicValueEnum<'static> = rhs_val.try_into().ok().unwrap();
+                    // For plain identifiers, run drop + typed assign maker.
+                    // For everything else (member, index, deref), raw store suffices.
+                    if let TypedExprNode::Identifier(name) = &bop.lhs.value {
+                        let _ = name;
+                        let drop_fn = self.type_context.get_by_id(bop.lhs.ty)
+                            .and_then(|info| info.ops.drop.as_ref())
+                            .and_then(|drop_name| globals.get(drop_name.as_str()))
+                            .copied();
+                        if let Some(drop_fn_any) = drop_fn {
+                            builder.build_call(drop_fn_any.into_function_value(), &[lhs_ptr.into()], "").unwrap();
                         }
-                        TypedExprNode::Identifier(name) => {
-                            let alloca = locals.get_identifier(name).unwrap().into_pointer_value();
-                            // Drop old value AFTER rhs_val is already computed, BEFORE storing.
-                            let drop_fn = self.type_context.get_by_id(bop.lhs.ty)
-                                .and_then(|info| info.ops.drop.as_ref())
-                                .and_then(|drop_name| globals.get(drop_name.as_str()))
-                                .copied();
-                            if let Some(drop_fn_any) = drop_fn {
-                                builder.build_call(drop_fn_any.into_function_value(), &[alloca.into()], "").unwrap();
-                            }
-                            let ops = &self.type_context.get_by_id(bop.lhs.ty).unwrap().ops;
-                            let maker = ops.assign.get(&bop.rhs.ty).unwrap();
-                            maker(builder, alloca, rhs_val);
-                        }
-                        TypedExprNode::UnaryOp(uop) if matches!(uop.op, UnaryOperator::Dereference) => {
-                            let ptr_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &uop.operand).unwrap();
-                            let basic: BasicValueEnum<'static> = rhs_val.try_into().ok().unwrap();
-                            builder.build_store(ptr_val.into_pointer_value(), basic).unwrap();
-                        }
-                        TypedExprNode::MemberAccess(ma) => {
-                            let field_ptr = match &ma.object.value {
-                                TypedExprNode::Identifier(name) => {
-                                    let alloca = locals.get_identifier(name).unwrap().into_pointer_value();
-                                    let TypeKind::Struct(sid) = self.type_context.get_by_id(ma.object.ty).unwrap().kind.clone() else { return None; };
-                                    let struct_ty = self.type_context.structs[sid as usize].llvm_struct;
-                                    builder.build_struct_gep(struct_ty, alloca, ma.member_index as u32, "field_ptr").ok().unwrap()
-                                }
-                                TypedExprNode::RefRead(inner) => {
-                                    let struct_ptr = self.compile_expression(builder, ret_var, globals, global_vals, locals, inner).unwrap().into_pointer_value();
-                                    let TypeKind::Struct(sid) = self.type_context.get_by_id(ma.object.ty).unwrap().kind.clone() else { return None; };
-                                    let struct_ty = self.type_context.structs[sid as usize].llvm_struct;
-                                    builder.build_struct_gep(struct_ty, struct_ptr, ma.member_index as u32, "field_ptr").ok().unwrap()
-                                }
-                                _ => return None,
-                            };
-                            let basic: BasicValueEnum<'static> = rhs_val.try_into().ok().unwrap();
-                            builder.build_store(field_ptr, basic).unwrap();
-                        }
-                        _ => return None,
+                        let ops = &self.type_context.get_by_id(bop.lhs.ty).unwrap().ops;
+                        let maker = ops.assign.get(&bop.rhs.ty).unwrap();
+                        maker(builder, lhs_ptr, rhs_val);
+                    } else {
+                        builder.build_store(lhs_ptr, basic).unwrap();
                     }
                     return Some(rhs_val);
                 }
@@ -777,18 +792,17 @@ impl Compiler {
                     _ => None,
                 };
                 if let Some(inner_fn) = compound_inner_op {
-                    let TypedExprNode::Identifier(name) = &bop.lhs.value else { return None; };
-                    let alloca = locals.get_identifier(name).unwrap().into_pointer_value();
                     let lhs_ty: BasicTypeEnum<'static> = self.type_context
                         .get_by_id(bop.lhs.ty).unwrap().llvm_type.try_into().ok().unwrap();
-                    let current_val: AnyValueEnum<'static> = builder.build_load(lhs_ty, alloca, "ca_load").unwrap().into();
+                    let field_ptr = self.compile_lvalue(builder, ret_var, globals, global_vals, locals, &bop.lhs)?;
+                    let current_val: AnyValueEnum<'static> = builder.build_load(lhs_ty, field_ptr, "ca_load").unwrap().into();
                     let rhs_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &bop.rhs)?;
                     let new_val = {
                         let ops = &self.type_context.get_by_id(bop.lhs.ty).unwrap().ops;
                         inner_fn(builder, globals, current_val, rhs_val, ops, bop.rhs.ty)?
                     };
                     let basic_new: BasicValueEnum<'static> = new_val.try_into().ok().unwrap();
-                    builder.build_store(alloca, basic_new).unwrap();
+                    builder.build_store(field_ptr, basic_new).unwrap();
                     return Some(new_val);
                 }
 
@@ -796,8 +810,7 @@ impl Compiler {
                 if matches!(bop.op, BinaryOperator::BoolAndAssign | BinaryOperator::BoolOrAssign) {
                     let is_and = matches!(bop.op, BinaryOperator::BoolAndAssign);
                     let function = builder.get_insert_block().unwrap().get_parent().unwrap();
-                    let TypedExprNode::Identifier(name) = &bop.lhs.value else { return None; };
-                    let alloca = locals.get_identifier(name).unwrap().into_pointer_value();
+                    let alloca = self.compile_lvalue(builder, ret_var, globals, global_vals, locals, &bop.lhs)?;
                     let bool_ty = self.llvm_context.custom_width_int_type(1);
                     let lhs_val = builder.build_load(bool_ty, alloca, "ca_load").unwrap().into_int_value();
                     let lhs_block   = builder.get_insert_block().unwrap();
@@ -855,23 +868,15 @@ impl Compiler {
             TypedExprNode::UnaryOp(uop) => {
                 match &uop.op {
                     UnaryOperator::Reference => {
-                        match &uop.operand.value {
-                            TypedExprNode::Identifier(name) => {
-                                if let Some(alloca) = locals.get_identifier(name) {
-                                    return Some(alloca.into_pointer_value().into());
-                                }
-                                // functions are already pointers in LLVM's opaque pointer model
-                                if let Some(&global) = globals.get(name) {
-                                    return Some(global);
-                                }
-                                return None;
+                        // For function identifiers, return the global pointer directly.
+                        if let TypedExprNode::Identifier(name) = &uop.operand.value {
+                            if let Some(&global) = globals.get(name.as_str()) {
+                                return Some(global);
                             }
-                            TypedExprNode::Index(_) => {
-                                // Index maker returns the element pointer directly.
-                                return self.compile_expression(builder, ret_var, globals, global_vals, locals, &uop.operand);
-                            }
-                            _ => return None,
                         }
+                        // All other lvalues: compile_lvalue gives the address.
+                        return self.compile_lvalue(builder, ret_var, globals, global_vals, locals, &uop.operand)
+                            .map(|ptr| ptr.into());
                     }
                     UnaryOperator::Dereference => {
                         let ptr_val = self.compile_expression(builder, ret_var, globals, global_vals, locals, &uop.operand).unwrap();
@@ -909,25 +914,48 @@ impl Compiler {
                     args.push(basic.into());
                 }
 
-                // Direct function call (the common case).
-                // Indirect / function-pointer calls are a TODO.
+                let ret_is_void = matches!(
+                    self.type_context.get_by_id(e.ty).map(|i| &i.kind),
+                    Some(TypeKind::None)
+                );
+
+                // Direct named function call.
                 if let AnyValueEnum::FunctionValue(fn_val) = caller_val {
                     let call_site = builder.build_call(fn_val, &args, "call").unwrap();
-
-                    // Determine whether the return type is void.
-                    let ret_is_void = matches!(
-                        self.type_context.get_by_id(e.ty).map(|i| &i.kind),
-                        Some(TypeKind::None)
-                    );
-
                     if ret_is_void {
-                        None
-                    } else {
-                        call_site.try_as_basic_value().basic().map(|v| v.into())
+                        return None;
                     }
-                } else {
-                    None
+                    return call_site.try_as_basic_value().basic().map(|v| v.into());
                 }
+
+                // Indirect call through a function pointer.
+                if let AnyValueEnum::PointerValue(fn_ptr) = caller_val {
+                    let caller_ty = call.caller.ty;
+                    let (param_ids, ret_id) = match self.type_context.get_by_id(caller_ty).map(|i| i.kind.clone()) {
+                        Some(TypeKind::FnPtr { params, ret }) => (params, ret),
+                        _ => return None,
+                    };
+                    let param_llvm: Vec<BasicMetadataTypeEnum<'static>> = param_ids.iter()
+                        .map(|&id| BasicTypeEnum::try_from(self.type_context.get_by_id(id).unwrap().llvm_type).unwrap().into())
+                        .collect();
+                    let ret_llvm = self.type_context.get_by_id(ret_id).unwrap().llvm_type;
+                    let fn_type = match ret_llvm {
+                        AnyTypeEnum::VoidType(t)    => t.fn_type(&param_llvm, false),
+                        AnyTypeEnum::IntType(t)     => t.fn_type(&param_llvm, false),
+                        AnyTypeEnum::FloatType(t)   => t.fn_type(&param_llvm, false),
+                        AnyTypeEnum::PointerType(t) => t.fn_type(&param_llvm, false),
+                        AnyTypeEnum::StructType(t)  => t.fn_type(&param_llvm, false),
+                        AnyTypeEnum::ArrayType(t)   => t.fn_type(&param_llvm, false),
+                        _ => return None,
+                    };
+                    let call_site = builder.build_indirect_call(fn_type, fn_ptr, &args, "icall").unwrap();
+                    if ret_is_void {
+                        return None;
+                    }
+                    return call_site.try_as_basic_value().basic().map(|v| v.into());
+                }
+
+                None
             }
             TypedExprNode::SliceConstruct(sc) => {
                 let slice_ty = self.type_context.get_by_id(e.ty).unwrap().llvm_type

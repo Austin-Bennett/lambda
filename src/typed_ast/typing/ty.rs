@@ -94,6 +94,7 @@ pub enum TypeKind {
     Slice(TypeId),
     Array { ty: TypeId, size: usize }, // size is const-evaluated
     Function { params: Vec<TypeId>, ret: TypeId },
+    FnPtr { params: Vec<TypeId>, ret: TypeId },
     Intrinsic { ret: TypeId },
 }
 
@@ -115,6 +116,7 @@ impl Debug for TypeKind {
             TypeKind::Slice(_) => f.write_str("[]"),
             TypeKind::Array { .. } => f.write_str("[N]"),
             TypeKind::Function { .. } => f.write_str("functor"),
+            TypeKind::FnPtr { .. } => f.write_str("fn_ptr"),
             TypeKind::Intrinsic { .. } => f.write_str("intrinsic"),
         }
     }

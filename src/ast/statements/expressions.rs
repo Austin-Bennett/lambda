@@ -53,6 +53,8 @@ pub struct MemberAccessOperation {
 pub struct GenericCallOperation {
     pub callee: ExprSyntax,
     pub type_args: Vec<Type>,
+    /// Set when syntax is `Type.<T>.method(...)` — the static method name after the type args.
+    pub member: Option<String>,
     pub arguments: Vec<ExprSyntax>,
 }
 
@@ -155,7 +157,11 @@ impl Debug for Expr {
                     first = false;
                     write!(f, "{:?}", ty)?;
                 }
-                write!(f, ">(")?;
+                write!(f, ">")?;
+                if let Some(member) = &gc.member {
+                    write!(f, ".{}", member)?;
+                }
+                write!(f, "(")?;
                 let mut first = true;
                 for arg in &gc.arguments {
                     if !first { write!(f, ", ")?; }
@@ -514,6 +520,20 @@ impl ExprSyntax {
                                 break;
                             }
                         }
+                        // Check for `Type.<T>.method(...)` — dot after type args
+                        let member = if matches!(tokens.peek_expression(), Some((ExpressionToken::Dot, _))) {
+                            tokens.next_expression(); // consume '.'
+                            match tokens.next_expression() {
+                                Some((ExpressionToken::Identifier(name), _)) => Some(name),
+                                _ => return Outcome::Err(CompileMessage::new(
+                                    dot_smap.clone(),
+                                    "expected method name after '.' in generic type call".into(),
+                                    CompileMessageType::Error,
+                                )),
+                            }
+                        } else {
+                            None
+                        };
                         // now expect '(' args ')'
                         if !matches!(tokens.peek_expression(), Some((ExpressionToken::OpenParentheses, _))) {
                             return Outcome::Err(CompileMessage::new(
@@ -538,6 +558,7 @@ impl ExprSyntax {
                         lhs.data = Expr::GenericCall(Box::new(GenericCallOperation {
                             callee,
                             type_args,
+                            member,
                             arguments: args,
                         }));
                     } else {

@@ -53,8 +53,6 @@ pub struct OperatorOverloads {
     pub shl:     HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
     pub shr:     HashMap<TypeId, (TypeId, BinaryOperatorMaker)>,
 
-    // assign: rhs TypeId -> (result TypeId, mangled name)
-    pub user_assign: HashMap<TypeId, (TypeId, String)>,
     // drop: mangled name of the drop function (no rhs, no return)
     pub drop: Option<String>,
 
@@ -95,7 +93,6 @@ impl OperatorOverloads {
             shl:     HashMap::new(),
             shr:     HashMap::new(),
 
-            user_assign: HashMap::new(),
             drop: None,
 
             assign: HashMap::new(),

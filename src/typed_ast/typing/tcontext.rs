@@ -254,6 +254,8 @@ impl TypeContext {
         }));
     }
 
+    
+
     fn enable_from_float_literal(&mut self, id: TypeId, width: u32) {
         let float_lit = self.float_literal;
         self.types[id as usize].ops.from_literal.insert(float_lit, Box::new(move |ctx, val| {
@@ -719,6 +721,7 @@ impl TypeContext {
                         None
                     }
                 }
+                Type::FnPtr { .. } => None,
             }
 
         }
@@ -845,6 +848,8 @@ impl TypeContext {
         self.type_lookup.insert(ty.clone(), id);
         self.type_ids.insert(id, ty);
         self.types.push(info);
+
+        
 
         if matches!(self.types[id as usize].kind, TypeKind::Pointer(_) | TypeKind::Reference(_))
             && self.usize != 0

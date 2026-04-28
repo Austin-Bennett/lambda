@@ -1,14 +1,46 @@
-use raylib
-use std::mem
 use std::list
 
 
-
-
+//struct Counter {
+//    a: int32,
+//}
+//
+//
+//modify Counter {
+//    public fn new() = Counter {
+//        return Counter(0);
+//    }
+//
+//    public fn tick(self&) {
+//        self.a += 1;
+//    }
+//}
+//
+//fn plusone(a: int32) = int32 {
+//    return a + 1;
+//}
+//
+//fn<T> make_list() = List<T> {
+//    return List.<T>.new();
+//}
 
 fn main() = int8 {
 
-    let my_list = List<int32>.new();
+    let my_list = List.<int32>.new();
+
+    //test drop before reassign
+    let my_list = List.<int32>.new();
+
+    my_list.add(1);
+    my_list.add(2);
+    my_list.add(3);
+    my_list.add(4);
+
+    //my_func: int32(int32);
+    //my_generic_func: List<int32>();
+    //my_static_method_func: Counter();
+    //my_method_func: none(Counter&);
+    //my_generic_method: none(List<int32>&, int32);
 
     return 0;
 }

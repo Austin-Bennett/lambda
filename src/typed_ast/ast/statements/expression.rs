@@ -177,12 +177,14 @@ impl TypedExprNode {
 }
 
 impl TypedExpr {
-    /// An lvalue is an expression that refers to a memory location:
-    /// identifiers, reference-typed expressions, or RefRead nodes.
+    /// An lvalue is an expression that refers to a named memory location.
     pub fn is_lvalue(&self, context: &TypeContext) -> bool {
         match &self.value {
             TypedExprNode::Identifier(_) => true,
+            TypedExprNode::MemberAccess(_) => true,
+            TypedExprNode::Index(_) => true,
             TypedExprNode::RefRead(_) => true,
+            TypedExprNode::UnaryOp(uop) if matches!(uop.op, UnaryOperator::Dereference) => true,
             _ => matches!(
                 context.get_by_id(self.ty).map(|i| &i.kind),
                 Some(TypeKind::Reference(_))
@@ -380,58 +382,7 @@ impl TypedExpr {
         ret
     }
     
-    /// Find a user-defined binary op entry, coercing a literal rhs type if needed.
-    /// Returns `(coerced_rhs_ty, result_ty, mangled_name)`.
-    fn find_user_binop(
-        user_ops: &HashMap<TypeId, (TypeId, String)>,
-        rhs_ty: TypeId,
-        context: &TypeContext,
-    ) -> Option<(TypeId, TypeId, String)> {
-        if let Some((ret, mangled)) = user_ops.get(&rhs_ty) {
-            return Some((rhs_ty, *ret, mangled.clone()));
-        }
-        if context.is_literal(rhs_ty) {
-            for (reg_ty, (ret, mangled)) in user_ops {
-                if context.get_by_id(*reg_ty)
-                    .map_or(false, |i| i.ops.from_literal.contains_key(&rhs_ty))
-                {
-                    return Some((*reg_ty, *ret, mangled.clone()));
-                }
-            }
-        }
-        None
-    }
 
-    /// Build a call to a user-defined binary operator: `mangled(&lhs, rhs)`.
-    fn make_user_binop_call(
-        mangled: String,
-        result_ty: TypeId,
-        lhs: TypedExpr,
-        rhs: TypedExpr,
-        context: &AvailableContext<TypeId>,
-        compiler: &mut Compiler,
-        smap: SourceMap,
-    ) -> Option<(TypedExprNode, TypeId)> {
-        let fn_type_id = *context.get_identifier(&mangled)?;
-        let self_ref_ty = compiler.type_context.reference_to(lhs.ty);
-        let self_ref = TypedExpr {
-            smap: lhs.smap.clone(),
-            ty: self_ref_ty,
-            value: TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
-                op: UnaryOperator::Reference,
-                operand: lhs,
-            })),
-        };
-        let fn_expr = TypedExpr {
-            smap: smap.clone(),
-            ty: fn_type_id,
-            value: TypedExprNode::Identifier(mangled),
-        };
-        Some((TypedExprNode::CallOp(Box::new(TypedCallOperation {
-            caller: fn_expr,
-            arguments: vec![self_ref, rhs],
-        })), result_ty))
-    }
 
     pub fn from_node(expr: &ExprSyntax, compiler: &mut Compiler, context: &AvailableContext<TypeId>) -> Option<(TypedExprNode, TypeId)> {
         match &expr.data {
@@ -555,11 +506,10 @@ impl TypedExpr {
                 // compound assignment: desugar a op= b → a = a op b, but just verify types here
                 // and tag with the compound variant; codegen handles the load-modify-store.
                 if matches!(bin.op.tk, "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>=" | "&&=" | "||=") {
-                    // LHS must be a plain identifier for compound assign
-                    let TypedExprNode::Identifier(_) = &lhs.value else {
+                    if !lhs.is_lvalue(&compiler.type_context) {
                         compiler.emit_compile_message(CompileMessage::new(
                             expr.smap.clone(),
-                            format!("left-hand side of '{}' must be a variable", bin.op.tk),
+                            format!("left-hand side of '{}' must be an lvalue", bin.op.tk),
                             CompileMessageType::Error,
                         ));
                         return None;
@@ -780,50 +730,34 @@ impl TypedExpr {
                     }
 
                     "=" => {
-                        // Determine the target type and whether the LHS is a pointer dereference.
-                        let (target_ty, lhs_is_deref) = match &lhs.value {
-                            TypedExprNode::Identifier(_) | TypedExprNode::RefRead(_) | TypedExprNode::MemberAccess(_) => (lhs.ty, false),
-                            TypedExprNode::UnaryOp(uop) if matches!(uop.op, UnaryOperator::Dereference) => {
-                                match compiler.type_context.get_by_id(lhs.ty).map(|i| i.kind.clone()) {
-                                    Some(TypeKind::Reference(inner)) => (inner, true),
-                                    _ => {
-                                        compiler.emit_compile_message(CompileMessage::new(
-                                            expr.smap.clone(),
-                                            "invalid dereference lvalue in assignment".into(),
-                                            CompileMessageType::Error,
-                                        ));
-                                        return None;
-                                    }
+                        if !lhs.is_lvalue(&compiler.type_context) {
+                            compiler.emit_compile_message(CompileMessage::new(
+                                expr.smap.clone(),
+                                "left-hand side of `=` must be an lvalue".into(),
+                                CompileMessageType::Error,
+                            ));
+                            return None;
+                        }
+                        let lhs_is_deref = matches!(&lhs.value,
+                            TypedExprNode::UnaryOp(uop) if matches!(uop.op, UnaryOperator::Dereference));
+                        let target_ty = if lhs_is_deref {
+                            match compiler.type_context.get_by_id(lhs.ty).map(|i| i.kind.clone()) {
+                                Some(TypeKind::Reference(inner)) => inner,
+                                _ => {
+                                    compiler.emit_compile_message(CompileMessage::new(
+                                        expr.smap.clone(),
+                                        "invalid dereference lvalue in assignment".into(),
+                                        CompileMessageType::Error,
+                                    ));
+                                    return None;
                                 }
                             }
-                            _ => {
-                                compiler.emit_compile_message(CompileMessage::new(
-                                    expr.smap.clone(),
-                                    "left-hand side of `=` must be a variable or dereference expression".into(),
-                                    CompileMessageType::Error,
-                                ));
-                                return None;
-                            }
+                        } else {
+                            lhs.ty
                         };
 
                         // Coerce any literal RHS to the target type if the target accepts it.
                         rhs = Self::coerce_literal(&compiler.type_context, rhs, target_ty);
-
-                        // Check user-defined assign operator (takes priority over built-in copy)
-                        if !lhs_is_deref {
-                            let found = {
-                                let info = compiler.type_context.get_by_id(target_ty);
-                                info.and_then(|i| {
-                                    Self::find_user_binop(&i.ops.user_assign, rhs.ty, &compiler.type_context)
-                                })
-                            };
-                            if let Some((coerced_ty, result_ty, mangled)) = found {
-                                rhs.ty = coerced_ty;
-                                return Some(Self::make_user_binop_call(
-                                    mangled, result_ty, lhs, rhs, context, compiler, expr.smap.clone(),
-                                )?);
-                            }
-                        }
 
                         if lhs_is_deref {
                             if rhs.ty != target_ty {
@@ -953,35 +887,29 @@ impl TypedExpr {
                         )
                     },
                     "&" => {
-                        match &lhs {
-                            TypedExprNode::Identifier(_) => {
-                                let ref_type = compiler.type_context.reference_to(lhs_ty);
-                                Some((TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
-                                    op: UnaryOperator::Reference,
-                                    operand: TypedExpr { value: lhs, ty: ref_type, smap: expr.smap.clone() },
-                                })), ref_type))
-                            }
-                            TypedExprNode::Index(_) => {
-                                // &arr[i] → T& (reference to element).
-                                // Index already returns T&, so just propagate that type.
-                                let ref_type = match compiler.type_context.get_by_id(lhs_ty).map(|i| i.kind.clone()) {
-                                    Some(TypeKind::Reference(_)) => lhs_ty,
-                                    _ => compiler.type_context.reference_to(lhs_ty),
-                                };
-                                Some((TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
-                                    op: UnaryOperator::Reference,
-                                    operand: TypedExpr { value: lhs, ty: ref_type, smap: expr.smap.clone() },
-                                })), ref_type))
-                            }
-                            _ => {
-                                compiler.emit_compile_message(CompileMessage::new(
-                                    expr.smap.clone(),
-                                    "Cannot take address of rvalue!".to_string(),
-                                    CompileMessageType::Error,
-                                ));
-                                None
-                            }
+                        let lhs_expr = TypedExpr { value: lhs, ty: lhs_ty, smap: expr.smap.clone() };
+                        if !lhs_expr.is_lvalue(&compiler.type_context) {
+                            compiler.emit_compile_message(CompileMessage::new(
+                                expr.smap.clone(),
+                                "Cannot take address of rvalue".to_string(),
+                                CompileMessageType::Error,
+                            ));
+                            return None;
                         }
+                        // Index already yields T& — propagate without double-wrapping.
+                        // All other lvalues: produce a fresh T& reference.
+                        let ref_type = if matches!(lhs_expr.value, TypedExprNode::Index(_)) {
+                            match compiler.type_context.get_by_id(lhs_ty).map(|i| i.kind.clone()) {
+                                Some(TypeKind::Reference(_)) => lhs_ty,
+                                _ => compiler.type_context.reference_to(lhs_ty),
+                            }
+                        } else {
+                            compiler.type_context.reference_to(lhs_ty)
+                        };
+                        Some((TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
+                            op: UnaryOperator::Reference,
+                            operand: TypedExpr { value: lhs_expr.value, ty: ref_type, smap: expr.smap.clone() },
+                        })), ref_type))
                     },
                     "*" => {
                         match &lhs_inf.kind {
@@ -1261,6 +1189,9 @@ impl TypedExpr {
                         }
                         fields.push(typed);
                     }
+
+
+
                     let struct_ty = caller_ty;
                     return Some((TypedExprNode::StructConstruct(Box::new(TypedStructConstruct { struct_id: sid, fields })), struct_ty));
                 }
@@ -1386,15 +1317,6 @@ impl TypedExpr {
                             ));
                             return None;
                         }
-                        // Also require identifier for now (codegen only supports alloca-of-identifier)
-                        if !matches!(object.value, TypedExprNode::Identifier(_)) && object.ty == effective_ty {
-                            compiler.emit_compile_message(CompileMessage::new(
-                                expr.smap.clone(),
-                                "method receiver must be a variable".into(),
-                                CompileMessageType::Error,
-                            ));
-                            return None;
-                        }
                         let self_expr = if object.ty == effective_ty {
                             // direct value — take address
                             TypedExpr {
@@ -1479,13 +1401,130 @@ impl TypedExpr {
                     .map(|t| compiler.resolve_type(t))
                     .collect::<Option<_>>()?;
 
+                // `Type.<T>.method(...)` — static method call on a generic type
+                if let Some(method_name) = &gc.member {
+                    let struct_ty = match compiler.monomorphize_struct(fn_name.clone(), gc.type_args.clone()) {
+                        Some(id) => id,
+                        None => {
+                            compiler.emit_compile_message(CompileMessage::new(
+                                expr.smap.clone(),
+                                format!("unknown generic type '{}'", fn_name),
+                                CompileMessageType::Error,
+                            ));
+                            return None;
+                        }
+                    };
+                    let (mangled, fn_type_id, public) = match compiler.type_context
+                        .get_by_id(struct_ty)
+                        .and_then(|info| info.methods.get(method_name))
+                        .cloned()
+                    {
+                        Some(v) => v,
+                        None => {
+                            compiler.emit_compile_message(CompileMessage::new(
+                                expr.smap.clone(),
+                                format!("no method '{}' on '{}'", method_name, fn_name),
+                                CompileMessageType::Error,
+                            ));
+                            return None;
+                        }
+                    };
+                    if !public && compiler.current_self_type != Some(struct_ty) {
+                        compiler.emit_compile_message(CompileMessage::new(
+                            expr.smap.clone(),
+                            format!("method '{}' is private", method_name),
+                            CompileMessageType::Error,
+                        ));
+                        return None;
+                    }
+                    let TypeKind::Function { ret, ref params } = compiler.type_context.get_by_id(fn_type_id)?.kind.clone() else {
+                        return None;
+                    };
+                    let self_ref_ty = compiler.type_context.reference_to(struct_ty);
+                    let first = params.first().copied();
+                    if first == Some(struct_ty) || first == Some(self_ref_ty) {
+                        compiler.emit_compile_message(CompileMessage::new(
+                            expr.smap.clone(),
+                            format!("'{}' is an instance method; use an instance to call it", method_name),
+                            CompileMessageType::Error,
+                        ));
+                        return None;
+                    }
+                    let param_types = params.clone();
+                    if gc.arguments.len() != param_types.len() {
+                        compiler.emit_compile_message(CompileMessage::new(
+                            expr.smap.clone(),
+                            format!("'{}' expects {} arguments, got {}", method_name, param_types.len(), gc.arguments.len()),
+                            CompileMessageType::Error,
+                        ));
+                        return None;
+                    }
+                    let mut typed_args = Vec::new();
+                    for (arg_expr, &expected_ty) in gc.arguments.iter().zip(param_types.iter()) {
+                        let mut typed = TypedExpr::from_ast(arg_expr, compiler, context)?;
+                        typed = Self::coerce_literal(&compiler.type_context, typed, expected_ty);
+                        typed_args.push(typed);
+                    }
+                    let callee_expr = TypedExpr {
+                        value: TypedExprNode::Identifier(mangled),
+                        ty: fn_type_id,
+                        smap: gc.callee.smap.clone(),
+                    };
+                    return Some((TypedExprNode::CallOp(Box::new(TypedCallOperation {
+                        caller: callee_expr,
+                        arguments: typed_args,
+                    })), ret));
+                }
+
                 // Ensure the instantiation exists (queues body type-check if needed)
                 let (mangled, fn_type_id) = match compiler.ensure_generic_fn(fn_name, type_arg_ids) {
                     Some(v) => v,
                     None => {
+                        // Fallback: try as a generic struct constructor — List.<T>(fields...)
+                        let maybe_struct = compiler.monomorphize_struct(fn_name.clone(), gc.type_args.clone())
+                            .and_then(|struct_ty| {
+                                if let Some(TypeKind::Struct(sid)) = compiler.type_context.get_by_id(struct_ty).map(|i| i.kind.clone()) {
+                                    Some((struct_ty, sid))
+                                } else {
+                                    None
+                                }
+                            });
+                        if let Some((struct_ty, sid)) = maybe_struct {
+                            let members: Vec<_> = compiler.type_context.structs[sid as usize].members.iter()
+                                .map(|m| (m.name.clone(), m.ty))
+                                .collect();
+                            let struct_name = compiler.type_context.structs[sid as usize].name.clone();
+                            if gc.arguments.len() != members.len() {
+                                compiler.emit_compile_message(CompileMessage::new(
+                                    expr.smap.clone(),
+                                    format!("struct '{}' has {} fields but {} arguments were provided",
+                                        struct_name, members.len(), gc.arguments.len()),
+                                    CompileMessageType::Error,
+                                ));
+                                return None;
+                            }
+                            let mut fields = Vec::new();
+                            for (arg, (member_name, member_ty)) in gc.arguments.iter().zip(members.iter()) {
+                                let mut typed = TypedExpr::from_ast(arg, compiler, context)?;
+                                typed = Self::coerce_literal(&compiler.type_context, typed, *member_ty);
+                                if typed.ty != *member_ty {
+                                    compiler.emit_compile_message(CompileMessage::new(
+                                        arg.smap.clone(),
+                                        format!("field '{}' expects type {} but got {}",
+                                            member_name,
+                                            compiler.type_context.name_of(*member_ty).unwrap_or_default(),
+                                            compiler.type_context.name_of(typed.ty).unwrap_or_default()),
+                                        CompileMessageType::Error,
+                                    ));
+                                    return None;
+                                }
+                                fields.push(typed);
+                            }
+                            return Some((TypedExprNode::StructConstruct(Box::new(TypedStructConstruct { struct_id: sid, fields })), struct_ty));
+                        }
                         compiler.emit_compile_message(CompileMessage::new(
                             expr.smap.clone(),
-                            format!("undefined generic function '{}'", fn_name),
+                            format!("undefined generic function or type '{}'", fn_name),
                             CompileMessageType::Error,
                         ));
                         return None;
