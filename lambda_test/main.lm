@@ -1,46 +1,74 @@
 use std::list
+use raylib
 
 
-//struct Counter {
-//    a: int32,
-//}
-//
-//
-//modify Counter {
-//    public fn new() = Counter {
-//        return Counter(0);
-//    }
-//
-//    public fn tick(self&) {
-//        self.a += 1;
-//    }
-//}
-//
-//fn plusone(a: int32) = int32 {
-//    return a + 1;
-//}
-//
-//fn<T> make_list() = List<T> {
-//    return List.<T>.new();
-//}
+
+struct Paddle {
+    collision: Rect,
+}
+
+modify Paddle {
+    public fn new(x: float32, y: float32) = Paddle {
+        return Paddle(Rect(x, y, 20.0, 100.0));
+    }
+
+    public fn draw(self&) {
+        DrawRectangleRec(self.collision, Color(255, 255, 255, 255));
+    }
+}
+
+struct Ball {
+    collision: Rect,
+    vel: FVec2,
+}
+
+modify Ball {
+    public fn new() = Ball {
+        //center the ball on screen
+        return Ball(Rect(395.0, 295.0, 10.0, 10.0), FVec2(-10.0, 0.0));
+    }
+
+    public fn draw(self&) {
+        DrawCirc(self.collision.center_x() as int32, self.collision.center_y() as int32, 5.0, Color(255, 255, 255, 255));
+    }
+
+    public fn update(self&, lpaddle: Paddle&, rpaddle: Paddle&) {
+
+    }
+}
+
+
 
 fn main() = int8 {
 
-    let my_list = List.<int32>.new();
+    InitWindow(800, 600, c"Lambda PONG");
+    let constants = RayConstants.new();
 
-    //test drop before reassign
-    let my_list = List.<int32>.new();
+    let r = Rect(200.0, 200.0, 100.0, 100.0);
+    let mrect = Rect(0.0, 0.0, 20.0, 20.0);
 
-    my_list.add(1);
-    my_list.add(2);
-    my_list.add(3);
-    my_list.add(4);
+    let lpaddle = Paddle.new(20.0, 20.0);
+    let rpaddle = Paddle.new(760.0, 20.0);
+    let ball = Ball.new();
 
-    //my_func: int32(int32);
-    //my_generic_func: List<int32>();
-    //my_static_method_func: Counter();
-    //my_method_func: none(Counter&);
-    //my_generic_method: none(List<int32>&, int32);
+    while !WindowShouldClose() {
+        BeginDrawing();
 
-    return 0;
+        ClearBackground(constants.black);
+
+        lpaddle.draw();
+        rpaddle.draw();
+
+        ball.draw();
+
+        ball.update(&lpaddle, &rpaddle);
+
+        DrawText(c"Hello, LAMBDA", 20, 20, 20, constants.gold);
+
+        EndDrawing();
+    }
+
+    CloseWindow();
+
+    return mrect.y as int8;
 }

@@ -1,0 +1,24 @@
+{
+  "output": "lambda_test/main",
+  "output_ir": "lambda_test/main.ll",
+  "no_codegen": true,
+  "debug_ast": true,
+  "libs": [
+    "raylib",
+    "GL",
+    "pthread",
+    "dl",
+    "rt",
+    "X11"
+  ],
+  "lib_paths": [
+
+  ],
+  "module_paths": [
+    "lib/",
+    "lambda_test/"
+  ],
+  "files": [
+    "lambda_test/main.lm"
+  ]
+}

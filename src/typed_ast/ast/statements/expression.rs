@@ -849,7 +849,6 @@ impl TypedExpr {
             Expr::UnaryOp(op) => {
                 let (lhs, lhs_ty) = TypedExpr::from_node(&op.operand, compiler, context)?;
                 let lhs_expr = TypedExpr { value: lhs, ty: lhs_ty, smap: op.operand.smap.clone() };
-                // Auto-deref references for all unary ops except address-of
 
 
                 let lhs_ty = lhs_expr.ty;
@@ -888,6 +887,9 @@ impl TypedExpr {
                     },
                     "&" => {
                         let lhs_expr = TypedExpr { value: lhs, ty: lhs_ty, smap: expr.smap.clone() };
+
+
+
                         if !lhs_expr.is_lvalue(&compiler.type_context) {
                             compiler.emit_compile_message(CompileMessage::new(
                                 expr.smap.clone(),

@@ -1,17 +1,122 @@
 ; ModuleID = 'lambda_program'
 source_filename = "lambda_program"
 
-declare ptr @aligned_alloc(i64, i64)
+@cstring_literal = private constant [12 x i8] c"Lambda PONG\00"
+@cstring_literal.1 = private constant [14 x i8] c"Hello, LAMBDA\00"
 
-declare void @free(ptr)
+define { { float, float, float, float } } @Paddle_new(float %0, float %1) {
+entry:
+  %x = alloca float, align 4
+  store float %0, ptr %x, align 4
+  %y = alloca float, align 4
+  store float %1, ptr %y, align 4
+  %return_var = alloca { { float, float, float, float } }, align 8
+  br label %code_
 
-declare void @exit(i32)
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load { { float, float, float, float } }, ptr %return_var, align 4
+  ret { { float, float, float, float } } %return_val
+
+code_:                                            ; preds = %entry
+  %x1 = load float, ptr %x, align 4
+  %sf = insertvalue { float, float, float, float } undef, float %x1, 0
+  %y2 = load float, ptr %y, align 4
+  %sf3 = insertvalue { float, float, float, float } %sf, float %y2, 1
+  %sf4 = insertvalue { float, float, float, float } %sf3, float 2.000000e+01, 2
+  %sf5 = insertvalue { float, float, float, float } %sf4, float 1.000000e+02, 3
+  %sf6 = insertvalue { { float, float, float, float } } undef, { float, float, float, float } %sf5, 0
+  store { { float, float, float, float } } %sf6, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define void @Paddle_draw(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  ret void
+
+code_:                                            ; preds = %entry
+  %self1 = load ptr, ptr %self, align 8
+  %refread = load { { float, float, float, float } }, ptr %self1, align 4
+  %member = extractvalue { { float, float, float, float } } %refread, 0
+  call void @DrawRectangleRec({ float, float, float, float } %member, { i8, i8, i8, i8 } { i8 -1, i8 -1, i8 -1, i8 -1 })
+  br label %drop_and_merge_
+
+drop_and_return_:                                 ; No predecessors!
+  br label %return
+
+drop_and_merge_:                                  ; preds = %code_
+  br label %return
+}
+
+define { { float, float, float, float } } @Ball_new() {
+entry:
+  %return_var = alloca { { float, float, float, float } }, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load { { float, float, float, float } }, ptr %return_var, align 4
+  ret { { float, float, float, float } } %return_val
+
+code_:                                            ; preds = %entry
+  store { { float, float, float, float } } { { float, float, float, float } { float 3.950000e+02, float 2.950000e+02, float 1.000000e+01, float 1.000000e+01 } }, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define void @Ball_draw(ptr %0) {
+entry:
+  %self = alloca ptr, align 8
+  store ptr %0, ptr %self, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  ret void
+
+code_:                                            ; preds = %entry
+  %self1 = load ptr, ptr %self, align 8
+  %refread = load { { float, float, float, float } }, ptr %self1, align 4
+  %member = extractvalue { { float, float, float, float } } %refread, 0
+  %call = call float @Rect_center_x({ float, float, float, float } %member)
+  %fptosi = fptosi float %call to i32
+  %self2 = load ptr, ptr %self, align 8
+  %refread3 = load { { float, float, float, float } }, ptr %self2, align 4
+  %member4 = extractvalue { { float, float, float, float } } %refread3, 0
+  %call5 = call float @Rect_center_y({ float, float, float, float } %member4)
+  %fptosi6 = fptosi float %call5 to i32
+  call void @DrawCirc(i32 %fptosi, i32 %fptosi6, float 5.000000e+00, { i8, i8, i8, i8 } { i8 -1, i8 -1, i8 -1, i8 -1 })
+  br label %drop_and_merge_
+
+drop_and_return_:                                 ; No predecessors!
+  br label %return
+
+drop_and_merge_:                                  ; preds = %code_
+  br label %return
+}
 
 define i8 @main() {
 entry:
   %return_var = alloca i8, align 1
-  %my_list = alloca { ptr, i64, i64 }, align 8
-  %my_list2 = alloca { ptr, i64, i64 }, align 8
+  %constants = alloca { { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 } }, align 8
+  %r = alloca { float, float, float, float }, align 8
+  %mrect = alloca { float, float, float, float }, align 8
+  %lpaddle = alloca { { float, float, float, float } }, align 8
+  %rpaddle = alloca { { float, float, float, float } }, align 8
+  %ball = alloca { { float, float, float, float } }, align 8
   br label %code_
 
 return:                                           ; preds = %drop_and_merge_, %drop_and_return_
@@ -19,323 +124,81 @@ return:                                           ; preds = %drop_and_merge_, %d
   ret i8 %return_val
 
 code_:                                            ; preds = %entry
-  %call = call { ptr, i64, i64 } @List_int32_new()
-  store { ptr, i64, i64 } %call, ptr %my_list, align 8
-  %call1 = call { ptr, i64, i64 } @List_int32_new()
-  call void @List_int32__op_drop(ptr %my_list)
-  store { ptr, i64, i64 } %call1, ptr %my_list2, align 8
-  call void @List_int32_add(ptr %my_list2, i32 1)
-  call void @List_int32_add(ptr %my_list2, i32 2)
-  call void @List_int32_add(ptr %my_list2, i32 3)
-  call void @List_int32_add(ptr %my_list2, i32 4)
-  store i8 0, ptr %return_var, align 1
-  br label %drop_and_return_
-
-drop_and_return_:                                 ; preds = %code_
-  br label %return
-
-drop_and_merge_:                                  ; No predecessors!
-  br label %return
-}
-
-define { ptr, i64, i64 } @List_int32_new() {
-entry:
-  %return_var = alloca { ptr, i64, i64 }, align 8
-  br label %code_
-
-return:                                           ; preds = %drop_and_merge_, %drop_and_return_
-  %return_val = load { ptr, i64, i64 }, ptr %return_var, align 8
-  ret { ptr, i64, i64 } %return_val
-
-code_:                                            ; preds = %entry
-  store { ptr, i64, i64 } zeroinitializer, ptr %return_var, align 8
-  br label %drop_and_return_
-
-drop_and_return_:                                 ; preds = %code_
-  br label %return
-
-drop_and_merge_:                                  ; No predecessors!
-  br label %return
-}
-
-define void @List_int32_add(ptr %0, i32 %1) {
-entry:
-  %self = alloca ptr, align 8
-  store ptr %0, ptr %self, align 8
-  %val = alloca i32, align 4
-  store i32 %1, ptr %val, align 4
-  %new_size = alloca i64, align 8
-  %new_alloc = alloca ptr, align 8
-  %new_alloc_slice = alloca <{ i64, ptr }>, align 8
-  %ray_slice = alloca <{ i64, ptr }>, align 8
-  %i = alloca i64, align 8
-  br label %code_
-
-return:                                           ; preds = %drop_and_merge_, %drop_and_return_
-  ret void
-
-code_:                                            ; preds = %entry
-  %self1 = load ptr, ptr %self, align 8
-  %refread = load { ptr, i64, i64 }, ptr %self1, align 8
-  %member = extractvalue { ptr, i64, i64 } %refread, 2
-  %self2 = load ptr, ptr %self, align 8
-  %refread3 = load { ptr, i64, i64 }, ptr %self2, align 8
-  %member4 = extractvalue { ptr, i64, i64 } %refread3, 1
-  %ueq = icmp eq i64 %member, %member4
-  br i1 %ueq, label %then, label %else
-
-drop_and_return_:                                 ; preds = %drop_and_return_6
-  br label %return
-
-drop_and_merge_:                                  ; preds = %if_merge
-  br label %return
-
-then:                                             ; preds = %code_
-  br label %code_5
-
-else:                                             ; preds = %code_
-  br label %if_merge
-
-if_merge:                                         ; preds = %else, %drop_and_merge_7
-  %val55 = load i32, ptr %val, align 4
-  %self56 = load ptr, ptr %self, align 8
-  %refread57 = load { ptr, i64, i64 }, ptr %self56, align 8
-  %member58 = extractvalue { ptr, i64, i64 } %refread57, 0
-  %self59 = load ptr, ptr %self, align 8
-  %refread60 = load { ptr, i64, i64 }, ptr %self59, align 8
-  %member61 = extractvalue { ptr, i64, i64 } %refread60, 2
-  %ptr_add = getelementptr i8, ptr %member58, i64 %member61
-  store i32 %val55, ptr %ptr_add, align 4
-  %self62 = load ptr, ptr %self, align 8
-  %field_ptr63 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self62, i32 0, i32 2
-  %ca_load64 = load i64, ptr %field_ptr63, align 4
-  %uadd65 = add i64 %ca_load64, 1
-  store i64 %uadd65, ptr %field_ptr63, align 4
-  br label %drop_and_merge_
-
-code_5:                                           ; preds = %then
-  %self8 = load ptr, ptr %self, align 8
-  %refread9 = load { ptr, i64, i64 }, ptr %self8, align 8
-  %member10 = extractvalue { ptr, i64, i64 } %refread9, 2
-  %umul = mul i64 %member10, 2
-  %uadd = add i64 %umul, 1
-  store i64 %uadd, ptr %new_size, align 4
-  %new_size11 = load i64, ptr %new_size, align 4
-  %call = call ptr @alloc_int32(i64 %new_size11)
-  store ptr %call, ptr %new_alloc, align 8
-  %new_size12 = load i64, ptr %new_size, align 4
-  %new_alloc13 = load ptr, ptr %new_alloc, align 8
-  %sl_len = insertvalue <{ i64, ptr }> undef, i64 %new_size12, 0
-  %sl_ptr = insertvalue <{ i64, ptr }> %sl_len, ptr %new_alloc13, 1
-  store <{ i64, ptr }> %sl_ptr, ptr %new_alloc_slice, align 1
-  %self17 = load ptr, ptr %self, align 8
-  %refread18 = load { ptr, i64, i64 }, ptr %self17, align 8
-  %member19 = extractvalue { ptr, i64, i64 } %refread18, 0
-  %pi = ptrtoint ptr %member19 to i64
-  %pne = icmp ne i64 %pi, 0
-  br i1 %pne, label %then14, label %else15
-
-drop_and_return_6:                                ; preds = %drop_and_return_21
-  br label %drop_and_return_
-
-drop_and_merge_7:                                 ; preds = %if_merge16
-  br label %if_merge
-
-then14:                                           ; preds = %code_5
-  br label %code_20
-
-else15:                                           ; preds = %code_5
-  br label %if_merge16
-
-if_merge16:                                       ; preds = %else15, %drop_and_merge_22
-  %new_size50 = load i64, ptr %new_size, align 4
-  %self51 = load ptr, ptr %self, align 8
-  %field_ptr = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self51, i32 0, i32 1
-  store i64 %new_size50, ptr %field_ptr, align 4
-  %new_alloc52 = load ptr, ptr %new_alloc, align 8
-  %self53 = load ptr, ptr %self, align 8
-  %field_ptr54 = getelementptr inbounds nuw { ptr, i64, i64 }, ptr %self53, i32 0, i32 0
-  store ptr %new_alloc52, ptr %field_ptr54, align 8
-  br label %drop_and_merge_7
-
-code_20:                                          ; preds = %then14
-  %self23 = load ptr, ptr %self, align 8
-  %refread24 = load { ptr, i64, i64 }, ptr %self23, align 8
-  %member25 = extractvalue { ptr, i64, i64 } %refread24, 2
-  %self26 = load ptr, ptr %self, align 8
-  %refread27 = load { ptr, i64, i64 }, ptr %self26, align 8
-  %member28 = extractvalue { ptr, i64, i64 } %refread27, 0
-  %sl_len29 = insertvalue <{ i64, ptr }> undef, i64 %member25, 0
-  %sl_ptr30 = insertvalue <{ i64, ptr }> %sl_len29, ptr %member28, 1
-  store <{ i64, ptr }> %sl_ptr30, ptr %ray_slice, align 1
-  store i64 0, ptr %i, align 4
+  call void @InitWindow(i32 800, i32 600, ptr @cstring_literal)
+  %call = call { { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 } } @RayConstants_new()
+  store { { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 } } %call, ptr %constants, align 1
+  store { float, float, float, float } { float 2.000000e+02, float 2.000000e+02, float 1.000000e+02, float 1.000000e+02 }, ptr %r, align 4
+  store { float, float, float, float } { float 0.000000e+00, float 0.000000e+00, float 2.000000e+01, float 2.000000e+01 }, ptr %mrect, align 4
+  %call1 = call { { float, float, float, float } } @Paddle_new(float 2.000000e+01, float 2.000000e+01)
+  store { { float, float, float, float } } %call1, ptr %lpaddle, align 4
+  %call2 = call { { float, float, float, float } } @Paddle_new(float 7.600000e+02, float 2.000000e+01)
+  store { { float, float, float, float } } %call2, ptr %rpaddle, align 4
+  %call3 = call { { float, float, float, float } } @Ball_new()
+  store { { float, float, float, float } } %call3, ptr %ball, align 4
   br label %loop_start
 
-drop_and_return_21:                               ; preds = %drop_and_return_36
-  br label %drop_and_return_6
+drop_and_return_:                                 ; preds = %loop_merge, %drop_and_return_6
+  br label %return
 
-drop_and_merge_22:                                ; preds = %loop_merge
-  br label %if_merge16
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
 
-loop_start:                                       ; preds = %drop_and_merge_37, %code_20
-  %i31 = load i64, ptr %i, align 4
-  %self32 = load ptr, ptr %self, align 8
-  %refread33 = load { ptr, i64, i64 }, ptr %self32, align 8
-  %member34 = extractvalue { ptr, i64, i64 } %refread33, 2
-  %ult = icmp ult i64 %i31, %member34
-  br i1 %ult, label %loop, label %loop_merge
+loop_start:                                       ; preds = %drop_and_merge_7, %code_
+  %call4 = call i1 @WindowShouldClose()
+  %bnot = xor i1 %call4, true
+  br i1 %bnot, label %loop, label %loop_merge
 
 loop:                                             ; preds = %loop_start
-  br label %code_35
+  br label %code_5
 
 loop_merge:                                       ; preds = %loop_start
-  %self47 = load ptr, ptr %self, align 8
-  %refread48 = load { ptr, i64, i64 }, ptr %self47, align 8
-  %member49 = extractvalue { ptr, i64, i64 } %refread48, 0
-  call void @dealloc_int32(ptr %member49)
-  br label %drop_and_merge_22
+  call void @CloseWindow()
+  %mrect11 = load { float, float, float, float }, ptr %mrect, align 4
+  %member12 = extractvalue { float, float, float, float } %mrect11, 1
+  %fptosi = fptosi float %member12 to i8
+  store i8 %fptosi, ptr %return_var, align 1
+  br label %drop_and_return_
 
-code_35:                                          ; preds = %loop
-  %ray_slice38 = load <{ i64, ptr }>, ptr %ray_slice, align 1
-  %i39 = load i64, ptr %i, align 4
-  %sl_ptr40 = extractvalue <{ i64, ptr }> %ray_slice38, 1
-  %sl_elem_ptr = getelementptr i32, ptr %sl_ptr40, i64 %i39
-  %refread41 = load i32, ptr %sl_elem_ptr, align 4
-  %new_alloc_slice42 = load <{ i64, ptr }>, ptr %new_alloc_slice, align 1
-  %i43 = load i64, ptr %i, align 4
-  %sl_ptr44 = extractvalue <{ i64, ptr }> %new_alloc_slice42, 1
-  %sl_elem_ptr45 = getelementptr i32, ptr %sl_ptr44, i64 %i43
-  store i32 %refread41, ptr %sl_elem_ptr45, align 4
-  %ca_load = load i64, ptr %i, align 4
-  %uadd46 = add i64 %ca_load, 1
-  store i64 %uadd46, ptr %i, align 4
-  br label %drop_and_merge_37
+code_5:                                           ; preds = %loop
+  call void @BeginDrawing()
+  %constants8 = load { { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 } }, ptr %constants, align 1
+  %member = extractvalue { { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 } } %constants8, 22
+  call void @ClearBackground({ i8, i8, i8, i8 } %member)
+  call void @Paddle_draw(ptr %lpaddle)
+  call void @Paddle_draw(ptr %rpaddle)
+  call void @Ball_draw(ptr %ball)
+  %constants9 = load { { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 } }, ptr %constants, align 1
+  %member10 = extractvalue { { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 } } %constants9, 4
+  call void @DrawText(ptr @cstring_literal.1, i32 20, i32 20, i32 20, { i8, i8, i8, i8 } %member10)
+  call void @EndDrawing()
+  br label %drop_and_merge_7
 
-drop_and_return_36:                               ; No predecessors!
-  br label %drop_and_return_21
+drop_and_return_6:                                ; No predecessors!
+  br label %drop_and_return_
 
-drop_and_merge_37:                                ; preds = %code_35
+drop_and_merge_7:                                 ; preds = %code_5
   br label %loop_start
 }
 
-define ptr @List_int32_get(ptr %0, i64 %1) {
+declare ptr @aligned_alloc(i64, i64)
+
+declare void @free(ptr)
+
+declare void @exit(i32)
+
+declare void @printf(ptr)
+
+define { { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 } } @RayConstants_new() {
 entry:
-  %self = alloca ptr, align 8
-  store ptr %0, ptr %self, align 8
-  %ind = alloca i64, align 8
-  store i64 %1, ptr %ind, align 4
-  %return_var = alloca ptr, align 8
+  %return_var = alloca { { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 } }, align 8
   br label %code_
 
 return:                                           ; preds = %drop_and_merge_, %drop_and_return_
-  %return_val = load ptr, ptr %return_var, align 8
-  ret ptr %return_val
+  %return_val = load { { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 } }, ptr %return_var, align 1
+  ret { { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 } } %return_val
 
 code_:                                            ; preds = %entry
-  %ind1 = load i64, ptr %ind, align 4
-  %self2 = load ptr, ptr %self, align 8
-  %refread = load { ptr, i64, i64 }, ptr %self2, align 8
-  %member = extractvalue { ptr, i64, i64 } %refread, 2
-  %uge = icmp uge i64 %ind1, %member
-  br i1 %uge, label %then, label %else
-
-drop_and_return_:                                 ; preds = %if_merge, %drop_and_return_4
-  br label %return
-
-drop_and_merge_:                                  ; No predecessors!
-  br label %return
-
-then:                                             ; preds = %code_
-  br label %code_3
-
-else:                                             ; preds = %code_
-  br label %if_merge
-
-if_merge:                                         ; preds = %else, %drop_and_merge_5
-  %self6 = load ptr, ptr %self, align 8
-  %refread7 = load { ptr, i64, i64 }, ptr %self6, align 8
-  %member8 = extractvalue { ptr, i64, i64 } %refread7, 0
-  %ind9 = load i64, ptr %ind, align 4
-  %ptr_add = getelementptr i8, ptr %member8, i64 %ind9
-  store ptr %ptr_add, ptr %return_var, align 8
-  br label %drop_and_return_
-
-code_3:                                           ; preds = %then
-  call void @exit(i32 3)
-  br label %drop_and_merge_5
-
-drop_and_return_4:                                ; No predecessors!
-  br label %drop_and_return_
-
-drop_and_merge_5:                                 ; preds = %code_3
-  br label %if_merge
-}
-
-define void @List_int32__op_drop(ptr %0) {
-entry:
-  %self = alloca ptr, align 8
-  store ptr %0, ptr %self, align 8
-  br label %code_
-
-return:                                           ; preds = %drop_and_merge_, %drop_and_return_
-  ret void
-
-code_:                                            ; preds = %entry
-  %self1 = load ptr, ptr %self, align 8
-  %refread = load { ptr, i64, i64 }, ptr %self1, align 8
-  %member = extractvalue { ptr, i64, i64 } %refread, 0
-  %pi = ptrtoint ptr %member to i64
-  %pne = icmp ne i64 %pi, 0
-  br i1 %pne, label %then, label %else
-
-drop_and_return_:                                 ; preds = %drop_and_return_3
-  br label %return
-
-drop_and_merge_:                                  ; preds = %if_merge
-  br label %return
-
-then:                                             ; preds = %code_
-  br label %code_2
-
-else:                                             ; preds = %code_
-  br label %if_merge
-
-if_merge:                                         ; preds = %else, %drop_and_merge_4
-  br label %drop_and_merge_
-
-code_2:                                           ; preds = %then
-  %self5 = load ptr, ptr %self, align 8
-  %refread6 = load { ptr, i64, i64 }, ptr %self5, align 8
-  %member7 = extractvalue { ptr, i64, i64 } %refread6, 0
-  call void @dealloc_int32(ptr %member7)
-  br label %drop_and_merge_4
-
-drop_and_return_3:                                ; No predecessors!
-  br label %drop_and_return_
-
-drop_and_merge_4:                                 ; preds = %code_2
-  br label %if_merge
-}
-
-define ptr @alloc_int32(i64 %0) {
-entry:
-  %count = alloca i64, align 8
-  store i64 %0, ptr %count, align 4
-  %return_var = alloca ptr, align 8
-  %ptr = alloca ptr, align 8
-  br label %code_
-
-return:                                           ; preds = %drop_and_merge_, %drop_and_return_
-  %return_val = load ptr, ptr %return_var, align 8
-  ret ptr %return_val
-
-code_:                                            ; preds = %entry
-  %count1 = load i64, ptr %count, align 4
-  %umul = mul i64 4, %count1
-  %call = call ptr @aligned_alloc(i64 4, i64 %umul)
-  store ptr %call, ptr %ptr, align 8
-  %ptr2 = load ptr, ptr %ptr, align 8
-  store ptr %ptr2, ptr %return_var, align 8
+  store { { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 }, { i8, i8, i8, i8 } } { { i8, i8, i8, i8 } { i8 -56, i8 -56, i8 -56, i8 -1 }, { i8, i8, i8, i8 } { i8 -126, i8 -126, i8 -126, i8 -1 }, { i8, i8, i8, i8 } { i8 80, i8 80, i8 80, i8 -1 }, { i8, i8, i8, i8 } { i8 -3, i8 -7, i8 0, i8 -1 }, { i8, i8, i8, i8 } { i8 -1, i8 -53, i8 0, i8 -1 }, { i8, i8, i8, i8 } { i8 -1, i8 -95, i8 0, i8 -1 }, { i8, i8, i8, i8 } { i8 -1, i8 109, i8 -62, i8 -1 }, { i8, i8, i8, i8 } { i8 -26, i8 41, i8 55, i8 -1 }, { i8, i8, i8, i8 } { i8 -66, i8 33, i8 55, i8 -1 }, { i8, i8, i8, i8 } { i8 0, i8 -28, i8 48, i8 -1 }, { i8, i8, i8, i8 } { i8 0, i8 -98, i8 47, i8 -1 }, { i8, i8, i8, i8 } { i8 0, i8 117, i8 44, i8 -1 }, { i8, i8, i8, i8 } { i8 102, i8 -65, i8 -1, i8 -1 }, { i8, i8, i8, i8 } { i8 0, i8 121, i8 -15, i8 -1 }, { i8, i8, i8, i8 } { i8 0, i8 82, i8 -84, i8 -1 }, { i8, i8, i8, i8 } { i8 -56, i8 122, i8 -1, i8 -1 }, { i8, i8, i8, i8 } { i8 -121, i8 60, i8 -66, i8 -1 }, { i8, i8, i8, i8 } { i8 112, i8 31, i8 126, i8 -1 }, { i8, i8, i8, i8 } { i8 -45, i8 -80, i8 -125, i8 -1 }, { i8, i8, i8, i8 } { i8 127, i8 106, i8 79, i8 -1 }, { i8, i8, i8, i8 } { i8 76, i8 63, i8 47, i8 -1 }, { i8, i8, i8, i8 } { i8 -1, i8 -1, i8 -1, i8 -1 }, { i8, i8, i8, i8 } { i8 0, i8 0, i8 0, i8 -1 }, { i8, i8, i8, i8 } zeroinitializer, { i8, i8, i8, i8 } { i8 -1, i8 0, i8 -1, i8 -1 }, { i8, i8, i8, i8 } { i8 -11, i8 -11, i8 -11, i8 -1 } }, ptr %return_var, align 1
   br label %drop_and_return_
 
 drop_and_return_:                                 ; preds = %code_
@@ -345,18 +208,297 @@ drop_and_merge_:                                  ; No predecessors!
   br label %return
 }
 
-define void @dealloc_int32(ptr %0) {
+define i1 @Rect_collides({ float, float, float, float } %0, { float, float, float, float } %1) {
 entry:
-  %ptr = alloca ptr, align 8
-  store ptr %0, ptr %ptr, align 8
+  %self = alloca { float, float, float, float }, align 8
+  store { float, float, float, float } %0, ptr %self, align 4
+  %r = alloca { float, float, float, float }, align 8
+  store { float, float, float, float } %1, ptr %r, align 4
+  %return_var = alloca i1, align 1
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i1, ptr %return_var, align 1
+  ret i1 %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load { float, float, float, float }, ptr %self, align 4
+  %member = extractvalue { float, float, float, float } %self1, 0
+  %r2 = load { float, float, float, float }, ptr %r, align 4
+  %member3 = extractvalue { float, float, float, float } %r2, 0
+  %r4 = load { float, float, float, float }, ptr %r, align 4
+  %member5 = extractvalue { float, float, float, float } %r4, 2
+  %fadd = fadd float %member3, %member5
+  %flt = fcmp olt float %member, %fadd
+  br i1 %flt, label %and_rhs, label %and_merge
+
+drop_and_return_:                                 ; preds = %and_merge
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+
+and_rhs:                                          ; preds = %code_
+  %self6 = load { float, float, float, float }, ptr %self, align 4
+  %member7 = extractvalue { float, float, float, float } %self6, 0
+  %self8 = load { float, float, float, float }, ptr %self, align 4
+  %member9 = extractvalue { float, float, float, float } %self8, 2
+  %fadd10 = fadd float %member7, %member9
+  %r11 = load { float, float, float, float }, ptr %r, align 4
+  %member12 = extractvalue { float, float, float, float } %r11, 0
+  %fgt = fcmp ogt float %fadd10, %member12
+  br i1 %fgt, label %and_rhs13, label %and_merge14
+
+and_merge:                                        ; preds = %and_merge14, %code_
+  %and_result34 = phi i1 [ false, %code_ ], [ %and_result33, %and_merge14 ]
+  store i1 %and_result34, ptr %return_var, align 1
+  br label %drop_and_return_
+
+and_rhs13:                                        ; preds = %and_rhs
+  %self15 = load { float, float, float, float }, ptr %self, align 4
+  %member16 = extractvalue { float, float, float, float } %self15, 1
+  %r17 = load { float, float, float, float }, ptr %r, align 4
+  %member18 = extractvalue { float, float, float, float } %r17, 1
+  %r19 = load { float, float, float, float }, ptr %r, align 4
+  %member20 = extractvalue { float, float, float, float } %r19, 3
+  %fadd21 = fadd float %member18, %member20
+  %flt22 = fcmp olt float %member16, %fadd21
+  br i1 %flt22, label %and_rhs23, label %and_merge24
+
+and_merge14:                                      ; preds = %and_merge24, %and_rhs
+  %and_result33 = phi i1 [ false, %and_rhs ], [ %and_result, %and_merge24 ]
+  br label %and_merge
+
+and_rhs23:                                        ; preds = %and_rhs13
+  %self25 = load { float, float, float, float }, ptr %self, align 4
+  %member26 = extractvalue { float, float, float, float } %self25, 1
+  %self27 = load { float, float, float, float }, ptr %self, align 4
+  %member28 = extractvalue { float, float, float, float } %self27, 3
+  %fadd29 = fadd float %member26, %member28
+  %r30 = load { float, float, float, float }, ptr %r, align 4
+  %member31 = extractvalue { float, float, float, float } %r30, 1
+  %fgt32 = fcmp ogt float %fadd29, %member31
+  br label %and_merge24
+
+and_merge24:                                      ; preds = %and_rhs23, %and_rhs13
+  %and_result = phi i1 [ false, %and_rhs13 ], [ %fgt32, %and_rhs23 ]
+  br label %and_merge14
+}
+
+define float @Rect_center_x({ float, float, float, float } %0) {
+entry:
+  %self = alloca { float, float, float, float }, align 8
+  store { float, float, float, float } %0, ptr %self, align 4
+  %return_var = alloca float, align 4
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load float, ptr %return_var, align 4
+  ret float %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load { float, float, float, float }, ptr %self, align 4
+  %member = extractvalue { float, float, float, float } %self1, 0
+  %self2 = load { float, float, float, float }, ptr %self, align 4
+  %member3 = extractvalue { float, float, float, float } %self2, 2
+  %fdiv = fdiv float %member3, 2.000000e+00
+  %fadd = fadd float %member, %fdiv
+  store float %fadd, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define float @Rect_center_y({ float, float, float, float } %0) {
+entry:
+  %self = alloca { float, float, float, float }, align 8
+  store { float, float, float, float } %0, ptr %self, align 4
+  %return_var = alloca float, align 4
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load float, ptr %return_var, align 4
+  ret float %return_val
+
+code_:                                            ; preds = %entry
+  %self1 = load { float, float, float, float }, ptr %self, align 4
+  %member = extractvalue { float, float, float, float } %self1, 1
+  %self2 = load { float, float, float, float }, ptr %self, align 4
+  %member3 = extractvalue { float, float, float, float } %self2, 3
+  %fdiv = fdiv float %member3, 2.000000e+00
+  %fadd = fadd float %member, %fdiv
+  store float %fadd, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+declare void @InitWindow(i32, i32, ptr)
+
+declare void @CloseWindow()
+
+declare i1 @WindowShouldClose()
+
+declare void @BeginDrawing()
+
+declare void @EndDrawing()
+
+declare void @DrawText(ptr, i32, i32, i32, { i8, i8, i8, i8 })
+
+declare void @ClearBackground({ i8, i8, i8, i8 })
+
+declare i32 @GetMouseX()
+
+declare i32 @GetMouseY()
+
+declare void @DrawCircle(i32, i32, float, i32)
+
+define void @DrawCirc(i32 %0, i32 %1, float %2, { i8, i8, i8, i8 } %3) {
+entry:
+  %cx = alloca i32, align 4
+  store i32 %0, ptr %cx, align 4
+  %cy = alloca i32, align 4
+  store i32 %1, ptr %cy, align 4
+  %rad = alloca float, align 4
+  store float %2, ptr %rad, align 4
+  %c = alloca { i8, i8, i8, i8 }, align 8
+  store { i8, i8, i8, i8 } %3, ptr %c, align 1
   br label %code_
 
 return:                                           ; preds = %drop_and_merge_, %drop_and_return_
   ret void
 
 code_:                                            ; preds = %entry
-  %ptr1 = load ptr, ptr %ptr, align 8
-  call void @free(ptr %ptr1)
+  %cx1 = load i32, ptr %cx, align 4
+  %cy2 = load i32, ptr %cy, align 4
+  %rad3 = load float, ptr %rad, align 4
+  %c4 = load { i8, i8, i8, i8 }, ptr %c, align 1
+  %call = call i32 @cToInt({ i8, i8, i8, i8 } %c4)
+  call void @DrawCircle(i32 %cx1, i32 %cy2, float %rad3, i32 %call)
+  br label %drop_and_merge_
+
+drop_and_return_:                                 ; No predecessors!
+  br label %return
+
+drop_and_merge_:                                  ; preds = %code_
+  br label %return
+}
+
+define { float, float } @GetMousePosition() {
+entry:
+  %return_var = alloca { float, float }, align 8
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load { float, float }, ptr %return_var, align 4
+  ret { float, float } %return_val
+
+code_:                                            ; preds = %entry
+  %call = call i32 @GetMouseX()
+  %sitofp = sitofp i32 %call to float
+  %sf = insertvalue { float, float } undef, float %sitofp, 0
+  %call1 = call i32 @GetMouseY()
+  %sitofp2 = sitofp i32 %call1 to float
+  %sf3 = insertvalue { float, float } %sf, float %sitofp2, 1
+  store { float, float } %sf3, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+declare void @DrawRectangle(i32, i32, i32, i32, i32)
+
+define i32 @cToInt({ i8, i8, i8, i8 } %0) {
+entry:
+  %c = alloca { i8, i8, i8, i8 }, align 8
+  store { i8, i8, i8, i8 } %0, ptr %c, align 1
+  %return_var = alloca i32, align 4
+  %r = alloca i32, align 4
+  %g = alloca i32, align 4
+  %b = alloca i32, align 4
+  %a = alloca i32, align 4
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  %return_val = load i32, ptr %return_var, align 4
+  ret i32 %return_val
+
+code_:                                            ; preds = %entry
+  %c1 = load { i8, i8, i8, i8 }, ptr %c, align 1
+  %member = extractvalue { i8, i8, i8, i8 } %c1, 0
+  %zext = zext i8 %member to i32
+  store i32 %zext, ptr %r, align 4
+  %c2 = load { i8, i8, i8, i8 }, ptr %c, align 1
+  %member3 = extractvalue { i8, i8, i8, i8 } %c2, 1
+  %zext4 = zext i8 %member3 to i32
+  store i32 %zext4, ptr %g, align 4
+  %c5 = load { i8, i8, i8, i8 }, ptr %c, align 1
+  %member6 = extractvalue { i8, i8, i8, i8 } %c5, 2
+  %zext7 = zext i8 %member6 to i32
+  store i32 %zext7, ptr %b, align 4
+  %c8 = load { i8, i8, i8, i8 }, ptr %c, align 1
+  %member9 = extractvalue { i8, i8, i8, i8 } %c8, 3
+  %zext10 = zext i8 %member9 to i32
+  store i32 %zext10, ptr %a, align 4
+  %r11 = load i32, ptr %r, align 4
+  %shl = shl i32 %r11, 24
+  %g12 = load i32, ptr %g, align 4
+  %shl13 = shl i32 %g12, 16
+  %b14 = load i32, ptr %b, align 4
+  %shl15 = shl i32 %b14, 8
+  %a16 = load i32, ptr %a, align 4
+  %bor = or i32 %shl15, %a16
+  %bor17 = or i32 %shl13, %bor
+  %bor18 = or i32 %shl, %bor17
+  store i32 %bor18, ptr %return_var, align 4
+  br label %drop_and_return_
+
+drop_and_return_:                                 ; preds = %code_
+  br label %return
+
+drop_and_merge_:                                  ; No predecessors!
+  br label %return
+}
+
+define void @DrawRectangleRec({ float, float, float, float } %0, { i8, i8, i8, i8 } %1) {
+entry:
+  %r = alloca { float, float, float, float }, align 8
+  store { float, float, float, float } %0, ptr %r, align 4
+  %c = alloca { i8, i8, i8, i8 }, align 8
+  store { i8, i8, i8, i8 } %1, ptr %c, align 1
+  br label %code_
+
+return:                                           ; preds = %drop_and_merge_, %drop_and_return_
+  ret void
+
+code_:                                            ; preds = %entry
+  %r1 = load { float, float, float, float }, ptr %r, align 4
+  %member = extractvalue { float, float, float, float } %r1, 0
+  %fptosi = fptosi float %member to i32
+  %r2 = load { float, float, float, float }, ptr %r, align 4
+  %member3 = extractvalue { float, float, float, float } %r2, 1
+  %fptosi4 = fptosi float %member3 to i32
+  %r5 = load { float, float, float, float }, ptr %r, align 4
+  %member6 = extractvalue { float, float, float, float } %r5, 2
+  %fptosi7 = fptosi float %member6 to i32
+  %r8 = load { float, float, float, float }, ptr %r, align 4
+  %member9 = extractvalue { float, float, float, float } %r8, 3
+  %fptosi10 = fptosi float %member9 to i32
+  %c11 = load { i8, i8, i8, i8 }, ptr %c, align 1
+  %call = call i32 @cToInt({ i8, i8, i8, i8 } %c11)
+  call void @DrawRectangle(i32 %fptosi, i32 %fptosi4, i32 %fptosi7, i32 %fptosi10, i32 %call)
   br label %drop_and_merge_
 
 drop_and_return_:                                 ; No predecessors!

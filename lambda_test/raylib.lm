@@ -96,6 +96,55 @@ modify RayConstants {
     }
 }
 
+struct FVec2 {
+    public x: float32,
+    public y: float32,
+}
+
+struct Rect {
+   public x: float32,
+   public y: float32,
+   public w: float32,
+   public h: float32,
+}
+
+modify Rect {
+    public fn collides(self, r: Rect) = bool {
+        return self.x < r.x + r.w &&
+            self.x + self.w > r.x &&
+            self.y < r.y + r.h    &&
+            self.y + self.h > r.y
+        ;
+    }
+
+    public fn center_x(self) = float32 {
+        return self.x + self.w / 2.0;
+    }
+
+
+    public fn center_y(self) = float32 {
+        return self.y + self.h / 2.0;
+    }
+}
+
+struct Image {
+    public data: uint8*,
+    public w: int32,
+    public h: int32,
+    public mipmaps: int32,
+    public format: int32,
+}
+
+struct Texture {
+    public id: uint32,
+    public width: int32,
+    public height: int32,
+    public mipmaps: int32,
+    public format: int32,
+}
+
+
+
 extern fn InitWindow(w: int32, h: int32, title: uint8*);
 extern fn CloseWindow();
 extern fn WindowShouldClose() = bool;
@@ -106,3 +155,35 @@ extern fn EndDrawing();
 extern fn DrawText(str: uint8*, x: int32, y: int32, fontsize: int32, color: Color);
 
 extern fn ClearBackground(color: Color);
+
+extern fn GetMouseX() = int32;
+extern fn GetMouseY() = int32;
+extern fn DrawCircle(cx: int32, cy: int32, rad: float32, c: int32);
+extern fn DrawCirc(cx: int32, cy: int32, rad: float32, c: Color) {
+    DrawCircle(cx, cy, rad, cToInt(c));
+}
+
+fn GetMousePosition() = FVec2 {
+    return FVec2(GetMouseX() as float32, GetMouseY() as float32);
+}
+
+//extern fn DrawRectangleRec(r: Rect, c: Color);
+
+extern fn DrawRectangle(x: int32, y: int32, w: int32, h: int32, c: int32);
+
+fn cToInt(c: Color) = int32 {
+    let r = c.r as int32;
+    let g = c.g as int32;
+    let b = c.b as int32;
+    let a = c.a as int32;
+
+    return (r << 24) |
+            (g << 16) |
+            (b << 8) |
+            a;
+}
+
+fn DrawRectangleRec(r: Rect, c: Color) {
+
+    DrawRectangle(r.x as int32, r.y as int32, r.w as int32, r.h as int32, cToInt(c));
+}

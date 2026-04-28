@@ -44,6 +44,8 @@ impl TypedBlockSyntax {
 
         let mut statements = Vec::new();
         // Variables declared in this block that need end-of-scope drops, in declaration order.
+
+        //var name, type, mangled drop function, smap
         let mut drop_vars: Vec<(String, TypeId, String, SourceMap)> = Vec::new();
 
         for s in &blk.data {
@@ -82,7 +84,7 @@ impl TypedBlockSyntax {
         // Build end-of-scope drops in LIFO order (last declared → dropped first).
         let mut drops = Vec::new();
         for (name, ty, drop_mangled, smap) in drop_vars.into_iter().rev() {
-            if let Some(drop_call) = make_drop_call(&name, ty, &drop_mangled, &smap, compiler, context) {
+            if let Some(drop_call) = make_drop_call(&name, ty, &drop_mangled, &smap, compiler) {
                 drops.push(drop_call);
             }
         }
@@ -106,9 +108,8 @@ fn make_drop_call(
     drop_mangled: &str,
     smap: &SourceMap,
     compiler: &mut Compiler,
-    context: &AvailableContext<TypeId>,
 ) -> Option<TypedExpr> {
-    let fn_type_id = *context.get_identifier(&drop_mangled.to_string())?;
+    let fn_type_id = compiler.type_context.none;
     let self_ref_ty = compiler.type_context.reference_to(ty);
     let var_expr = TypedExpr {
         ty,
