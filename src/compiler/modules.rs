@@ -83,6 +83,8 @@ impl LTypedModule {
                     let type_name = modify.data.ty.mangle_name();
                     let Some(type_id) = compiler.resolve_type(&modify.data.ty) else { continue; };
                     for method in &modify.data.methods {
+                        // generic methods are instantiated on-demand; skip them here
+                        if !method.type_parameters.is_empty() { continue; }
                         let mangled = format!("{}_{}", type_name, method.name);
                         let Some(func) = Function::from_method(method, type_id, &mangled, compiler, context) else { continue; };
                         functions.push(func);

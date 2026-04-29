@@ -204,6 +204,24 @@ impl Compiler {
             }
         }
 
+        // Pass 1b: collect generic modify blocks before member resolution so that
+        // monomorphize_struct (triggered by resolve_type in Pass 2) can register
+        // methods on the concrete structs it creates.
+        for (_, m) in &modules {
+            for item in &m.ast {
+                if let Item::Modify(modify) = item {
+                    if !modify.data.type_parameters.is_empty() {
+                        let type_name = match &modify.data.ty {
+                            Type::Typename(n) => n.clone(),
+                            Type::Generic { name, .. } => name.clone(),
+                            _ => continue,
+                        };
+                        self.generic_modifies.entry(type_name).or_default().push(modify.clone());
+                    }
+                }
+            }
+        }
+
         // Pass 2: fill in member types now that all struct names are registered.
         // Use type_lookup → TypeKind::Struct(sid) to find the StructId since
         // struct_lookup is not populated by add_struct.
@@ -219,22 +237,6 @@ impl Compiler {
                         .collect();
                     self.type_context.structs[sid as usize].llvm_struct.set_body(&member_types, false);
                     self.type_context.structs[sid as usize].members = members;
-                }
-            }
-        }
-
-        // collect generic modify blocks
-        for (_, m) in &modules {
-            for item in &m.ast {
-                if let Item::Modify(modify) = item {
-                    if !modify.data.type_parameters.is_empty() {
-                        let type_name = match &modify.data.ty {
-                            Type::Typename(n) => n.clone(),
-                            Type::Generic { name, .. } => name.clone(),
-                            _ => continue,
-                        };
-                        self.generic_modifies.entry(type_name).or_default().push(modify.clone());
-                    }
                 }
             }
         }
