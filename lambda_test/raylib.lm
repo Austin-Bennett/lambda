@@ -148,7 +148,7 @@ struct Texture {
 extern fn InitWindow(w: int32, h: int32, title: uint8*);
 extern fn CloseWindow();
 extern fn WindowShouldClose() = bool;
-
+extern fn SetTargetFPS(fps: int32);
 extern fn BeginDrawing();
 extern fn EndDrawing();
 

@@ -919,6 +919,21 @@ impl TypeContext {
     }
 
 
+    pub fn fnptr_of(&mut self, params: Vec<TypeId>, ret: TypeId) -> TypeId {
+        let ret_syn = self.type_ids[&ret].clone();
+        let param_syns: Vec<Type> = params.iter().map(|&id| self.type_ids[&id].clone()).collect();
+        let key = Type::FnPtr { ret: Box::new(ret_syn), params: param_syns };
+        if let Some(&id) = self.type_lookup.get(&key) {
+            return id;
+        }
+        let mut info = TypeInfo::new(
+            TypeKind::FnPtr { params: params.clone(), ret },
+            self.llvm_context.ptr_type(AddressSpace::try_from(0u32).unwrap()).into(),
+        );
+        info.ops.call.insert(params, ret);
+        self.add(key, info)
+    }
+
     pub fn add_functional_type(&mut self, sig: &FunctionSignature) -> TypeId {
         if let Some(ty) = self.type_lookup.get(&Type::Typename(sig.name.clone()))  {
             return *ty;

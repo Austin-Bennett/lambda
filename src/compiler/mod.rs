@@ -9,7 +9,7 @@ use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::BasicValueEnum;
 use crate::typed_ast::typing::operator::{BinaryOperatorMaker, ComparisonMakers};
 use crate::ast::items::function::FunctionSyntax;
-use crate::ast::items::modify::{ModifySyntax, SelfMode};
+use crate::ast::items::modify::{MethodDecl, ModifySyntax, SelfMode};
 use crate::ast::items::structure::StructureSyntax;
 use crate::common::source_owner::{SourceDescriptor, SourceOwner};
 use crate::common::sourcemap::SourceMap;
@@ -103,12 +103,28 @@ pub struct Compiler {
     // The type currently being type-checked as a method body, used for private-access enforcement
     pub current_self_type: Option<TypeId>,
 
+    // Lambda lifting state: name of the function currently being type-checked, and a counter
+    // for generating unique lambda mangled names (lambda_FUNCNAME_N).
+    pub current_function_name: String,
+    pub lambda_count: usize,
+
+    // Snapshot of the global scope (function names only) for lambda body type-checking.
+    // Lambdas must not capture enclosing locals, so they get a clean context.
+    pub global_context: AvailableContext<TypeId>,
+
     // Generic function instantiations queued for type-checking: (template, mangled_name, subst)
     pending_generic_fns: Vec<(FunctionSyntax, String, HashMap<String, TypeId>)>,
     // Already type-checked monomorphic functions waiting to be added to the output module
     pub pending_mono_fns: Vec<TypedFunction>,
     // Generic modify block bodies queued for type-checking: (type_id, modify, subst, mangled_struct_name)
     pending_mono_methods: Vec<(TypeId, ModifySyntax, HashMap<String, TypeId>, String)>,
+
+    // Generic method templates: (type_name, method_name) -> MethodDecl
+    pub generic_methods: HashMap<(String, String), MethodDecl>,
+    // Cache: (struct_type_id, method_name, type_args) -> (mangled_name, fn_type_id)
+    pub mono_method_cache: HashMap<(TypeId, String, Vec<TypeId>), (String, TypeId)>,
+    // Generic method bodies queued for type-checking: (type_id, template, subst, mangled)
+    pending_generic_methods: Vec<(TypeId, MethodDecl, HashMap<String, TypeId>, String)>,
 }
 
 
@@ -136,9 +152,15 @@ impl Compiler {
             mono_fn_cache:       HashMap::new(),
             type_param_subst:    HashMap::new(),
             current_self_type:    None,
-            pending_generic_fns:  Vec::new(),
-            pending_mono_fns:     Vec::new(),
-            pending_mono_methods: Vec::new(),
+            current_function_name: String::new(),
+            lambda_count:          0,
+            global_context:        AvailableContext::new(),
+            pending_generic_fns:      Vec::new(),
+            pending_mono_fns:         Vec::new(),
+            pending_mono_methods:     Vec::new(),
+            generic_methods:          HashMap::new(),
+            mono_method_cache:        HashMap::new(),
+            pending_generic_methods:  Vec::new(),
         }
     }
 
@@ -161,16 +183,42 @@ impl Compiler {
         let mut context = AvailableContext::new();
         context.push_new_scope();
 
-        // pre-register all struct types so they are available during type-checking
-        // generic structs go into generic_structs registry instead
+        // Pass 1: register struct names as opaque LLVM types so cross-module member
+        // references (e.g. `collision: Rect`) resolve regardless of iteration order.
         for (_, m) in &modules {
             for item in &m.ast {
                 if let Item::Struct(s) = item {
                     if !s.data.type_parameters.is_empty() {
                         self.generic_structs.insert(s.data.name.clone(), s.clone());
-                    } else if let Some(info) = self.create_structure_from_ast(&s.data, &s.smap) {
-                        self.type_context.add_struct(info.name.clone(), info);
+                    } else if !self.type_context.type_lookup.contains_key(&Type::Typename(s.data.name.clone())) {
+                        let opaque = self.llvm_context.opaque_struct_type(&s.data.name);
+                        let stub = StructInfo {
+                            name: s.data.name.clone(),
+                            type_id: 0,
+                            members: vec![],
+                            llvm_struct: opaque,
+                        };
+                        self.type_context.add_struct(stub.name.clone(), stub);
                     }
+                }
+            }
+        }
+
+        // Pass 2: fill in member types now that all struct names are registered.
+        // Use type_lookup → TypeKind::Struct(sid) to find the StructId since
+        // struct_lookup is not populated by add_struct.
+        for (_, m) in &modules {
+            for item in &m.ast {
+                if let Item::Struct(s) = item {
+                    if !s.data.type_parameters.is_empty() { continue; }
+                    let Some(&type_id) = self.type_context.type_lookup.get(&Type::Typename(s.data.name.clone())) else { continue; };
+                    let TypeKind::Struct(sid) = self.type_context.types[type_id as usize].kind else { continue; };
+                    let Some(members) = self.resolve_struct_members(&s.data, &s.smap) else { continue; };
+                    let member_types: Vec<BasicTypeEnum> = members.iter()
+                        .map(|m| self.type_context.get_by_id(m.ty).unwrap().llvm_type.try_into().unwrap())
+                        .collect();
+                    self.type_context.structs[sid as usize].llvm_struct.set_body(&member_types, false);
+                    self.type_context.structs[sid as usize].members = members;
                 }
             }
         }
@@ -277,6 +325,14 @@ impl Compiler {
                     };
 
                     for method in &modify.data.methods {
+                        if !method.type_parameters.is_empty() {
+                            self.generic_methods.insert(
+                                (type_name.clone(), method.name.clone()),
+                                method.clone(),
+                            );
+                            continue;
+                        }
+
                         let mangled = format!("{}_{}", type_name, method.name);
 
                         if self.type_context.get_by_id(type_id)
@@ -442,8 +498,11 @@ impl Compiler {
             }
         }
 
-        for (p, m) in &modules {
+        // Snapshot the global scope so lambdas can be type-checked without access to
+        // enclosing function locals (no implicit capture).
+        self.global_context = context.clone();
 
+        for (p, m) in &modules {
             let m = LTypedModule::from_ast(m, self, &mut context);
             self.typed_modules.insert(p.clone(), m);
         }
@@ -451,9 +510,10 @@ impl Compiler {
         // Process queued generic instantiations (loop because instantiating one item
         // may queue further instantiations from generic calls or method bodies)
         loop {
-            let fns = mem::take(&mut self.pending_generic_fns);
+            let fns     = mem::take(&mut self.pending_generic_fns);
             let methods = mem::take(&mut self.pending_mono_methods);
-            if fns.is_empty() && methods.is_empty() { break; }
+            let gmeths  = mem::take(&mut self.pending_generic_methods);
+            if fns.is_empty() && methods.is_empty() && gmeths.is_empty() { break; }
 
             for (template, mangled, subst) in fns {
                 self.type_param_subst = subst;
@@ -489,6 +549,15 @@ impl Compiler {
                     if let Some(func) = TypedFunction::from_operator(op, type_id, &op_mangled, self, &mut fn_context) {
                         self.pending_mono_fns.push(func);
                     }
+                }
+                self.type_param_subst.clear();
+            }
+
+            for (type_id, template, subst, mangled) in gmeths {
+                self.type_param_subst = subst;
+                let mut fn_context = context.clone();
+                if let Some(func) = TypedFunction::from_method(&template, type_id, &mangled, self, &mut fn_context) {
+                    self.pending_mono_fns.push(func);
                 }
                 self.type_param_subst.clear();
             }
@@ -532,44 +601,35 @@ impl Compiler {
         }
     }
 
-    pub fn create_structure_from_ast(&mut self, ast: &lstruct::Structure, smap: &SourceMap) -> Option<StructInfo> {
-
+    /// Resolve only the member list — does not touch the LLVM struct type.
+    fn resolve_struct_members(&mut self, ast: &lstruct::Structure, smap: &SourceMap) -> Option<Vec<StructMember>> {
         let mut members = Vec::new();
-
         for VarDecl{ name, ty, value: _, public } in &ast.members {
             let Some(ety) = ty.as_ref() else { continue; };
-            //get the type
             let Some(id) = self.resolve_type(ety) else {
-                self.emit_compile_message(
-                    CompileMessage::new(
-                        smap.clone(),
-                        format!("Unknown type: {:?}", ety),
-                        CompileMessageType::Error,
-                    )
-                );
+                self.emit_compile_message(CompileMessage::new(
+                    smap.clone(),
+                    format!("Unknown type: {:?}", ety),
+                    CompileMessageType::Error,
+                ));
                 return None;
             };
-
-            members.push(StructMember{
-                name: name.clone(),
-                ty: id,
-                public: *public,
-            });
+            members.push(StructMember { name: name.clone(), ty: id, public: *public });
         }
+        Some(members)
+    }
 
+    pub fn create_structure_from_ast(&mut self, ast: &lstruct::Structure, smap: &SourceMap) -> Option<StructInfo> {
+        let members = self.resolve_struct_members(ast, smap)?;
 
         let struct_member_types: Vec<BasicTypeEnum> = members.iter()
-            .map(
-                |v: &StructMember|
-                    self.type_context.get_by_id(v.ty).unwrap().llvm_type.try_into().unwrap()
-            )
+            .map(|v| self.type_context.get_by_id(v.ty).unwrap().llvm_type.try_into().unwrap())
             .collect();
-
 
         Some(StructInfo{
             name: ast.name.clone(),
             members,
-            type_id: 0, //to be set
+            type_id: 0,
             llvm_struct: self.llvm_context.struct_type(&struct_member_types, false)
         })
     }
@@ -1043,6 +1103,64 @@ impl Compiler {
         self.mono_fn_cache.insert(key, mangled.clone());
 
         Some((mangled, fn_type_id))
+    }
+
+    pub fn ensure_generic_method(
+        &mut self,
+        struct_type_id: TypeId,
+        struct_type_name: &str,
+        method_name: &str,
+        type_args: Vec<TypeId>,
+    ) -> Option<(String, TypeId)> {
+        let cache_key = (struct_type_id, method_name.to_string(), type_args.clone());
+        if let Some(cached) = self.mono_method_cache.get(&cache_key) {
+            return Some(cached.clone());
+        }
+
+        let template = self.generic_methods
+            .get(&(struct_type_name.to_string(), method_name.to_string()))
+            .cloned()?;
+
+        let subst: HashMap<String, TypeId> = template.type_parameters.iter()
+            .cloned()
+            .zip(type_args.iter().copied())
+            .collect();
+
+        let mangled = self.mangle_name(&format!("{}_{}", struct_type_name, method_name), &type_args);
+
+        let old_subst = mem::replace(&mut self.type_param_subst, subst.clone());
+
+        let ret = match &template.ret {
+            Some(ty) => self.resolve_type(ty).unwrap_or(self.type_context.none),
+            None => self.type_context.none,
+        };
+
+        let mut params = Vec::new();
+        match template.self_mode {
+            SelfMode::ByRef => params.push(self.type_context.reference_to(struct_type_id)),
+            SelfMode::Value => params.push(struct_type_id),
+            SelfMode::None  => {}
+        }
+        for p in &template.params {
+            if let Some(pty) = p.data.ty.as_ref() {
+                if let Some(pid) = self.resolve_type(pty) {
+                    params.push(pid);
+                }
+            }
+        }
+
+        self.type_param_subst = old_subst;
+
+        let fn_type_id = self.type_context.add_functional_type(&FunctionSignature {
+            name: mangled.clone(),
+            ret,
+            params,
+        });
+
+        self.pending_generic_methods.push((struct_type_id, template, subst, mangled.clone()));
+        let result = (mangled, fn_type_id);
+        self.mono_method_cache.insert(cache_key, result.clone());
+        Some(result)
     }
 
     pub fn emit_compile_message(&mut self, msg: CompileMessage) {

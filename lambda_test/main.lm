@@ -1,5 +1,6 @@
 use std::list
 use raylib
+use game
 
 
 
@@ -32,7 +33,7 @@ modify Ball {
         DrawCirc(self.collision.center_x() as int32, self.collision.center_y() as int32, 5.0, Color(255, 255, 255, 255));
     }
 
-    public fn update(self&, lpaddle: Paddle&, rpaddle: Paddle&) {
+    public fn update(self&, dt: float32) {
 
     }
 }
@@ -44,31 +45,32 @@ fn main() = int8 {
     InitWindow(800, 600, c"Lambda PONG");
     let constants = RayConstants.new();
 
-    let r = Rect(200.0, 200.0, 100.0, 100.0);
-    let mrect = Rect(0.0, 0.0, 20.0, 20.0);
+    let list = List.<int32>.new();
 
-    let lpaddle = Paddle.new(20.0, 20.0);
-    let rpaddle = Paddle.new(760.0, 20.0);
-    let ball = Ball.new();
+
+    let game = Game.new();
+    Game_add_obj.<Ball>(&game, Ball.new(), GameObjectVTable(
+        lambda(this: uint8*, dt: float32) { (*(this as Ball*)).update(dt); },
+        lambda(this: uint8*) { (*(this as Ball*)).draw(); },
+        lambda(this: uint8*) {}
+    ));
+
+    SetTargetFPS(60);
+
 
     while !WindowShouldClose() {
         BeginDrawing();
 
         ClearBackground(constants.black);
 
-        lpaddle.draw();
-        rpaddle.draw();
 
-        ball.draw();
 
-        ball.update(&lpaddle, &rpaddle);
-
-        DrawText(c"Hello, LAMBDA", 20, 20, 20, constants.gold);
+        DrawText(c"Hello, LAMBDA", 10, 10, 20, constants.gold);
 
         EndDrawing();
     }
 
     CloseWindow();
 
-    return mrect.y as int8;
+    return 0;
 }

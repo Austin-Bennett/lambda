@@ -29,6 +29,9 @@ pub enum ExpressionToken {
     AsKW,
 
     Dot,
+
+    NullPtr,
+    LambdaKW,
 }
 
 impl ExpressionToken {

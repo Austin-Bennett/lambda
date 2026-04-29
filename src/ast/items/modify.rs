@@ -27,6 +27,7 @@ impl SelfMode {
 #[derive(Clone)]
 pub struct MethodDecl {
     pub name: String,
+    pub type_parameters: Vec<String>,
     pub self_mode: SelfMode,
     pub params: Vec<VarDeclSyntax>,
     pub ret: Option<Type>,
@@ -348,6 +349,45 @@ impl Syntax for ModifySyntax {
                 ));
                 continue;
             };
+
+            // Optional type parameters: fn methodName<T, U>(...)
+            let method_type_parameters = if let Some(Token {
+                typ: TokenType::Expression(ExpressionToken::Operator(Operator { tk: "<", .. })), ..
+            }) = tokens.get(0) {
+                tokens.pop_front();
+                let mut tps = Vec::new();
+                loop {
+                    if let Some(Token {
+                        typ: TokenType::Expression(ExpressionToken::Operator(Operator { tk: ">", .. })), ..
+                    }) = tokens.get(0) {
+                        tokens.pop_front();
+                        break;
+                    }
+                    let next = tokens.pop_front();
+                    if let unpack_opt_tk!(TokenType::Expression(ExpressionToken::Identifier(tp)), _) = next {
+                        tps.push(tp);
+                    } else {
+                        compiler.emit_compile_message(CompileMessage::expected_token_error(
+                            smap.clone(), "type parameter name", "generic method declaration", next,
+                        ));
+                        break;
+                    }
+                    if let Some(Token {
+                        typ: TokenType::Expression(ExpressionToken::Operator(Operator { tk: ">", .. })), ..
+                    }) = tokens.get(0) {
+                        tokens.pop_front();
+                        break;
+                    }
+                    if let Some(Token { typ: TokenType::Feature(FeatureToken::Comma), .. }) = tokens.get(0) {
+                        tokens.pop_front();
+                    } else {
+                        break;
+                    }
+                }
+                tps
+            } else {
+                Vec::new()
+            };
             if let Some(ps) = pub_smap { let mut ps2 = ps; ps2.extend(msmap.clone()); msmap = ps2; }
 
             // Consume '('
@@ -459,6 +499,7 @@ impl Syntax for ModifySyntax {
             smap.extend(msmap);
             methods.push(MethodDecl {
                 name: method_name,
+                type_parameters: method_type_parameters,
                 self_mode,
                 params,
                 ret,

@@ -1,7 +1,10 @@
 use crate::ast::statements::expressions::{Expr, ExprSyntax};
+use crate::ast::ty::Type;
 use crate::common::sourcemap::SourceMap;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::literal::LiteralValue;
+use crate::typed_ast::ast::items::function::Function as TypedFunction;
+use crate::ast::items::modify::SelfMode;
 use crate::typed_ast::typing::scope::AvailableContext;
 use crate::typed_ast::typing::tcontext::TypeContext;
 use crate::typed_ast::typing::ty::{StructId, TypeId, TypeKind};
@@ -136,6 +139,7 @@ pub struct TypedBoundMethod {
 
 pub enum TypedExprNode {
     Literal(LiteralValue),
+    NullPtr,
     Identifier(String),
     /// Transparent read through a reference. Inner expr has type `Reference(T)`; this node's `ty` is `T`.
     RefRead(Box<TypedExpr>),
@@ -224,6 +228,7 @@ impl Debug for TypedExprNode {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             TypedExprNode::Literal(lit) => { lit.fmt(f) }
+            TypedExprNode::NullPtr => { f.write_str("nullptr") }
             TypedExprNode::Identifier(ident) => { write!(f, "{}", ident) }
             TypedExprNode::RefRead(inner) => { write!(f, "refread({:?})", inner) }
             TypedExprNode::Tuple(_) => { todo!() }
@@ -405,6 +410,38 @@ impl TypedExpr {
                     )
                 );
                 None
+            }
+            Expr::NullPtr => {
+                let ty = compiler.type_context.pointer_to(compiler.type_context.uint8);
+                Some((TypedExprNode::NullPtr, ty))
+            }
+            Expr::Lambda(lam) => {
+                let id = compiler.lambda_count;
+                compiler.lambda_count += 1;
+                let mangled = format!("lambda_{}_{}", compiler.current_function_name, id);
+
+                // Use the global context so the lambda cannot capture enclosing locals.
+                let mut lambda_ctx = compiler.global_context.clone();
+
+                let typed_fn = TypedFunction::from_parts(
+                    &mangled,
+                    SelfMode::None,
+                    None,
+                    &lam.parameters,
+                    lam.ret_ty.as_ref(),
+                    Some(&lam.body),
+                    false,
+                    expr.smap.clone(),
+                    compiler,
+                    &mut lambda_ctx,
+                )?;
+
+                let param_types = typed_fn.signature.params.clone();
+                let ret_type = typed_fn.signature.ret;
+                compiler.pending_mono_fns.push(typed_fn);
+
+                let fnptr_ty = compiler.type_context.fnptr_of(param_types, ret_type);
+                Some((TypedExprNode::Identifier(mangled), fnptr_ty))
             }
             Expr::Literal(lit) => {
                 let ty = match lit {
@@ -847,9 +884,30 @@ impl TypedExpr {
                 }
             }
             Expr::UnaryOp(op) => {
+                // &Type.method — intercept before from_node because the type name is not
+                // in the value scope (it's a struct type, not a variable).
+                if op.op.tk == "&" {
+                    if let Expr::MemberAccess(ma) = &op.operand.data {
+                        if let Expr::Identifier(type_name) = &ma.object.data {
+                            if context.get_identifier(type_name).is_none() {
+                                if let Some(type_id) = compiler.resolve_type(&Type::Typename(type_name.clone())) {
+                                    let methods = compiler.type_context.get_by_id(type_id).map(|i| i.methods.clone());
+                                    if let Some(methods) = methods {
+                                        if let Some((mangled, fn_ty_id, _)) = methods.get(&ma.member).cloned() {
+                                            if let Some(TypeKind::Function { params, ret }) = compiler.type_context.get_by_id(fn_ty_id).map(|i| i.kind.clone()) {
+                                                let fnptr_ty = compiler.type_context.fnptr_of(params, ret);
+                                                return Some((TypedExprNode::Identifier(mangled), fnptr_ty));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 let (lhs, lhs_ty) = TypedExpr::from_node(&op.operand, compiler, context)?;
                 let lhs_expr = TypedExpr { value: lhs, ty: lhs_ty, smap: op.operand.smap.clone() };
-
 
                 let lhs_ty = lhs_expr.ty;
                 let lhs = lhs_expr.value;
@@ -886,9 +944,13 @@ impl TypedExpr {
                         )
                     },
                     "&" => {
+                        // Free function reference: &fn_name where fn is in scope with Function type.
+                        if let TypeKind::Function { params, ret } = lhs_inf.kind.clone() {
+                            let fnptr_ty = compiler.type_context.fnptr_of(params, ret);
+                            return Some((lhs, fnptr_ty));
+                        }
+
                         let lhs_expr = TypedExpr { value: lhs, ty: lhs_ty, smap: expr.smap.clone() };
-
-
 
                         if !lhs_expr.is_lvalue(&compiler.type_context) {
                             compiler.emit_compile_message(CompileMessage::new(
@@ -1388,6 +1450,98 @@ impl TypedExpr {
                 Some((TypedExprNode::MemberAccess(Box::new(TypedMemberAccess { object, member_index })), member_ty))
             }
             Expr::GenericCall(gc) => {
+                // instance.<T>.method(args) — generic method call on a variable/expression
+                if let Some(method_name) = &gc.member {
+                    let is_instance_call = if let Expr::Identifier(var_name) = &gc.callee.data {
+                        context.get_identifier(var_name).is_some()
+                    } else {
+                        true // non-identifier callee is always an instance expression
+                    };
+
+                    if is_instance_call {
+                        let method_name = method_name.clone();
+                        let instance = TypedExpr::from_ast(&gc.callee, compiler, context)?;
+                        let instance_ty = instance.ty;
+                        let effective_ty = match compiler.type_context.get_by_id(instance_ty).map(|i| i.kind.clone()) {
+                            Some(TypeKind::Reference(inner)) => inner,
+                            _ => instance_ty,
+                        };
+                        let struct_name = compiler.type_context.name_of(effective_ty)
+                            .unwrap_or_default();
+                        let type_arg_ids: Vec<_> = gc.type_args.iter()
+                            .map(|t| compiler.resolve_type(t))
+                            .collect::<Option<_>>()?;
+                        let (mangled, fn_type_id) = compiler.ensure_generic_method(
+                            effective_ty, &struct_name, &method_name, type_arg_ids,
+                        )?;
+                        let TypeKind::Function { ref params, ret } = compiler.type_context
+                            .get_by_id(fn_type_id)?.kind.clone()
+                        else { return None; };
+                        let params = params.clone();
+
+                        // Build the self argument
+                        let self_ref_ty = compiler.type_context.reference_to(effective_ty);
+                        let self_arg = if params.first() == Some(&self_ref_ty) {
+                            // by-ref: pass address of instance
+                            if !instance.is_lvalue(&compiler.type_context) {
+                                compiler.emit_compile_message(CompileMessage::new(
+                                    gc.callee.smap.clone(),
+                                    format!("method '{}' takes self by reference: receiver must be an lvalue", method_name),
+                                    CompileMessageType::Error,
+                                ));
+                                return None;
+                            }
+                            if instance_ty == effective_ty {
+                                TypedExpr {
+                                    smap: gc.callee.smap.clone(),
+                                    ty: self_ref_ty,
+                                    value: TypedExprNode::UnaryOp(Box::new(TypedUnaryOperation {
+                                        op: UnaryOperator::Reference,
+                                        operand: instance,
+                                    })),
+                                }
+                            } else {
+                                instance // already a reference
+                            }
+                        } else {
+                            // by-value
+                            if instance_ty == effective_ty {
+                                instance
+                            } else {
+                                TypedExpr { value: TypedExprNode::RefRead(Box::new(instance)), ty: effective_ty, smap: gc.callee.smap.clone() }
+                            }
+                        };
+
+                        let mut args = vec![self_arg];
+                        for (i, arg_expr) in gc.arguments.iter().enumerate() {
+                            let mut typed = TypedExpr::from_ast(arg_expr, compiler, context)?;
+                            if let Some(&expected) = params.get(i + 1) {
+                                typed = Self::coerce_literal(&compiler.type_context, typed, expected);
+                                if typed.ty != expected {
+                                    compiler.emit_compile_message(CompileMessage::new(
+                                        arg_expr.smap.clone(),
+                                        format!("argument type mismatch: expected {}, got {}",
+                                            compiler.type_context.name_of(expected).unwrap_or_default(),
+                                            compiler.type_context.name_of(typed.ty).unwrap_or_default()),
+                                        CompileMessageType::Error,
+                                    ));
+                                    return None;
+                                }
+                            }
+                            args.push(typed);
+                        }
+                        let callee_expr = TypedExpr {
+                            value: TypedExprNode::Identifier(mangled),
+                            ty: fn_type_id,
+                            smap: gc.callee.smap.clone(),
+                        };
+                        return Some((TypedExprNode::CallOp(Box::new(TypedCallOperation {
+                            caller: callee_expr,
+                            arguments: args,
+                        })), ret));
+                    }
+                }
+
                 // Resolve the callee to a plain identifier (template name)
                 let Expr::Identifier(fn_name) = &gc.callee.data else {
                     compiler.emit_compile_message(CompileMessage::new(
@@ -1582,7 +1736,12 @@ impl TypedExpr {
     pub fn from_ast(expr: &ExprSyntax, compiler: &mut Compiler, context: &AvailableContext<TypeId>) -> Option<Self> {
         let (value, ty) = TypedExpr::from_node(expr, compiler, context)?;
         let typed = Self { value, ty, smap: expr.smap.clone() };
-        // Auto-deref index results (T&) so they appear as T in value contexts.
-        Some(Self::coerce_ref(typed, &compiler.type_context))
+        // Only member access gets an implicit RefRead (auto-deref through &).
+        // All other expressions — including explicit &x — keep their Reference type.
+        if matches!(&typed.value, TypedExprNode::MemberAccess(_)) {
+            Some(Self::coerce_ref(typed, &compiler.type_context))
+        } else {
+            Some(typed)
+        }
     }
 }

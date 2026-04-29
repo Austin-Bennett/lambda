@@ -135,10 +135,14 @@ impl Function {
 
         let prev_self_type = compiler.current_self_type;
         compiler.current_self_type = self_type_id;
+        let prev_fn_name = std::mem::replace(&mut compiler.current_function_name, mangled_name.to_string());
+        let prev_lambda_count = std::mem::replace(&mut compiler.lambda_count, 0);
 
         let code = if let Some(b) = body {
             let Some(typed) = TypedBlockSyntax::from_ast(b, ret, compiler, context) else {
                 compiler.current_self_type = prev_self_type;
+                compiler.current_function_name = prev_fn_name;
+                compiler.lambda_count = prev_lambda_count;
                 context.pop_last_scope();
                 return None;
             };
@@ -148,6 +152,8 @@ impl Function {
         };
 
         compiler.current_self_type = prev_self_type;
+        compiler.current_function_name = prev_fn_name;
+        compiler.lambda_count = prev_lambda_count;
         context.pop_last_scope();
 
         Some(Self { is_extern, signature: sig, code, params: param_names })

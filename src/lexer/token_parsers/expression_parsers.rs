@@ -56,6 +56,8 @@ pub struct IdentifierParser;
 pub struct IntLiteralParser;
 pub struct BoolLiteralParser;
 pub struct FloatLiteralParser;
+pub struct NullPtrParser;
+pub struct LambdaKWParser;
 
 impl IdentifierParser {
     pub fn is_identifier_character(c: char) -> bool {
@@ -158,6 +160,26 @@ impl Parser for BoolLiteralParser {
             Some((TokenType::Expression(ExpressionToken::BoolLiteral(true)), 4))
         } else if s.starts_with("false") && !IdentifierParser::is_identifier_character(s[5..].chars().next().unwrap_or('\0')) {
             Some((TokenType::Expression(ExpressionToken::BoolLiteral(false)), 5))
+        } else {
+            None
+        }
+    }
+}
+
+impl Parser for NullPtrParser {
+    fn parse(&self, s: &str) -> Option<(TokenType, usize)> {
+        if s.starts_with("nullptr") && !IdentifierParser::is_identifier_character(s[7..].chars().next().unwrap_or('\0')) {
+            Some((TokenType::Expression(ExpressionToken::NullPtr), 7))
+        } else {
+            None
+        }
+    }
+}
+
+impl Parser for LambdaKWParser {
+    fn parse(&self, s: &str) -> Option<(TokenType, usize)> {
+        if s.starts_with("lambda") && !IdentifierParser::is_identifier_character(s[6..].chars().next().unwrap_or('\0')) {
+            Some((TokenType::Expression(ExpressionToken::LambdaKW), 6))
         } else {
             None
         }

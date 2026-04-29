@@ -1,0 +1,67 @@
+use std::list
+
+
+struct GameObjectVTable {
+    public update: none(uint8*, float32),
+    public draw: none(uint8*),
+    public drop: none(uint8*),
+}
+
+struct GameObject {
+    public obj: uint8*,
+    public vtable: GameObjectVTable,
+}
+
+modify GameObject {
+
+    fn operator drop(self&) {
+        self.vtable.drop(self.obj);
+        free(self.obj);
+    }
+}
+
+struct Game {
+    objects: List<GameObject>,
+}
+
+fn<T> Game_add_obj(this: Game&, o: T, vtable: GameObjectVTable) {
+    let ptr = alloc.<T>(1);
+    (**ptr) = o;
+    this.objects.add(GameObject(ptr, vtable));
+}
+
+modify Game {
+    public fn new() = Game {
+        return Game(List.<GameObject>.new());
+    }
+
+
+
+    public fn update(self&, dt: float32) {
+        let i = 0;
+
+        while i < self.objects.len() {
+            let obj = self.objects.get(i);
+
+            obj.vtable.update(obj.obj, dt);
+
+            i += 1;
+        }
+    }
+
+    public fn draw(self&) {
+        let i = 0;
+
+        while i < self.objects.len() {
+            let obj = self.objects.get(i);
+
+            obj.vtable.draw(obj.obj);
+
+            i += 1;
+        }
+    }
+
+    fn operator drop(self&) {
+        __drop(self.objects);
+    }
+}

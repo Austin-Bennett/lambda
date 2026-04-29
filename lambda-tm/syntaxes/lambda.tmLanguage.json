@@ -51,7 +51,7 @@
     },
     "keyword": {
       "name": "keyword.control.lm",
-      "match": "\\b(fn|struct|return|extern|if|else|while|let|public|modify|operator|as|sizeof|alignof|slice)\\b"
+      "match": "\\b(fn|struct|return|extern|if|else|while|let|public|modify|operator|as|sizeof|alignof|slice|lambda|nullptr)\\b"
     },
     "type_primitive": {
       "name": "support.type.primitive.lm",

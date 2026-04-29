@@ -150,5 +150,13 @@ pub fn eval_array_len_expr_uint(expr: &ExprSyntax, compiler: &mut Compiler) -> O
             ));
             None
         }
+        Expr::NullPtr | Expr::Lambda(_) => {
+            compiler.emit_compile_message(CompileMessage::new(
+                expr.smap.clone(),
+                "this expression is not allowed in constant expressions".into(),
+                CompileMessageType::Error,
+            ));
+            None
+        }
     }
 }

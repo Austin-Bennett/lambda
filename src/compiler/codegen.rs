@@ -593,6 +593,9 @@ impl Compiler {
         e: &TypedExpr,
     ) -> Option<AnyValueEnum<'static>> {
         match &e.value {
+            TypedExprNode::NullPtr => {
+                Some(self.llvm_context.ptr_type(inkwell::AddressSpace::try_from(0u32).unwrap()).const_null().into())
+            }
             TypedExprNode::Literal(lit) => {
                 let ctx = self.llvm_context;
                 match lit {
@@ -651,8 +654,14 @@ impl Compiler {
                         .and_then(|info| info.llvm_type.try_into().ok()).unwrap();
                     Some(builder.build_load(basic_ty, ptr, ident).unwrap().into())
                 } else {
-                    // Global (function): return as-is.
-                    globals.get(ident).copied()
+                    let val = globals.get(ident).copied()?;
+                    // Function pointer: a FunctionValue needs to be a plain pointer value.
+                    if matches!(self.type_context.get_by_id(e.ty).map(|i| &i.kind), Some(TypeKind::FnPtr { .. })) {
+                        if let AnyValueEnum::FunctionValue(fn_val) = val {
+                            return Some(fn_val.as_global_value().as_pointer_value().into());
+                        }
+                    }
+                    Some(val)
                 }
             }
 
@@ -997,11 +1006,14 @@ impl Compiler {
                     m.clone()
                 };
 
-                let compiled_args: Vec<Option<AnyValueEnum<'static>>> = ci.args.iter()
-                    .map(|arg| self.compile_expression(builder, ret_var, globals, global_vals, locals, arg))
+                let compiled_args: Vec<(AnyValueEnum<'static>, _)> = ci.args.iter()
+                    .filter_map(|arg| {
+                        let val = self.compile_expression(builder, ret_var, globals, global_vals, locals, arg)?;
+                        Some((val, arg.ty))
+                    })
                     .collect();
 
-                maker(builder, globals, locals, &ci.args, compiled_args)
+                maker(self, builder, globals, &compiled_args)
             }
 
             TypedExprNode::SliceLen(slice_expr) => {

@@ -4,13 +4,16 @@ use std::collections::VecDeque;
 use std::fmt::{Debug, Formatter};
 use std::mem::discriminant;
 use crate::ast::{GenericSyntax, Syntax};
+use crate::ast::block::BlockSyntax;
+use crate::ast::statements::vardecl::VarDeclSyntax;
 use crate::ast::ty::{Type, TypeSyntax};
 use crate::common::operator::Operator;
 use crate::common::sourcemap::SourceMap;
 use crate::common::utils::outcome::Outcome;
 use crate::compiler::{CompileMessage, CompileMessageType, Compiler};
 use crate::lexer::literal::LiteralValue;
-use crate::lexer::token::{ExpressionToken, FeatureToken, Token};
+use crate::lexer::token::{ExpressionToken, FeatureToken, Token, TokenType};
+use crate::{unpack_tk, unpack_opt_tk};
 
 #[derive(Hash, Clone)]
 pub struct BinaryOperation {
@@ -58,16 +61,29 @@ pub struct GenericCallOperation {
     pub arguments: Vec<ExprSyntax>,
 }
 
+#[derive(Clone)]
+pub struct LambdaExpr {
+    pub parameters: Vec<VarDeclSyntax>,
+    pub ret_ty: Option<Type>,
+    pub body: BlockSyntax,
+}
+
+impl std::hash::Hash for LambdaExpr {
+    fn hash<H: std::hash::Hasher>(&self, _state: &mut H) {}
+}
+
 #[derive(Hash, Clone)]
 pub enum Expr {
     Identifier(String),
     Literal(LiteralValue),
+    NullPtr,
+    Lambda(Box<LambdaExpr>),
 
     Tuple(Vec<ExprSyntax>),
-    
+
     Array(Vec<ExprSyntax>),
     Index(Box<IndexOperation>),
-    
+
     BinaryOp(Box<BinaryOperation>),
     UnaryOp(Box<UnaryOperation>),
     CallOp(Box<CallOperation>),
@@ -88,6 +104,12 @@ impl Debug for Expr {
             }
             Expr::Literal(lit) => {
                 write!(f, "{:?}", lit)?;
+            }
+            Expr::NullPtr => {
+                f.write_str("nullptr")?;
+            }
+            Expr::Lambda(_) => {
+                f.write_str("lambda")?;
             }
             Expr::Tuple(tuple) => {
                 f.write_str("(")?;
@@ -291,6 +313,60 @@ impl ExprSyntax {
             }
             ExpressionToken::BoolLiteral(b) => {
                 ExprSyntax{ data: Expr::Literal(LiteralValue::Bool(b)), smap }
+            }
+            ExpressionToken::NullPtr => {
+                ExprSyntax{ data: Expr::NullPtr, smap }
+            }
+            ExpressionToken::LambdaKW => {
+                // lambda(params...) = RetType { body }
+                // Expect '('
+                if tokens.pop_front_if(|t| matches!(t, unpack_tk!(TokenType::Expression(ExpressionToken::OpenParentheses), _))).is_none() {
+                    compiler.emit_compile_message(CompileMessage::new(
+                        smap.clone(), "expected '(' after 'lambda'".to_string(), CompileMessageType::Error,
+                    ));
+                    return Outcome::None;
+                }
+                // Parse parameters
+                let mut parameters = Vec::new();
+                let mut closed = false;
+                while let Some(vd) = VarDeclSyntax::parse(tokens, compiler) {
+                    parameters.push(vd);
+                    let next = tokens.pop_front();
+                    if let unpack_opt_tk!(TokenType::Feature(FeatureToken::Comma), _) = next {
+                        // continue
+                    } else if let unpack_opt_tk!(TokenType::Expression(ExpressionToken::CloseParentheses), _) = next {
+                        closed = true;
+                        break;
+                    } else {
+                        compiler.emit_compile_message(CompileMessage::new(
+                            smap.clone(), "expected ',' or ')' in lambda parameter list".to_string(), CompileMessageType::Error,
+                        ));
+                        return Outcome::None;
+                    }
+                }
+                if !closed {
+                    if tokens.pop_front_if(|t| matches!(t, unpack_tk!(TokenType::Expression(ExpressionToken::CloseParentheses), _))).is_none() {
+                        compiler.emit_compile_message(CompileMessage::new(
+                            smap.clone(), "expected ')' after lambda parameter list".to_string(), CompileMessageType::Error,
+                        ));
+                        return Outcome::None;
+                    }
+                }
+                // Optional return type: = Type
+                let ret_ty = if tokens.front().map_or(false, |t| matches!(t, unpack_tk!(TokenType::Expression(ExpressionToken::Operator(crate::common::operator::Operator { tk: "=", .. })), _))) {
+                    tokens.pop_front();
+                    TypeSyntax::parse(tokens, compiler).map(|ts| ts.data)
+                } else {
+                    None
+                };
+                // Body
+                let Some(body) = BlockSyntax::parse(tokens, compiler) else {
+                    compiler.emit_compile_message(CompileMessage::new(
+                        smap.clone(), "expected '{' for lambda body".to_string(), CompileMessageType::Error,
+                    ));
+                    return Outcome::None;
+                };
+                ExprSyntax { data: Expr::Lambda(Box::new(LambdaExpr { parameters, ret_ty, body })), smap }
             }
             ExpressionToken::CharLiteral(c) => { 
                 ExprSyntax{ data: Expr::Literal(LiteralValue::Char(c)), smap }
