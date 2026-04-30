@@ -2,6 +2,7 @@ use std::list
 
 
 struct GameObjectVTable {
+    public init: none(uint8*, Game*),
     public update: none(uint8*, float32),
     public draw: none(uint8*),
     public drop: none(uint8*),
@@ -27,7 +28,7 @@ struct Game {
 fn<T> Game_add_obj(this: Game&, o: T, vtable: GameObjectVTable) {
     let ptr = alloc.<T>(1);
     (**ptr) = o;
-    this.objects.add(GameObject(ptr, vtable));
+    this.objects.add(GameObject(ptr as uint8*, vtable));
 }
 
 modify Game {
@@ -38,7 +39,7 @@ modify Game {
 
 
     public fn update(self&, dt: float32) {
-        let i = 0;
+        let i = 0 as usize;
 
         while i < self.objects.len() {
             let obj = self.objects.get(i);
@@ -50,7 +51,7 @@ modify Game {
     }
 
     public fn draw(self&) {
-        let i = 0;
+        let i = 0 as usize;
 
         while i < self.objects.len() {
             let obj = self.objects.get(i);
@@ -62,6 +63,6 @@ modify Game {
     }
 
     fn operator drop(self&) {
-        __drop(self.objects);
+        __drop(&self.objects);
     }
 }

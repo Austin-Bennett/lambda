@@ -20,13 +20,15 @@ modify Paddle {
 
 struct Ball {
     collision: Rect,
-    vel: FVec2,
+    velx: float32,
+    vely: float32,
+    game: Game*,
 }
 
 modify Ball {
     public fn new() = Ball {
         //center the ball on screen
-        return Ball(Rect(395.0, 295.0, 10.0, 10.0), FVec2(-10.0, 0.0));
+        return Ball(Rect(395.0, 395.0, 10.0, 10.0), -300.0, 0.0, nullptr as Game*);
     }
 
     public fn draw(self&) {
@@ -34,41 +36,71 @@ modify Ball {
     }
 
     public fn update(self&, dt: float32) {
+        self.collision.x += self.velx * dt;
+        self.collision.y += self.vely * dt;
 
+        if self.collision.x < 0.0 {
+            self.velx = 300.0;
+        }
+
+        if self.collision.x > 800.0 {
+            self.velx = -300.0;
+        }
     }
 }
 
-
+modify int32 {
+    public fn abs(self) = int32 {
+        if self < 0 {
+           return -self;
+        }
+        return self;
+    }
+}
 
 fn main() = int8 {
 
-    InitWindow(800, 600, c"Lambda PONG");
+    InitWindow(800, 800, c"Lambda PONG");
     let constants = RayConstants.new();
 
     let list = List.<int32>.new();
+    list: List<int32> = List.<int32>.new();
+
+    let a = -1000;
+
+    let b = a.abs();
+
 
 
     let game = Game.new();
     Game_add_obj.<Ball>(&game, Ball.new(), GameObjectVTable(
+        lambda(this: uint8*, game: Game*) { (*(this as Ball*)).game = game; },
         lambda(this: uint8*, dt: float32) { (*(this as Ball*)).update(dt); },
         lambda(this: uint8*) { (*(this as Ball*)).draw(); },
         lambda(this: uint8*) {}
     ));
 
+
     SetTargetFPS(60);
 
 
     while !WindowShouldClose() {
+
+        game.update(0.0167);
+
+
         BeginDrawing();
 
         ClearBackground(constants.black);
 
 
+        game.draw();
 
         DrawText(c"Hello, LAMBDA", 10, 10, 20, constants.gold);
 
         EndDrawing();
     }
+
 
     CloseWindow();
 

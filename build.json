@@ -1,7 +1,7 @@
 {
   "output": "lambda_test/main",
   "output_ir": "lambda_test/main.ll",
-  "no_codegen": true,
+  "no_codegen": false,
   "debug_ast": true,
   "libs": [
     "raylib",

@@ -45,6 +45,33 @@ linker, making it easy to link against pre-compiled C, C++, or Rust objects:
 
 **build:** grabs compiler arguments from json file
 
+**Example JSON**
+```json
+{
+  "output": "main",
+  "output_ir": "main.ll",
+  "libs": [
+    "raylib",
+    "GL",
+    "pthread",
+    "dl",
+    "rt",
+    "X11"
+  ],
+  "lib_paths": [
+
+  ],
+  "module_paths": [
+    "../lib/"
+  ],
+  "files": [
+    "main.lm"
+  ]
+}
+```
+
+
+**Linking with other object files:**
 ```bash
 # Compile a C file to an object
 clang -c mylib.c -o mylib.o
@@ -294,7 +321,6 @@ Operator overloads are always publicly accessible.
 | `mul`    | `a * b`               | |
 | `div`    | `a / b`               | |
 | `cmp`    | `==` `!=` `<` `>` `<=` `>=` | return `int8`: negative / zero / positive |
-| `assign` | `a = b`               | overrides copy/move for structs |
 | `drop`   | (destructor)          | called when value goes out of scope |
 
 ---
@@ -365,6 +391,16 @@ p: int32* = r as int32*; // reference -> pointer
 r2: int32& = *p;         // pointer -> reference
 let val: int32 = *r2;    // read through reference
 *r = 99;                 // write through reference
+```
+
+#### Lambdas
+
+*Of course lambda has lambdas!*
+
+**Syntax:**
+```lambda
+my_lambda: int32(int32) = lambda(x: int32) = int32 { return x + 1; }
+let x = my_lambda(5); //x = 6, 5 + 1 = 6
 ```
 
 ---

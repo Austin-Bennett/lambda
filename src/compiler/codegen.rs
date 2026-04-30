@@ -904,6 +904,19 @@ impl Compiler {
                         _ => unreachable!(),
                     }
                 };
+                // When the operand was a literal pseudo-type (e.g. float_literal/f64) but the
+                // outer expression was coerced to a concrete type (e.g. float32), apply the
+                // registered conversion so the result has the right LLVM type.
+                if self.type_context.is_literal(uop.operand.ty) && e.ty != uop.operand.ty {
+                    if let Some(val) = result {
+                        if let Some(conv) = self.type_context.get_by_id(uop.operand.ty)
+                            .and_then(|info| info.ops.conversion_ops.get(&e.ty))
+                        {
+                            return Some(conv(builder, val));
+                        }
+                        return Some(val);
+                    }
+                }
                 result
             }
 

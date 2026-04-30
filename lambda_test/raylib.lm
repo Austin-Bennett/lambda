@@ -127,21 +127,7 @@ modify Rect {
     }
 }
 
-struct Image {
-    public data: uint8*,
-    public w: int32,
-    public h: int32,
-    public mipmaps: int32,
-    public format: int32,
-}
 
-struct Texture {
-    public id: uint32,
-    public width: int32,
-    public height: int32,
-    public mipmaps: int32,
-    public format: int32,
-}
 
 
 
@@ -171,6 +157,9 @@ fn GetMousePosition() = FVec2 {
 
 extern fn DrawRectangle(x: int32, y: int32, w: int32, h: int32, c: int32);
 
+
+//C passes this structure as an integer, so we convert the structure to an integer first
+//not sure why it matters but it consistently has
 fn cToInt(c: Color) = int32 {
     let r = c.r as int32;
     let g = c.g as int32;

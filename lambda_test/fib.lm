@@ -1,0 +1,14 @@
+extern fn printf(fmt: uint8*, i: int32);
+
+fn fib(n: int32) = int32 {
+    if n <= 1 {
+        return 1;
+    } else {
+        return fib(n-1) + fib(n-2);
+    }
+}
+
+fn main() = int8 {
+    printf(c"fib(30) = %d\n", fib(30));
+    printf(c"fib(35) = %d\n", fib(35));
+}

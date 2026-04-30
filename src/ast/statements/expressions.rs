@@ -353,7 +353,7 @@ impl ExprSyntax {
                     }
                 }
                 // Optional return type: = Type
-                let ret_ty = if tokens.front().map_or(false, |t| matches!(t, unpack_tk!(TokenType::Expression(ExpressionToken::Operator(crate::common::operator::Operator { tk: "=", .. })), _))) {
+                let ret_ty = if tokens.front().map_or(false, |t| matches!(t, unpack_tk!(TokenType::Expression(ExpressionToken::Operator(Operator { tk: "=", .. })), _))) {
                     tokens.pop_front();
                     TypeSyntax::parse(tokens, compiler).map(|ts| ts.data)
                 } else {
